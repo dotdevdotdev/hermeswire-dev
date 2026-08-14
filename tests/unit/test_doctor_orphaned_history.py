@@ -12,8 +12,7 @@ import types
 
 import pytest
 
-from agentwire import doctor_cli
-from agentwire import history
+from agentwire import doctor_cli, history
 
 
 class FakeStore:

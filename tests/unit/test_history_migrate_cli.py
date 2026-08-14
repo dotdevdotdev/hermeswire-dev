@@ -7,8 +7,6 @@ column), so nothing can be orphaned and the verb is a reporting no-op.
 
 import json
 
-import pytest
-
 from agentwire import history_cli
 from agentwire import history_migrate as hm
 

@@ -17,7 +17,6 @@ import sys
 import sysconfig
 import tempfile
 import urllib.request
-import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 

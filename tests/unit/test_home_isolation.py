@@ -289,7 +289,6 @@ class TestTheAuditHookCanActuallyFail:
 def test_subsystem_stores_are_redirected(subsystem, relative):
     """~/.agentwire holds more than sessions/, and tests touch all of it."""
     import agentwire.cohort as cohort
-    import agentwire.core as core
     import agentwire.inbox as inbox
     import agentwire.usage_limit as usage_limit
 

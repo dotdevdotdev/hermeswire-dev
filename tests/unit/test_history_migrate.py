@@ -6,7 +6,6 @@ machinery's entire premise is gone; these tests pin that every operation is a
 safe no-op that says so.
 """
 
-import pytest
 
 from agentwire import history_migrate as hm
 

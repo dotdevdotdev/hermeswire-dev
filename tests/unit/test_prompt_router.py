@@ -14,7 +14,6 @@ import pytest
 from agentwire import prompt_router
 from agentwire.prompt_router import PromptInfo, parse_ask_options
 
-
 # =============================================================================
 # Fixtures
 # =============================================================================

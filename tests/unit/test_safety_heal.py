@@ -5,7 +5,6 @@ scripts/rules, refresh *owned* hook scripts that drifted, register missing
 matchers — and never clobber an existing (possibly hand-customized) rule.
 """
 
-import json
 from pathlib import Path
 
 import pytest

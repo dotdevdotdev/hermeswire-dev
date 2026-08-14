@@ -1,8 +1,5 @@
 """Tests for build_agent_command — the ONE flag-builder, keyed on posture (#729)."""
 
-import os
-import stat
-from pathlib import Path
 
 import pytest
 

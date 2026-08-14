@@ -21,7 +21,7 @@ the real thing. The traps this file is built to fall into on purpose:
   the structured code, not the text.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -156,7 +156,7 @@ class TestProbeProviderAuth:
     def _probe(self, stdout, returncode=0):
         with patch("agentwire.auth_expired.subprocess.run",
                    return_value=SimpleNamespace(stdout=stdout, stderr="",
-                                                returncode=returncode)) as run:
+                                                returncode=returncode)):
             result = auth_expired.probe_provider_auth("nous")
         return result
 

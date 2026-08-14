@@ -8,7 +8,6 @@ and the config gates, all against the #13 detector's primitives.
 """
 
 import json
-import subprocess
 from datetime import datetime, timezone
 
 import pytest
