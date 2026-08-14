@@ -2,7 +2,6 @@
 
 import os
 import stat
-import uuid
 from pathlib import Path
 
 import pytest
@@ -98,8 +97,9 @@ class TestBuildAgentCommand:
 
 
 class TestConversationIdentity:
-    """Hermes mints its own session id (issue #4); agentwire's local
-    conversation_id remains only as a durable record key."""
+    """Hermes mints its own session id (issue #4); build_agent_command no
+    longer mints a UUID. The Hermes id is captured post-launch for a fresh
+    launch, and a resume launch simply carries the id it resumes."""
 
     @pytest.fixture(autouse=True)
     def _prompts_dir(self, tmp_path, monkeypatch):
@@ -112,26 +112,32 @@ class TestConversationIdentity:
                                    resume_session_id=resume_session_id)
 
     def test_hermes_mints_its_own_session_id(self):
-        # No --session-id/--fork-session flags: Hermes manages its own store.
+        # No --session-id/--fork-session flags, and NO locally-minted id:
+        # Hermes owns the id, captured post-launch (issue #4).
         cmd = self._build()
         assert "--session-id" not in cmd.command
         assert "--fork-session" not in cmd.command
-        # The local record key is still minted for metadata/recovery.
-        assert uuid.UUID(cmd.conversation_id)
+        assert cmd.conversation_id is None
 
     def test_fresh_build_has_no_resume_flag(self):
         cmd = self._build()
         assert "--resume" not in cmd.command
 
-    def test_every_build_mints_a_fresh_id(self):
+    def test_no_id_is_minted_at_build_time(self):
         ids = {self._build().conversation_id for _ in range(20)}
-        assert len(ids) == 20
+        assert ids == {None}
+
+    def test_source_tool_tags_the_launch(self):
+        cmd = self._build()
+        assert "--source tool" in cmd.command
 
     def test_resume_passes_the_hermes_id_through(self):
+        # --resume continues the SAME session, so the launch's identity IS the
+        # resumed id (unlike Claude, which minted a new id per fork).
         cmd = self._build(resume_session_id="old-conversation")
         assert "--resume old-conversation" in cmd.command
         assert cmd.resumed_from == "old-conversation"
-        assert cmd.conversation_id != "old-conversation"
+        assert cmd.conversation_id == "old-conversation"
 
     def test_posture_and_role_names_ride_along(self):
         roles = [RoleConfig(name="worker", instructions="A"),
@@ -140,12 +146,12 @@ class TestConversationIdentity:
         assert cmd.posture == "auto"
         assert cmd.roles == ["worker", "soul"]
 
-    def test_role_prompt_is_durable_and_keyed_by_conversation(self):
+    def test_role_prompt_is_durable_and_keyed_by_local_record_key(self):
         roles = [RoleConfig(name="test", instructions="Be a worker")]
         cmd = self._build(roles=roles)
         path = Path(cmd.role_prompt_path)
         assert path.parent == self.prompts_dir
-        assert path.name == f"{cmd.conversation_id}.txt"
+        assert path.name == f"{cmd.record_key}.txt"
         assert path.read_text() == "Be a worker"
 
     def test_role_prompt_is_owner_only(self):
@@ -217,7 +223,7 @@ class TestMirrorRolePromptRemote:
         local = agent.role_prompt_path
         rewritten = mirror_role_prompt_remote(agent, "box", agent.command)
 
-        remote = f"$HOME/.agentwire/role-prompts/{agent.conversation_id}.txt"
+        remote = f"$HOME/.agentwire/role-prompts/{agent.record_key}.txt"
         assert local not in rewritten
         # The RECORD must name where the prompt actually lives for that session.
         assert agent.role_prompt_path == remote
@@ -261,6 +267,41 @@ class TestMirrorRolePromptRemote:
         original = agent.command
         assert core.mirror_role_prompt_remote(agent, "box", original) == original
         assert agent.role_prompt_path.startswith(str(core.role_prompts_dir()))
+
+
+class TestExtractHermesSessionId:
+    """The capture half of issue #4: parse the Hermes id out of ``-Q``/``-q``
+    output. Ids are opaque Hermes-owned strings, returned verbatim."""
+
+    def test_parses_q_stderr_line(self):
+        from agentwire.core import extract_hermes_session_id
+        assert extract_hermes_session_id(
+            "some noise\nsession_id: 20260813_210702_922597\n") \
+            == "20260813_210702_922597"
+
+    def test_parses_exit_summary_session_line(self):
+        from agentwire.core import extract_hermes_session_id
+        out = (
+            "answer text\n"
+            "Session: 20260813_210702_922597\n"
+            "Resume this session with: hermes --resume 20260813_210702_922597\n"
+        )
+        assert extract_hermes_session_id(out) == "20260813_210702_922597"
+
+    def test_falls_back_to_resume_hint(self):
+        from agentwire.core import extract_hermes_session_id
+        out = "Resume this session with: hermes --resume abc123def456\n"
+        assert extract_hermes_session_id(out) == "abc123def456"
+
+    def test_treats_the_id_as_opaque(self):
+        # Not a UUID, not a timestamp — whatever Hermes emits is returned whole.
+        from agentwire.core import extract_hermes_session_id
+        assert extract_hermes_session_id("session_id: weird-format-id!!") \
+            == "weird-format-id!!"
+
+    def test_returns_none_when_absent(self):
+        from agentwire.core import extract_hermes_session_id
+        assert extract_hermes_session_id("no id here\njust text\n") is None
 
 
 @pytest.mark.real_agentwire_home

@@ -11,6 +11,7 @@ the portal and MCP layers are thin wrappers over these commands.
 from __future__ import annotations
 
 import datetime
+import os
 import subprocess
 import sys
 import time
@@ -567,16 +568,244 @@ def _dispatch_shares_dir(task) -> bool:
     return not task.starting_ref
 
 
+# ---------------------------------------------------------------------------
+# Headless `hermes -z` dispatch (scheduled/unattended tasks)
+# ---------------------------------------------------------------------------
+
+# Ceiling on the number of turns for a headless `hermes -z` run. There is no
+# idle signal to stop on; the process exits when the turn completes, so this
+# bounds an agent that loops forever rather than detecting completion.
+HEADLESS_MAX_TURNS = 200
+
+
+def _is_headless_dispatch(task) -> bool:
+    """Whether this dispatch runs headless ``hermes -z`` (process exit = done).
+
+    Only the scheduler's unattended dispatches (``AGENTWIRE_UNATTENDED=1``) of
+    non-persistent tasks are headless. Persistent sessions (``exit_on_complete:
+    false``) double as interactive receivers and keep the REPL path.
+    """
+    if not os.environ.get("AGENTWIRE_UNATTENDED"):
+        return False
+    return bool(getattr(task, "exit_on_complete", True))
+
+
+def _launch_headless_hermes(session, prompt, project_path, task) -> "subprocess.Popen":
+    """Launch ``hermes -z "<prompt>"`` and return the live process handle.
+
+    Completion is the process EXIT — no idle polling, no ``/exit``. The agent
+    was instructed (launch prompt's "## When done" section) to write the summary
+    file as its final action; the wrapper reads it back after exit.
+    """
+    cmd = ["hermes", "-z", prompt, "--accept-hooks"]
+    # Unattended dispatch has no human to approve; damage-control (#11) is the
+    # real gate and fails closed on anything not pre-granted. `--yolo` mirrors
+    # the interactive bypass/auto posture (#3).
+    cmd.append("--yolo")
+    cmd += ["--max-turns", str(HEADLESS_MAX_TURNS)]
+    if getattr(task, "mode", "standard") == "loop":
+        cmd += ["--checkpoints"]
+    return subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        cwd=str(project_path),
+        start_new_session=True,
+    )
+
+
+def _run_ensure_task_headless(args, session, task, ctx, shell, project_path, json_mode) -> int:
+    """Run a scheduled task via headless ``hermes -z`` — process exit is completion.
+
+    Mirrors the REPL ``_run_ensure_task`` (pre-commands, prompt expansion,
+    summary parse, retries, post-commands, PR) but launches ``hermes -z`` as a
+    subprocess and treats its exit as the completion signal. Iteration state
+    (loop mode) lives here, not in a shell hook: after each run the review file
+    is re-read and the process relaunched with the next iteration prompt.
+    """
+    from .completion import (
+        CompletionTimeout,
+        append_summary_instruction,
+        generate_summary_filename,
+        status_to_exit_code,
+        wait_for_completion_signal,
+    )
+    from .tasks import PreCommandError, run_post_command, run_pre_command
+    from .templating import TemplateError, expand_all
+
+    max_attempts = task.retries + 1
+    last_status = "incomplete"
+    last_summary = ""
+
+    for attempt in range(1, max_attempts + 1):
+        ctx.attempt = attempt
+        if not json_mode and max_attempts > 1:
+            print(f"Attempt {attempt}/{max_attempts}")
+
+        # Set up work branch if starting_ref is configured.
+        work_branch = None
+        if task.starting_ref:
+            work_branch, branch_error = _setup_task_branch(project_path, task, json_mode)
+            if branch_error:
+                return _output_result(False, json_mode, branch_error, exit_code=ENSURE_EXIT_PRE_FAILURE)
+
+        # Run pre-commands.
+        if task.pre:
+            for pre in task.pre:
+                try:
+                    output = run_pre_command(pre, shell, project_path)
+                    ctx.set_pre_output(pre.name, output)
+                except PreCommandError as e:
+                    if work_branch and task.starting_ref:
+                        subprocess.run(["git", "checkout", task.starting_ref], cwd=project_path, capture_output=True)
+                    return _output_result(False, json_mode, str(e), exit_code=ENSURE_EXIT_PRE_FAILURE)
+
+        # Expand prompt and append the summary instruction.
+        try:
+            prompt = expand_all(task.prompt, ctx)
+        except TemplateError as e:
+            return _output_result(False, json_mode, str(e), exit_code=ENSURE_EXIT_PRE_FAILURE)
+
+        summary_filename = generate_summary_filename(session, task.name)
+        summary_path = project_path / summary_filename
+        ctx.summary_file = summary_filename
+        (project_path / ".agentwire").mkdir(exist_ok=True)
+        prompt = append_summary_instruction(prompt, summary_filename)
+
+        # Loop mode: up to max_iterations headless runs. Each iteration runs one
+        # `hermes -z`; between runs the review file is re-read to decide whether
+        # to continue. Iteration state lives here (the scheduler), not in a hook.
+        iteration = 1
+        while True:
+            if not json_mode:
+                if task.mode == "loop" and task.max_iterations > 1:
+                    print(f"Iteration {iteration}/{task.max_iterations}")
+                print("Launching headless hermes -z...")
+
+            proc = _launch_headless_hermes(session, prompt, project_path, task)
+            try:
+                signal = wait_for_completion_signal(
+                    session, summary_path=summary_path,
+                    max_duration=task.max_duration,
+                    process=proc, provider=None,
+                )
+            except CompletionTimeout as e:
+                last_status = "incomplete"
+                last_summary = str(e) or "Timeout waiting for task completion"
+                break
+
+            last_status = signal.get("status", "incomplete")
+            last_summary = signal.get("summary", "")
+            ctx.status = last_status
+            ctx.summary = last_summary
+
+            if last_status == "auth_expired" or last_status == "usage_limit":
+                break
+
+            # Loop continuation: re-read the review file and relaunch with the
+            # next iteration prompt (or stop once complete / at max_iterations).
+            if task.mode == "loop" and last_status == "incomplete" and iteration < task.max_iterations:
+                if task.loop_delay > 0:
+                    time.sleep(task.loop_delay)
+                iteration += 1
+                prompt = append_summary_instruction(
+                    (
+                        "Continue working on the task. This is iteration "
+                        f"{iteration} of {task.max_iterations}.\n\n"
+                        f"Original task:\n{expand_all(task.prompt, ctx)}\n\n"
+                        "Continue where you left off. Focus on remaining work."
+                    ),
+                    summary_filename,
+                )
+                continue
+            break
+
+        # on_task_end / tmux capture don't apply headless (no persistent pane);
+        # post-commands and PR flow below.
+
+        if last_status == "auth_expired":
+            if not json_mode:
+                print(f"Login expired: {last_summary}")
+            break
+        if last_status == "usage_limit":
+            if not json_mode:
+                print("Usage limit hit — auto-resumes after reset")
+            break
+
+        if not json_mode:
+            print(f"Task status: {last_status}")
+            if last_summary:
+                print(f"Summary: {last_summary}")
+
+        # Run post-commands.
+        if task.post:
+            for cmd in task.post:
+                try:
+                    expanded_cmd = expand_all(cmd, ctx)
+                    rc, stdout, stderr = run_post_command(expanded_cmd, shell, project_path)
+                    if rc != 0 and not json_mode:
+                        print(f"  Warning: post-command failed: {stderr}")
+                except TemplateError as e:
+                    if not json_mode:
+                        print(f"  Warning: template error in post-command: {e}")
+
+        # Create PR if branch management is configured.
+        if work_branch and task.starting_ref:
+            pr_url = _create_task_pr(project_path, task, work_branch, last_summary, json_mode)
+            ctx.work_branch = work_branch
+            if pr_url:
+                ctx.pr_url = pr_url
+
+        if last_status == "failed" and attempt < max_attempts:
+            if not json_mode:
+                print(f"Task failed, retrying in {task.retry_delay}s...")
+            time.sleep(task.retry_delay)
+            continue
+
+        break
+
+    exit_code = status_to_exit_code(last_status)
+
+    if json_mode:
+        result_data = {
+            "success": last_status == "complete",
+            "status": last_status,
+            "summary": last_summary,
+            "attempt": ctx.attempt,
+            "summary_file": ctx.summary_file,
+        }
+        if ctx.work_branch:
+            result_data["work_branch"] = ctx.work_branch
+        if ctx.pr_url:
+            result_data["pr_url"] = ctx.pr_url
+        _output_json(result_data)
+    else:
+        print(f"\nTask {task.name}: {last_status}")
+
+    return exit_code
+
+
 def _run_ensure_task(args, session, task, ctx, shell, project_path, json_mode) -> int:
     """Run the task (called within lock context).
 
-    Uses hook-based completion detection:
-    1. Write task context file (tells hook a scheduled task is running)
-    2. Send task prompt
-    3. Hook handles: first idle → send summary prompt
-    4. Poll for summary file (agent writes it after receiving summary prompt)
-    5. Parse summary and return result
+    Two dispatch models:
+
+    * **Headless** (unattended scheduler, ``AGENTWIRE_UNATTENDED=1`` and
+      ``exit_on_complete``) — ``hermes -z`` runs one turn and EXITS; process
+      exit is completion. No tmux pane, no idle polling, no ``/exit``.
+    * **REPL** (interactive / persistent) — the tmux session + paste model,
+      with the ``on_session_end`` observer signalling completion.
+
+    The "write a summary" instruction is appended to the launch prompt (the
+    agent writes the summary as its final action) rather than injected as a
+    second pass on idle.
     """
+    if _is_headless_dispatch(task):
+        return _run_ensure_task_headless(
+            args, session, task, ctx, shell, project_path, json_mode
+        )
+
     from .completion import (
         CompletionTimeout,
         _session_has_agent,
@@ -755,6 +984,12 @@ def _run_ensure_task(args, session, task, ctx, shell, project_path, json_mode) -
             prompt += "\n\nPrevious task summaries (consider them when generating your output):"
             for p in prev_summaries:
                 prompt += f"\n- {p}"
+
+        # The agent writes the summary as its final action (instructed via the
+        # launch prompt), not on a second idle pass. The on_session_end observer
+        # reads it back and cleans up the context file (the completion signal).
+        from .completion import append_summary_instruction
+        prompt = append_summary_instruction(prompt, summary_filename)
 
         if not json_mode:
             print("Sending task prompt...")

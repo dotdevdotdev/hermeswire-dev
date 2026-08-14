@@ -1,9 +1,8 @@
 """Tests for ``agentwire restart`` — relaunch in place, same conversation (#871).
 
 The behaviours worth pinning down are the ones a plausible implementation gets
-wrong: re-evaluating the stored launch line (whose ``--session-id`` is
-single-use), assuming a recorded id is resumable, and killing the session the
-command itself runs in.
+wrong: re-evaluating the stored launch line, assuming a recorded id is
+resumable, and killing the session the command itself runs in.
 """
 
 import types
@@ -133,6 +132,7 @@ class TestRestartLaunch:
         # (the --session-id/--fork-session machinery is gone, issue #4).
         assert "--resume cid-1" in cmd
         assert cmd.startswith("hermes chat --cli")
+        assert "--source tool" in cmd
         assert "--yolo" in cmd
         assert launched.killed == ["sess"]
 
@@ -177,8 +177,11 @@ class TestRestartLaunch:
 
         run()
         meta = load_session_metadata("sess")
-        assert meta["conversation_ids"][0] == "cid-1"
-        assert len(meta["conversation_ids"]) == 2
+        # --resume continues the SAME Hermes session, so no new id is minted
+        # and the chain does not grow (issue #4).
+        assert meta["conversation_ids"] == ["cid-1"]
+        assert meta["resumed_from"] == "cid-1"
+        assert meta["source"] == "tool"
         # A restart is not a creation: parentage and role survive untouched.
         assert meta["created_by"] == "orch"
         assert meta["role"] == "worker"

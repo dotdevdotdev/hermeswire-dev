@@ -170,17 +170,24 @@ class AgentCommand:
     """Result of building an agent command.
 
     Carries not just the shell command but the full launch identity (#871):
-    the conversation UUID we minted, the durable role-prompt file, and the
-    posture/role names needed to REGENERATE that prompt later. The flag
-    builder is the only place that knows all four, so it stamps them here and
+    the Hermes session id, the durable role-prompt file, and the posture/role
+    names needed to REGENERATE that prompt later. The flag builder is the only
+    place that knows all four, so it stamps them here and
     :func:`record_session_launch` copies them onto disk verbatim — no caller
-    can pair a conversation id with the wrong prompt or posture.
+    can pair a session id with the wrong prompt or posture.
+
+    Session identity under Hermes (#4): the id is minted by Hermes itself, not
+    by AgentWire. For a resume launch ``--resume <id>`` continues the SAME
+    session, so ``conversation_id`` carries that id; for a fresh launch the id
+    is not known until Hermes starts and is captured post-launch (see
+    :func:`extract_hermes_session_id`), so it is ``None`` here.
     """
     command: str  # The shell command to execute
-    role_prompt_path: str | None = None  # Durable --append-system-prompt file (see role_prompts_dir())
+    role_prompt_path: str | None = None  # Durable role-prompt file (see role_prompts_dir())
     env: dict[str, str] = field(default_factory=dict)  # Secrets to inject via tmux set-environment (keeps keys out of `ps`)
-    conversation_id: str | None = None  # UUID retained as AgentWire record key (Hermes mints its own id; #4)
-    resumed_from: str | None = None  # Conversation this one was forked off, if any
+    conversation_id: str | None = None  # Hermes session id: --resume keeps it; None until captured for a fresh launch (#4)
+    resumed_from: str | None = None  # Hermes session id this launch resumed, if any
+    record_key: str | None = None  # Local opaque key for the durable role-prompt file — NOT session identity (#4)
     posture: str = BARE
     roles: list[str] = field(default_factory=list)  # Role NAMES, in merge order
     model: str | None = None  # --model override, if the launch chose one
@@ -447,7 +454,7 @@ def mirror_role_prompt_remote(agent: "AgentCommand", machine_id: str, agent_cmd:
     # (`"$(<...)"`) where tilde expansion is not guaranteed, and it is
     # recorded verbatim — the remote's home isn't knowable from here.
     remote_dir = "$HOME/.agentwire/role-prompts"
-    remote_prompt = f"{remote_dir}/{agent.conversation_id}.txt"
+    remote_prompt = f"{remote_dir}/{agent.record_key}.txt"
     # Same owner-only posture as the local store, stated the same way: `umask
     # 077` covers the create, and the explicit chmods cover a pre-existing
     # path (which umask never touches) on a remote whose defaults we don't
@@ -483,35 +490,37 @@ def build_agent_command(
     Hermes conversion (claude -> hermes, issues #2/#3/#4):
 
     - Base command is ``hermes chat --cli`` (the classic prompt_toolkit REPL),
-      not ``claude``.
+      not ``claude``. ``--source tool`` tags every launch so Hermes hides these
+      automation sessions from user session lists (#4).
     - Permission postures: ``bypass`` and ``auto`` both map to ``--yolo``
       because AgentWire's own damage-control hooks are the safety layer.
       Hermes has no ``--allowedTools``/``--enable-auto-mode`` equivalent
       (issue #3); ``approvals.mode: smart`` is the manual alternative.
     - ``--session-id`` / ``--fork-session`` are gone: Hermes mints its own
-      session id. ``resume_session_id`` maps to ``--resume <id>``. The local
-      ``conversation_id`` is retained only as AgentWire's record key pending
-      the session-identity rework (issue #4).
+      session id. ``resume_session_id`` maps to ``--resume <id>``, which
+      continues the SAME session (no new id is minted), so the resulting
+      ``conversation_id`` IS ``resume_session_id``. A fresh launch mints
+      nothing — its Hermes id is captured post-launch (issue #4).
     - Role instructions previously rode ``--append-system-prompt``, which
       Hermes has no equivalent for; injection is deferred to issue #15. The
-      durable role-prompt file is still written so the record stays
-      reconstructible.
+      durable role-prompt file is still written (keyed by a local ``record_key``,
+      not the session id, since a fresh launch has no id yet) so the record
+      stays reconstructible.
     """
     if posture == BARE:
         return AgentCommand(command="", posture=BARE)
 
     merged = merge_roles(roles) if roles else None
     role_names = [r.name for r in roles] if roles else []
-    conversation_id = str(uuid.uuid4())  # retained as AgentWire record key (#4)
 
-    parts = ["hermes", "chat", "--cli"]
+    parts = ["hermes", "chat", "--cli", "--source", "tool"]
 
     # Permission-mode: both bypass and auto rely on damage-control hooks for
     # safety, so both bypass Hermes approvals with --yolo (issue #3).
     if posture in ("bypass", "auto"):
         parts.append("--yolo")
 
-    # Session resume: Hermes mints ids itself; --resume continues one (#4).
+    # Session resume: --resume <id> continues the SAME Hermes session (#4).
     if resume_session_id:
         parts.append(f"--resume {resume_session_id}")
 
@@ -521,6 +530,7 @@ def build_agent_command(
 
     # Role-based flags (merged roles always apply)
     role_prompt_path = None
+    record_key = None
     if merged:
         if merged.tools:
             # -t selects TOOLSETS, not tool names — coarse fidelity (#3).
@@ -538,20 +548,58 @@ def build_agent_command(
         if merged.instructions:
             # Written to a file rather than inlined to avoid shell escaping.
             # Hermes has no --append-system-prompt; injection deferred (#15).
+            # Keyed by a LOCAL record key, not the session id: a fresh launch's
+            # Hermes id is minted by Hermes and not known at build time (#4).
+            record_key = str(uuid.uuid4())
             role_prompt_path = str(
-                write_role_prompt(conversation_id, merged.instructions)
+                write_role_prompt(record_key, merged.instructions)
             )
 
     return AgentCommand(
         command=" ".join(parts),
         role_prompt_path=role_prompt_path,
-        conversation_id=conversation_id,
+        conversation_id=resume_session_id,
         resumed_from=resume_session_id,
+        record_key=record_key,
         posture=posture,
         roles=role_names,
         model=model,
     )
 
+
+def extract_hermes_session_id(output: str) -> str | None:
+    """Extract the Hermes session id from a ``-Q`` / ``-q`` run's output (#4).
+
+    ``hermes chat -q "PROMPT" -Q`` writes ``session_id: <id>`` to STDERR, and
+    the ``-q`` exit summary prints ``Session: <id>`` plus ``Resume this
+    session with: hermes --resume <id>``. Ids are opaque Hermes-owned strings
+    (``<timestamp>_<hex>``); they are returned verbatim and never parsed.
+
+    Scans any combined text (stdout, stderr, or both concatenated) for the
+    first match, so a caller can hand it either stream. Returns ``None`` when
+    no id is present.
+
+    This is the capture half of issue #4. It is a pure function on purpose: the
+    interactive ``--cli`` REPL launched in tmux has no stderr we can read, so
+    wiring it into the launch path (a subprocess wrapper for headless ``-q``
+    runs, or a post-launch read of ``~/.hermes/state.db``) is a follow-up.
+    """
+    for line in output.splitlines():
+        stripped = line.strip()
+        for prefix in ("session_id:", "Session:"):
+            if stripped.startswith(prefix):
+                value = stripped[len(prefix):].strip()
+                if value:
+                    return value
+    # Fallback: the `-q` exit summary's resume hint.
+    marker = "--resume "
+    idx = output.find(marker)
+    if idx != -1:
+        rest = output[idx + len(marker):].strip()
+        value = rest.split(None, 1)[0] if rest else ""
+        if value:
+            return value
+    return None
 
 
 def check_python_version() -> bool:
@@ -1208,34 +1256,35 @@ def record_session_launch(
 
     Deliberately NOT called by ``spawn`` — a worker pane is not a session, and
     this store is keyed by session name, so a pane recording here would
-    overwrite its OWNING session's record. Panes still get a minted
-    conversation id and a durable role prompt from ``build_agent_command``;
-    they just have nowhere session-scoped to write it.
+    overwrite its OWNING session's record. Panes still get a durable role
+    prompt from ``build_agent_command``; they just have nowhere
+    session-scoped to write it.
 
     What comes from where:
 
-    - ``agent`` supplies conversation id, role-prompt path, posture and role
-      names — the flag builder is the only thing that knows them, and taking
-      the whole object means a caller can't pair them wrong.
+    - ``agent`` supplies the Hermes session id, role-prompt path, posture and
+      role names — the flag builder is the only thing that knows them, and
+      taking the whole object means a caller can't pair them wrong.
     - ``cwd`` supplies ``cwd_at_launch`` verbatim plus the git-derived
-      repo/branch/worktree triple. ``cwd_at_launch`` is what a later check
-      compares against Claude's own history key
-      (``~/.claude/projects/<encoded-cwd>/``) to detect history orphaned by a
-      moved worktree. ``remote=True`` records the path but skips the git
-      derivation — the path lives on another machine, and a same-named local
-      directory would otherwise answer with some other repo's branch.
+      repo/branch/worktree triple. ``remote=True`` records the path but skips
+      the git derivation — the path lives on another machine, and a same-named
+      local directory would otherwise answer with some other repo's branch.
     - ``roles`` + ``posture`` are recorded to REGENERATE the system prompt,
       not merely to reference it — a role-prompt file that has gone missing
       is recoverable from them.
 
-    Merge-preserving, and ``conversation_ids`` APPENDS: ``--fork-session``
-    mints a new id on every resume, so identity is a chain, not a scalar.
+    Session identity under Hermes (#4): ``conversation_ids`` holds Hermes
+    session ids, not minted UUIDs. ``--resume <id>`` continues the SAME
+    session, so a resume launch appends nothing new (its id is already in the
+    chain); the chain only grows when Hermes itself forks/compresses a session
+    into a new id (``parent_session_id``), captured post-launch. ``source`` is
+    recorded as ``"tool"`` and ``resumed_from`` as the id this launch resumed.
 
     A write that fails is WARNED about, never raised (#885): by the time this
     runs the session is already live in tmux, so a traceback here would turn a
     successful creation into a failed command while leaving the session
     running. Silence was the actual bug — the warning names the session, the
-    conversation id that is now unrecoverable, and what breaks because of it.
+    session id that is now unrecoverable, and what breaks because of it.
     """
     clean_name = session_name.split("@")[0]
     metadata = load_session_metadata(session_name)
@@ -1262,6 +1311,12 @@ def record_session_launch(
         if agent.conversation_id not in chain:
             chain.append(agent.conversation_id)
         metadata["conversation_ids"] = chain
+
+    # Hermes identity (#4): the session was launched with `--source tool`, and
+    # `resumed_from` names the session this launch continued (if any).
+    metadata["source"] = "tool"
+    if agent.resumed_from:
+        metadata["resumed_from"] = agent.resumed_from
 
     metadata.update({
         "cwd_at_launch": str(cwd),

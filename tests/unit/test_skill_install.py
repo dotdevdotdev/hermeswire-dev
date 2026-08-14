@@ -24,7 +24,7 @@ from agentwire.hooks_cli import (
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    """A fake packaged-source skills dir and a fake ~/.claude/skills target dir."""
+    """A fake packaged-source skills dir and a fake ~/.hermes/skills target dir."""
     source = tmp_path / "pkg" / "skills"
     (source / "wiki").mkdir(parents=True)
     (source / "wiki" / "SKILL.md").write_text("# wiki skill\n")
@@ -51,7 +51,7 @@ def test_install_symlinks_fresh(env):
 
 
 def test_install_replaces_real_dir_copy(env):
-    """The pre-#475 state: ~/.claude/skills/wiki is a REAL directory."""
+    """The pre-#475 state: ~/.hermes/skills/wiki is a REAL directory."""
     source, target_root = env
     target = target_root / "wiki"
     target.mkdir(parents=True)

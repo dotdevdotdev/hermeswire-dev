@@ -58,14 +58,6 @@ def encode_project_path(path: str) -> str:
     return re.sub(r"[^A-Za-z0-9]", "-", path)
 
 
-# The same rule, written in shell. Retained alongside ``encode_project_path``;
-# the two are a pair for any caller that still derives a history directory at
-# shell runtime (obsolete under Hermes, which has no such directory).
-HISTORY_DIR_SHELL = (
-    "\"$HOME/.claude/projects/$(pwd -P | LC_ALL=C sed 's/[^A-Za-z0-9]/-/g')\""
-)
-
-
 #: Lazily-opened Hermes ``SessionDB``. ``None`` both before first use and when
 #: ``hermes_state`` cannot be imported (see module docstring).
 _db_instance = None

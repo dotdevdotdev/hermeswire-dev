@@ -180,4 +180,3 @@ class TestRetainedEncoding:
     def test_encode_project_path_is_still_exported_for_importers(self):
         """``encode_project_path`` survives for auth_expired/handoff/session_cli."""
         assert history.encode_project_path("/Users/dev/my-app") == "-Users-dev-my-app"
-        assert history.HISTORY_DIR_SHELL  # non-empty, retained for the same reason

@@ -77,7 +77,7 @@ def _managed_global_skills() -> list[str]:
 
     Only `wiki` is global — the wiki store lives at ~/.agentwire/wiki/ and is
     usable from any session. The agentwire-* skills stay project-scoped (shipped
-    via the repo's .claude/skills/, discovered per-project) and are NOT installed
+    via the repo's .hermes/skills/, discovered per-project) and are NOT installed
     here. Third-party skills (cua-driver, shadcn-ui, …) are never touched.
     """
     return ["wiki"]

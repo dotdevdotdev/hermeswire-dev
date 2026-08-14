@@ -264,7 +264,7 @@ agentwire history resume <id>   # resume session (always forks)
 agentwire handoff init [--title hint]      # create bundle dir + pre-filled ai-handoff.md template
 agentwire handoff render <bundle-dir>      # render show-the-story.html from ai-handoff.md
 agentwire handoff list                     # list past bundles
-# Inside a Claude Code session, prefer the /handoff slash command — it walks the
+# Inside a Hermes Agent session, prefer the /handoff-bundle skill — it walks the
 # agent through filling the template using full conversation context (free, no
 # fresh LLM call). Outputs land in ~/.agentwire/artifacts/handoff-<slug>/.
 
@@ -287,8 +287,8 @@ agentwire safety check "cmd"    # test if command would be blocked
 agentwire safety status         # show pattern counts and recent blocks
 agentwire safety logs           # query audit logs
 agentwire safety install        # install damage control hooks
-agentwire hooks install         # install permission hook (Claude Code only)
-agentwire hooks uninstall       # remove permission hook (Claude Code only)
+agentwire hooks install         # install agentwire-owned hooks + global skills (Hermes Agent)
+agentwire hooks uninstall       # remove agentwire-owned hooks (Hermes Agent)
 agentwire hooks status          # check hook installation status
 agentwire network status        # complete network health check
 agentwire doctor                # auto-diagnose and fix issues

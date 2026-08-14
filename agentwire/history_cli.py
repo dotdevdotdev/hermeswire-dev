@@ -2,9 +2,9 @@
 
 Lists/shows past conversations (local only) and resumes one. A resume routes
 through ``build_agent_command(..., resume_session_id=...)``, which emits
-``hermes chat --cli --resume <id>``, and through ``resolve_roles`` with the
-derived kind so a zero-config resume gets the same orchestrator etiquette a
-fresh ``agentwire new`` would (#316).
+``hermes chat --cli --source tool --resume <id>``, and through
+``resolve_roles`` with the derived kind so a zero-config resume gets the same
+orchestrator etiquette a fresh ``agentwire new`` would (#316).
 """
 
 from __future__ import annotations

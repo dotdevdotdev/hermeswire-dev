@@ -2,7 +2,7 @@
 
 Handles:
 - Task context files (coordinate between dispatch and any completion hook)
-- System summary prompt (ask agent to write summary)
+- Launch-prompt summary instruction (agent writes the summary as its final action)
 - Summary file parsing (extract status from YAML front matter)
 - Completion signals (headless process exit and/or summary file)
 """
@@ -116,8 +116,15 @@ class SummaryResult(NamedTuple):
     raw_content: str  # Full file content
 
 
-# System prompt sent after task completion to get structured summary
-SYSTEM_SUMMARY_PROMPT = """Write a task summary to {summary_file} in YAML front matter format:
+# The "write a summary" instruction is part of the LAUNCH prompt now — an
+# appended "## When done" section — rather than a second pass injected after
+# the agent goes idle. The agent writes the summary as its final action;
+# headless `hermes -z` then exits and the wrapper reads the file back. There is
+# no idle timer to hang a second prompt off, so the two-pass SYSTEM_SUMMARY_PROMPT
+# dance is gone.
+SUMMARY_SECTION = """## When done, write a summary to {summary_file}
+
+As your final action, write a task summary to `{summary_file}` in YAML front matter format:
 
 ```markdown
 ---
@@ -476,15 +483,35 @@ def _auth_summary(detail: dict) -> str:
 
 
 def get_summary_prompt(summary_file: str) -> str:
-    """Get the system summary prompt with the filename filled in.
+    """Get the launch-prompt summary instruction with the filename filled in.
+
+    This is the "## When done" section appended to the task prompt (not a
+    second-pass prompt injected after idle).
 
     Args:
         summary_file: Path to the summary file to create
 
     Returns:
-        Complete prompt string
+        Complete prompt section string
     """
-    return SYSTEM_SUMMARY_PROMPT.format(summary_file=summary_file)
+    return SUMMARY_SECTION.format(summary_file=summary_file)
+
+
+def append_summary_instruction(prompt: str, summary_file: str) -> str:
+    """Append the "## When done" summary instruction to a task prompt.
+
+    The agent writes the summary as its final action; the headless wrapper
+    (process exit) or the session-end observer (context cleanup) then signals
+    completion.
+
+    Args:
+        prompt: The expanded task prompt.
+        summary_file: Path (relative or absolute) to the summary file.
+
+    Returns:
+        The prompt with the summary instruction appended.
+    """
+    return f"{prompt.rstrip()}\n\n{SUMMARY_SECTION.format(summary_file=summary_file)}"
 
 
 def parse_summary_file(path: Path) -> SummaryResult:
@@ -492,7 +519,7 @@ def parse_summary_file(path: Path) -> SummaryResult:
 
     Supports two formats:
 
-    1. YAML front matter (from Python SYSTEM_SUMMARY_PROMPT):
+    1. YAML front matter (from the SUMMARY_SECTION launch-prompt instruction):
         ---
         status: complete
         summary: Did the thing

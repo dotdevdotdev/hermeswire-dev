@@ -229,7 +229,7 @@ class TestLoadBearingIsDerivedOnce:
             return out
 
         checked = 0
-        for path in (root / ".claude" / "skills").rglob("SKILL.md"):
+        for path in (root / ".hermes" / "skills").rglob("SKILL.md"):
             for run, named in _named(path.read_text()):
                 checked += 1
                 assert named == kinds, (
