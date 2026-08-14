@@ -1437,7 +1437,7 @@ def cmd_doctor(args) -> int:
         # config is user preference, not a broken install). Only checkable
         # when a tmux server is running.
         for opt, why in (
-            ("focus-events", "Claude Code shows a setup tip on every session start"),
+            ("focus-events", "the agent shows a setup tip on every session start"),
             ("mouse", "no mouse scroll or text selection in agent panes"),
         ):
             val = _tmux_global_option(opt)
@@ -1464,13 +1464,13 @@ def cmd_doctor(args) -> int:
         print("     macOS: brew install ffmpeg")
         print("     Ubuntu: sudo apt install ffmpeg")
 
-    # Check Claude Code (optional)
-    claude_path = shutil.which("claude")
-    if claude_path:
-        print(f"  [ok] claude: {claude_path}")
+    # Check Hermes Agent (optional)
+    hermes_path = shutil.which("hermes")
+    if hermes_path:
+        print(f"  [ok] hermes: {hermes_path}")
     else:
-        print("  [..] claude: not found (optional, use --bare sessions)")
-        print("     Install: https://github.com/anthropics/claude-code")
+        print("  [..] hermes: not found (optional, use --bare sessions)")
+        print("     Install: curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash")
 
     # 3. Check AgentWire scripts
     print("\nChecking AgentWire scripts...")
