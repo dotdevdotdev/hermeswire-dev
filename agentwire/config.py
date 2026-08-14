@@ -26,9 +26,9 @@ def _get_default_agent_command() -> str:
     """Get the default agent command.
 
     Returns:
-        Default command string for Claude Code.
+        Default command string for Hermes Agent.
     """
-    return "claude --dangerously-skip-permissions"
+    return "hermes --yolo"
 
 
 def _expand_path(path: str | Path | None) -> Path | None:

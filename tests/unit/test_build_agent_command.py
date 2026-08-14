@@ -13,12 +13,7 @@ from agentwire.roles import RoleConfig
 class TestBuildAgentCommand:
     @pytest.fixture(autouse=True)
     def _prompts_dir(self, tmp_path, monkeypatch):
-        """Keep role prompts out of the real ~/.agentwire/role-prompts.
-
-        Patching CONFIG_DIR (not a role-prompts path directly) is the whole
-        point of #884's `role_prompts_dir()`: the store now FOLLOWS this
-        repo's one isolation seam instead of being computed at import.
-        """
+        """Keep role prompts out of the real ~/.agentwire/role-prompts."""
         monkeypatch.setattr("agentwire.core.CONFIG_DIR", tmp_path)
         self.prompts_dir = tmp_path / "role-prompts"
 
@@ -31,23 +26,22 @@ class TestBuildAgentCommand:
         cmd = self._build("bare")
         assert cmd.command == ""
         assert cmd.role_prompt_path is None
-        # No claude process means no conversation to identify (#871).
         assert cmd.conversation_id is None
         assert cmd.posture == "bare"
 
     def test_bypass(self):
         cmd = self._build("bypass")
-        assert "claude" in cmd.command
-        assert "--dangerously-skip-permissions" in cmd.command
+        assert cmd.command.startswith("hermes chat --cli")
+        assert "--yolo" in cmd.command
 
     def test_prompted(self):
+        # "prompted" -> Hermes default approvals, no --yolo bypass.
         cmd = self._build("prompted")
-        assert "claude" in cmd.command
-        assert "--dangerously-skip-permissions" not in cmd.command
+        assert cmd.command.startswith("hermes chat --cli")
+        assert "--yolo" not in cmd.command
         assert "--tools" not in cmd.command
 
     def test_restricted_rejected(self):
-        # restricted/readonly were dropped (#729) — no longer valid postures
         import pytest
 
         from agentwire.project_config import resolve_posture
@@ -57,58 +51,55 @@ class TestBuildAgentCommand:
             resolve_posture("readonly")
 
     def test_auto(self):
+        # auto and bypass both rely on AgentWire's damage-control hooks for
+        # safety, so both map to --yolo (issue #3).
         cmd = self._build("auto")
-        assert "--enable-auto-mode" in cmd.command
-        assert "--permission-mode" in cmd.command and "auto" in cmd.command
-        # auto injects the core tool-allows so the classifier is bypassed for the safe set
-        assert "--allowedTools" in cmd.command
+        assert cmd.command.startswith("hermes chat --cli")
+        assert "--yolo" in cmd.command
 
-    def test_resume_inserts_flags_after_claude(self):
-        """The conversation flags now come from a shell array the prelude
-        fills in at launch (#901), so they still land first — just resolved
-        at run time rather than baked in. See test_launch_line_reentry.py."""
+    def test_resume_maps_to_hermes_resume(self):
         cmd = self._build("bypass", resume_session_id="abc-123")
-        assert '--resume "abc-123" --fork-session' in cmd.command
-        assert 'claude "${aw_flags[@]}"' in cmd.command
-        # posture flags still present alongside resume
-        assert "--dangerously-skip-permissions" in cmd.command
+        assert "--resume abc-123" in cmd.command
+        assert cmd.command.startswith("hermes chat --cli")
+        assert "--yolo" in cmd.command
 
-    def test_resume_carries_auto_tool_allows(self):
-        # The old resume path dropped auto's tool-allows; the unified builder keeps them.
+    def test_resume_carries_posture_flags(self):
         fresh = self._build("auto")
         resumed = self._build("auto", resume_session_id="xyz")
-        assert "--allowedTools" in resumed.command
-        assert "--enable-auto-mode" in resumed.command
-        assert "--enable-auto-mode" in fresh.command
+        assert "--yolo" in resumed.command
+        assert "--yolo" in fresh.command
 
     def test_with_model_override(self):
         cmd = self._build("bypass", model="haiku")
-        assert "--model haiku" in cmd.command
+        assert "-m haiku" in cmd.command
 
     def test_with_roles_tools(self):
         roles = [RoleConfig(name="test", tools=["Bash", "Read"])]
         cmd = self._build("bypass", roles=roles)
-        assert "--tools" in cmd.command
+        assert "-t" in cmd.command
         assert "Bash" in cmd.command
+        assert "Read" in cmd.command
 
     def test_with_roles_instructions(self):
+        # Hermes has no --append-system-prompt (issue #15): the durable file is
+        # still written for the record, but the flag is no longer injected.
         roles = [RoleConfig(name="test", instructions="Be helpful")]
         cmd = self._build("bypass", roles=roles)
-        assert "--append-system-prompt" in cmd.command
+        assert "--append-system-prompt" not in cmd.command
         assert cmd.role_prompt_path is not None
         assert Path(cmd.role_prompt_path).read_text() == "Be helpful"
 
     def test_roles_apply_on_every_posture(self):
-        """Role tools/instructions apply unconditionally now — no tool-locking posture."""
         roles = [RoleConfig(name="test", tools=["Read"], instructions="Hello")]
         for posture in ("bypass", "prompted", "auto"):
             cmd = self._build(posture, roles=roles)
-            assert "--append-system-prompt" in cmd.command
-            assert "--tools" in cmd.command
+            assert cmd.role_prompt_path is not None
+            assert "-t Read" in cmd.command
 
 
 class TestConversationIdentity:
-    """agentwire mints the conversation UUID rather than discovering it (#871)."""
+    """Hermes mints its own session id (issue #4); agentwire's local
+    conversation_id remains only as a durable record key."""
 
     @pytest.fixture(autouse=True)
     def _prompts_dir(self, tmp_path, monkeypatch):
@@ -120,40 +111,29 @@ class TestConversationIdentity:
         return build_agent_command(posture, roles=roles,
                                    resume_session_id=resume_session_id)
 
-    def test_session_id_flag_carries_a_valid_uuid(self):
+    def test_hermes_mints_its_own_session_id(self):
+        # No --session-id/--fork-session flags: Hermes manages its own store.
         cmd = self._build()
-        assert f'--session-id "{cmd.conversation_id}"' in cmd.command
-        # `claude --session-id` rejects anything that isn't a real UUID.
+        assert "--session-id" not in cmd.command
+        assert "--fork-session" not in cmd.command
+        # The local record key is still minted for metadata/recovery.
         assert uuid.UUID(cmd.conversation_id)
 
-    def test_the_id_is_not_passed_unconditionally(self):
-        """`--session-id` is single-use, and the line it rides in is stored to
-        be RE-RUN — so the flag is chosen by the shell against the transcript,
-        never fixed at build time (#901)."""
+    def test_fresh_build_has_no_resume_flag(self):
         cmd = self._build()
-        assert f"claude --session-id {cmd.conversation_id}" not in cmd.command
-        assert f'--resume "{cmd.conversation_id}"' in cmd.command
+        assert "--resume" not in cmd.command
 
     def test_every_build_mints_a_fresh_id(self):
-        """`--session-id` HARD-ERRORS on a collision within the launch cwd
-        ("Session ID <id> is already in use."), so reuse would refuse to boot.
-        """
         ids = {self._build().conversation_id for _ in range(20)}
         assert len(ids) == 20
 
-    def test_resume_forks_into_an_id_we_chose(self):
-        """`--resume <old> --fork-session --session-id <new>` composes, so the
-        forked conversation is recorded rather than guessed."""
+    def test_resume_passes_the_hermes_id_through(self):
         cmd = self._build(resume_session_id="old-conversation")
-        assert (
-            f'--resume "old-conversation" --fork-session '
-            f'--session-id "{cmd.conversation_id}"'
-        ) in cmd.command
+        assert "--resume old-conversation" in cmd.command
         assert cmd.resumed_from == "old-conversation"
         assert cmd.conversation_id != "old-conversation"
 
     def test_posture_and_role_names_ride_along(self):
-        """Recorded to REGENERATE the system prompt, not merely reference it."""
         roles = [RoleConfig(name="worker", instructions="A"),
                  RoleConfig(name="soul", instructions="B")]
         cmd = self._build("auto", roles=roles)
@@ -161,8 +141,6 @@ class TestConversationIdentity:
         assert cmd.roles == ["worker", "soul"]
 
     def test_role_prompt_is_durable_and_keyed_by_conversation(self):
-        """NOT /var/folders: macOS GCs that, and the launch line reads the file
-        BY PATH, so a GC'd prompt relaunches the session with an empty one."""
         roles = [RoleConfig(name="test", instructions="Be a worker")]
         cmd = self._build(roles=roles)
         path = Path(cmd.role_prompt_path)
@@ -171,10 +149,6 @@ class TestConversationIdentity:
         assert path.read_text() == "Be a worker"
 
     def test_role_prompt_is_owner_only(self):
-        """A permissions REGRESSION is what this pins: the tempfile this store
-        replaced was 0600 and transient; this one is permanent and holds
-        complete system-prompt text. It sits next to `~/.agentwire/.env`
-        (chmod 600 by convention) and must match that posture."""
         roles = [RoleConfig(name="test", instructions="secret-ish context")]
         cmd = self._build(roles=roles)
         path = Path(cmd.role_prompt_path)
@@ -182,8 +156,6 @@ class TestConversationIdentity:
         assert stat.S_IMODE(self.prompts_dir.stat().st_mode) == 0o700
 
     def test_permissive_umask_cannot_widen_the_mode(self):
-        """umask only CLEARS bits, so a create-time mode is a request, not a
-        guarantee — the writer must state the mode outright."""
         old = os.umask(0o000)
         try:
             roles = [RoleConfig(name="test", instructions="x")]
@@ -194,9 +166,6 @@ class TestConversationIdentity:
         assert stat.S_IMODE(self.prompts_dir.stat().st_mode) == 0o700
 
     def test_pre_existing_world_readable_paths_heal_on_write(self):
-        """Directories written before this rule are already on disk at 0755,
-        and neither umask nor mkdir/open mode touches an existing path — so
-        the fix has to repair them rather than only apply going forward."""
         self.prompts_dir.mkdir(parents=True, exist_ok=True)
         os.chmod(self.prompts_dir, 0o755)
         stale = self.prompts_dir / "stale.txt"
@@ -211,12 +180,12 @@ class TestConversationIdentity:
         assert stat.S_IMODE(stale.stat().st_mode) == 0o600
         assert stat.S_IMODE(self.prompts_dir.stat().st_mode) == 0o700
 
-    def test_append_system_prompt_stays_last(self):
-        """Multiline content can break any flag that follows it."""
+    def test_append_system_prompt_is_not_emitted(self):
+        # Hermes has no --append-system-prompt; injection is issue #15.
         roles = [RoleConfig(name="test", tools=["Read"], instructions="line1\nline2")]
         cmd = self._build(roles=roles)
-        assert cmd.command.index("--session-id") < cmd.command.index("--append-system-prompt")
-        assert cmd.command.endswith(f'--append-system-prompt "$(<{cmd.role_prompt_path})"')
+        assert "--append-system-prompt" not in cmd.command
+        assert cmd.role_prompt_path is not None
 
 
 class TestMirrorRolePromptRemote:
@@ -250,9 +219,11 @@ class TestMirrorRolePromptRemote:
 
         remote = f"$HOME/.agentwire/role-prompts/{agent.conversation_id}.txt"
         assert local not in rewritten
-        assert remote in rewritten
         # The RECORD must name where the prompt actually lives for that session.
         assert agent.role_prompt_path == remote
+        # Issue #15: the launch line no longer embeds the prompt path
+        # (--append-system-prompt is gone), so the command itself is unchanged.
+        assert rewritten == agent.command
 
     def test_remote_write_is_owner_only(self):
         """`cat > file` on the far side inherits the remote's umask and leaves

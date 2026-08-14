@@ -143,29 +143,25 @@ class TestRestartLaunch:
         assert run() == 0
         (name, path, _env, cmd) = launched.launch[0]
         assert name == "sess" and path == str(store.cwd)
-        # The flags are resolved by the shell at launch (#901), so they ride
-        # in the prelude rather than immediately after `claude`.
-        assert '--resume "cid-1" --fork-session --session-id ' in cmd
-        assert 'claude "${aw_flags[@]}"' in cmd
-        assert "--dangerously-skip-permissions" in cmd
+        # Phase 1: the recorded id is passed straight to Hermes --resume
+        # (the --session-id/--fork-session machinery is gone, issue #4).
+        assert "--resume cid-1" in cmd
+        assert cmd.startswith("hermes chat --cli")
+        assert "--yolo" in cmd
         assert launched.killed == ["sess"]
 
-    def test_mints_a_fresh_session_id_never_reuses_the_recorded_one(self, store, launched):
-        """The recorded id goes to ``--resume`` only.
+    def test_no_session_id_flag_is_minted(self, store, launched):
+        """Hermes mints its own session id; agentwire no longer passes one.
 
-        Re-passing it as ``--session-id`` is fatal ("already in use") and drops
-        the pane to a bare shell — the exact zombie the guarded launch exists
-        to prevent. Restart regenerates the line rather than replaying the
-        stored one for the same reason (#901 made the stored line itself
-        re-runnable, which is a different guarantee).
+        The recorded id rides ``--resume`` only (issue #4 makes it a Hermes id).
         """
         write_history(store, store.cwd, "cid-1")
         record(cwd=store.cwd, ids=["cid-1"])
 
         run()
         cmd = launched.launch[0][3]
-        minted = cmd.split('--session-id "')[1].split('"')[0]
-        assert minted != "cid-1"
+        assert "--session-id" not in cmd
+        assert "--resume cid-1" in cmd
 
     def test_regenerates_flags_rather_than_replaying_a_stored_launch_line(
         self, store, launched
@@ -177,15 +173,15 @@ class TestRestartLaunch:
 
         run()
         cmd = launched.launch[0][3]
-        assert "--enable-auto-mode" in cmd  # regenerated from the recorded posture
-        assert "--dangerously-skip-permissions" not in cmd
+        assert "--yolo" in cmd  # regenerated from the recorded posture (auto -> yolo)
+        assert "claude" not in cmd
 
     def test_carries_the_recorded_model_override(self, store, launched):
         write_history(store, store.cwd, "cid-1")
         record(cwd=store.cwd, ids=["cid-1"], model="haiku")
 
         run()
-        assert "--model haiku" in launched.launch[0][3]
+        assert "-m haiku" in launched.launch[0][3]
 
     def test_appends_the_new_conversation_to_the_chain(self, store, launched):
         from agentwire.core import load_session_metadata
@@ -241,12 +237,10 @@ class TestDegradedRestart:
 
         assert run() == 0
         cmd = launched.launch[0][3]
-        # The RECORDED id is never resumed. (The line still carries a
-        # `--resume <new-id>` branch — that is #901's re-entry case, keyed on
-        # the id this launch mints, not on the dead one.)
-        assert '--resume "cid-1"' not in cmd
-        assert "--fork-session" not in cmd
-        assert "--session-id" in cmd
+        # The RECORDED id is never resumed; Hermes mints its own id (no
+        # --session-id/--fork-session flags exist anymore, issue #4).
+        assert "--resume" not in cmd
+        assert "--session-id" not in cmd
         out = capsys.readouterr().out
         assert "No history found" in out and "role intact" in out
 
