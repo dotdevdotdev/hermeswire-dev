@@ -1,356 +1,258 @@
-"""An expired Claude login is detected, named, escalated once, and gated (#906).
+"""Hermes provider auth failure is detected, named, escalated once, gated (#13).
 
-Every fixture here is built from the REAL 2026-08-04 incident transcripts, not
-from a hand-written string that happens to contain "Login expired". That is
-deliberate and it is the point: four bugs shipped past a fully green suite in
-one day (#901, #898, #902, #905) because the FIXTURE decided what the suite
-could see. The specific traps this file is built to fall into on purpose:
+The original (#906) keyed on a Claude transcript's ``error: authentication_failed``
+field. Hermes has no transcript and no ``/login`` — auth is provider-based
+(``hermes auth``, ``~/.hermes/auth.json``), and failure surfaces as a structured
+``AuthError(provider=…, code=…, relogin_required=…)`` on a ``hermes -z``/``-q``
+stderr (exit 1) or via ``hermes auth status <provider>``.
 
-* ``AUTH_ROW`` is the verbatim shape of the assistant row that ended
-  ``memory-manager``'s run — ``model: "<synthetic>"``, zero tokens,
-  ``error: "authentication_failed"``, ``isApiErrorMessage: true``. A detector
-  written against a prettier invented row would pass and still miss it.
-* ``MINIMAL_METADATA`` is the verbatim shape of ``memory-manager``'s session
-  record: ``created_by`` / ``created_at`` / ``created_via`` / ``role`` and
-  NOTHING else. It predates #871's enrichment, so it has no
-  ``conversation_ids`` — a detector tested only against modern metadata could
-  not have seen the very incident it was written for.
-* ``ASSISTANT_TALKING_ABOUT_IT`` is an ordinary assistant turn whose TEXT
-  contains the rendered phrase. Any pane-text or substring detector matches
-  it. It must not match here, because a false positive gates the whole fleet.
-* ``NOT_LOGGED_IN_ROW`` is the SECOND real outage (2026-07-07), verbatim: the
-  same ``error`` value rendered as different user-facing text on a different
-  Claude Code version. #867's own fixtures could never have produced it, and
-  it is the direct evidence for keying on the structured field.
-* ``RATE_LIMIT_ROW`` is a real rate-limit refusal, verbatim. It shares every
-  structural property with an auth refusal, so it reaches the predicate —
-  only the error-value check stops it. There are 16 of these on disk against
-  6 auth rows, so this is the likelier of the two to be met in the wild.
+The fixtures here are built from the Hermes *field shape*, not a hand-written
+rendered phrase, for the same reason the original fixtures were verbatim: a
+detector written against a prettier invented string would pass and still miss
+the real thing. The traps this file is built to fall into on purpose:
+
+* ``AUTH_ERROR_STDERR`` is the shape of a hard failure — ``relogin_required``
+  and a keyed-on ``code``. A detector matching a fixed rendered phrase would
+  silently stop working on a rewording.
+* ``TRANSIENT_STDERR`` is ``codex_rate_limited`` — structurally identical,
+  reaches the predicate, and only the code check stops it from gating the
+  whole machine on a transient blip.
+* ``HARD_AUTH_CODES`` vs ``TRANSIENT_CODES``: the whole argument for keying on
+  the structured code, not the text.
 """
 
-import json
-import time
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 
 from agentwire import auth_expired
 
-# --------------------------------------------------------------------------
-# Fixtures taken from the real incident
-# --------------------------------------------------------------------------
+# The shape of a hard Hermes auth failure on `hermes -z` stderr (exit 1).
+AUTH_ERROR_STDERR = (
+    "hermes -z: agent failed: AuthError(message='nous: subscription expired', "
+    "provider='nous', code='subscription_expired', relogin_required=True)"
+)
 
-# Verbatim shape of the row that ended memory-manager's 2026-08-04 run
-# (~/.claude/projects/-Users-dotdev-projects-agentwire-dev/4f90262b-….jsonl).
-AUTH_ROW = {
-    "parentUuid": "1cc75620-341b-46e1-8ec0-44a27660a339",
-    "isSidechain": False,
-    "type": "assistant",
-    "uuid": "558c5a0c-eb20-4744-8bca-d77928f1bb35",
-    "timestamp": "2026-08-04T08:00:20.800Z",
-    "message": {
-        "id": "f61807b3-3fb2-4e49-b82f-9e1acb9f135c",
-        "model": "<synthetic>",
-        "role": "assistant",
-        "stop_reason": "stop_sequence",
-        "type": "message",
-        "usage": {
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "cache_creation_input_tokens": 0,
-            "cache_read_input_tokens": 0,
-        },
-        "content": [{"type": "text", "text": "Login expired · Please run /login"}],
-    },
-    "error": "authentication_failed",
-    "isApiErrorMessage": True,
-    "cwd": "/Users/dotdev/projects/agentwire-dev",
-    "sessionId": "4f90262b-da59-4ba5-925a-859cdf5f7a30",
-    "version": "2.1.221",
-    "gitBranch": "main",
-}
+# A transient rate-limit — structurally identical, must NOT gate.
+TRANSIENT_STDERR = (
+    "hermes -z: agent failed: AuthError(message='rate limited', "
+    "provider='nous', code='codex_rate_limited', relogin_required=False)"
+)
 
-USER_ROW = {
-    "type": "user",
-    "timestamp": "2026-08-04T08:00:20.785Z",
-    "cwd": "/Users/dotdev/projects/agentwire-dev",
-    "message": {"role": "user", "content": "You are the nightly memory manager. …"},
-}
-
-TURN_DURATION_ROW = {
-    "type": "system",
-    "subtype": "turn_duration",
-    "durationMs": 16,
-    "messageCount": 5,
-    "timestamp": "2026-08-04T08:00:20.801Z",
-}
-
-HEALTHY_ROW = {
-    "type": "assistant",
-    "timestamp": "2026-08-04T09:00:00.000Z",
-    "message": {
-        "model": "claude-opus-5",
-        "role": "assistant",
-        "content": [{"type": "text", "text": "Reading the audit output now."}],
-        "usage": {"input_tokens": 1200, "output_tokens": 40},
-    },
-}
-
-# The false-positive class a pane-text detector buys: an agent REPORTING on the
-# incident. The rendered phrase is right there in the text.
-ASSISTANT_TALKING_ABOUT_IT = {
-    "type": "assistant",
-    "timestamp": "2026-08-04T19:00:00.000Z",
-    "message": {
-        "model": "claude-opus-5",
-        "role": "assistant",
-        "content": [{
-            "type": "text",
-            "text": ("The run died because Claude answered "
-                     "'Login expired · Please run /login' with "
-                     "error: authentication_failed."),
-        }],
-    },
-}
-
-# The SECOND real outage, 2026-07-07 — same `error`, DIFFERENT user-facing
-# text ("Not logged in", not "Login expired"). Verbatim off disk, Claude Code
-# 2.1.201 vs 2.1.221 for the 08-04 rows. This is the fixture the 08-04
-# incident could never have produced, and it is the whole argument for keying
-# on the structured `error` field instead of the rendered string: a detector
-# matching "Login expired" would silently stop working on a rewording, which
-# has already happened once in this codebase's own history.
-NOT_LOGGED_IN_ROW = {
-    "type": "assistant",
-    "uuid": "d102699e-c812-415c-9609-307fef8ef94f",
-    "timestamp": "2026-07-07T21:34:28.006Z",
-    "message": {
-        "model": "<synthetic>",
-        "role": "assistant",
-        "stop_reason": "stop_sequence",
-        "type": "message",
-        "usage": {"input_tokens": 0, "output_tokens": 0},
-        "content": [{"type": "text", "text": "Not logged in · Please run /login"}],
-    },
-    "error": "authentication_failed",
-    "isApiErrorMessage": True,
-    "cwd": "/Users/dotdev/projects/documentscribe",
-    "sessionId": "02315590-969e-4621-832f-c63b6aa8211e",
-    "version": "2.1.201",
-}
-
-# A REAL rate-limit refusal, verbatim. Structurally identical to the auth rows
-# — ``type: assistant``, ``model: <synthetic>``, zero tokens,
-# ``isApiErrorMessage: true`` — so it reaches the predicate and only the
-# error-value check stops it. There are 16 of these on disk against 6 auth
-# rows; treating them alike would gate the entire machine on a transient blip
-# that the usage-limit subsystem already handles correctly.
-RATE_LIMIT_ROW = {
-    "type": "assistant",
-    "uuid": "28754c4f-e6eb-45b4-ad96-2a2f1a89693b",
-    "timestamp": "2026-07-18T18:00:40.382Z",
-    "message": {
-        "model": "<synthetic>",
-        "role": "assistant",
-        "stop_reason": "stop_sequence",
-        "type": "message",
-        "usage": {"input_tokens": 0, "output_tokens": 0},
-        "content": [{
-            "type": "text",
-            "text": "You've hit your session limit · resets 4:40pm (America/Toronto)",
-        }],
-    },
-    "error": "rate_limit",
-    "isApiErrorMessage": True,
-}
-
-# A transient upstream error. Retryable — must NOT be treated as an expired
-# login, or a blip would gate the whole fleet for OUTAGE_TTL.
-OVERLOADED_ROW = {
-    "type": "assistant",
-    "timestamp": "2026-08-04T08:00:20.800Z",
-    "message": {"model": "<synthetic>", "role": "assistant",
-                "content": [{"type": "text", "text": "API Error: overloaded"}]},
-    "error": "overloaded",
-    "isApiErrorMessage": True,
-}
-
-# memory-manager's actual metadata.json on 2026-08-05 — no conversation_ids.
-MINIMAL_METADATA = {
-    "created_by": "agentwire-scheduler",
-    "created_at": "2026-08-05T08:00:10.648562+00:00",
-    "created_via": "new",
-    "role": "orchestrator",
-}
-
-HUNG_RUN = [
-    {"type": "mode", "mode": "normal"},
-    {"type": "permission-mode", "permissionMode": "bypassPermissions"},
-    {"type": "file-history-snapshot"},
-    USER_ROW,
-    {"type": "attachment", "attachment": {"type": "deferred_tools_delta"}},
-    AUTH_ROW,
-    TURN_DURATION_ROW,
-    {"type": "last-prompt", "lastPrompt": "You are the nightly memory manager. …"},
-]
-
-
-def write_transcript(path: Path, rows: list[dict]) -> Path:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
-    return path
+# A plain upstream overload — not auth at all.
+OVERLOADED_STDERR = "hermes -z: agent failed: provider returned 500 (overloaded)"
 
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    """Isolate CONFIG_DIR and Claude's projects dir into tmp_path."""
+    """Isolate CONFIG_DIR into tmp_path (the auth-expired state lives there)."""
     monkeypatch.setattr("agentwire.core.CONFIG_DIR", tmp_path / "agentwire")
-    monkeypatch.setattr("agentwire.history.PROJECTS_DIR", tmp_path / "projects")
     return tmp_path
 
 
-# --------------------------------------------------------------------------
-# Detection, against the real row
-# --------------------------------------------------------------------------
-
-
-class TestDetectsTheRealFailingState:
-    def test_the_real_08_04_transcript_fires(self, tmp_path):
-        """The load-bearing assertion: the exact run that cost 7217s is seen."""
-        p = write_transcript(tmp_path / "4f90262b.jsonl", HUNG_RUN)
-        assert auth_expired.transcript_auth_failure(p) is True
-
-    def test_recovery_needs_no_reset_mechanism(self, tmp_path):
-        """A later real turn makes it healthy — the documentscribe shape.
-
-        Two of the four 08-04 transcripts auth-failed MID-file and recovered.
-        Keying on 'does the file contain an auth failure' would gate the fleet
-        on every one of them, forever.
-        """
-        p = write_transcript(tmp_path / "recovered.jsonl", HUNG_RUN + [HEALTHY_ROW])
-        assert auth_expired.transcript_auth_failure(p) is False
-
-    def test_an_agent_describing_the_error_is_not_the_error(self, tmp_path):
-        """The false positive a pane/substring detector cannot avoid."""
-        p = write_transcript(tmp_path / "talking.jsonl", [ASSISTANT_TALKING_ABOUT_IT])
-        assert auth_expired.transcript_auth_failure(p) is False
-
-    def test_the_2026_07_07_outage_with_different_wording_also_fires(self, tmp_path):
-        """Field-proven against a SECOND outage, not just #867's.
-
-        Same `error: authentication_failed`, different rendered text ("Not
-        logged in" vs "Login expired") and a different Claude Code version.
-        The 08-04 fixtures alone could not have shown this — it is the direct
-        evidence that keying on the structured field survives a rewording,
-        which has already happened once in this history.
-        """
-        p = write_transcript(tmp_path / "0707.jsonl", [NOT_LOGGED_IN_ROW])
-        assert auth_expired.transcript_auth_failure(p) is True
-
-    def test_a_real_rate_limit_refusal_does_not_gate_the_machine(self, tmp_path):
-        """The near-miss: structurally identical, and 16 of them on disk.
-
-        `type: assistant`, `model: <synthetic>`, zero tokens,
-        `isApiErrorMessage: true` — every property except the error value is
-        shared with an auth refusal, so this row DOES reach the predicate.
-        Only the error check stops a transient rate limit (which usage-limit
-        recovery already handles) from gating every scheduled task.
-        """
-        p = write_transcript(tmp_path / "ratelimit.jsonl", [RATE_LIMIT_ROW])
-        assert auth_expired.transcript_auth_failure(p) is False
-
-    def test_other_api_errors_are_not_widened_into_this_one(self, tmp_path):
-        p = write_transcript(tmp_path / "overloaded.jsonl", [OVERLOADED_ROW])
-        assert auth_expired.transcript_auth_failure(p) is False
-
-    def test_no_assistant_turn_at_all(self, tmp_path):
-        p = write_transcript(tmp_path / "empty.jsonl", [USER_ROW])
-        assert auth_expired.transcript_auth_failure(p) is False
-
-    def test_missing_file_is_not_an_outage(self, tmp_path):
-        assert auth_expired.transcript_auth_failure(tmp_path / "nope.jsonl") is False
-
-    def test_tail_read_survives_a_multi_megabyte_transcript(self, tmp_path):
-        """The real files are 2-11MB; only the tail can hold the last turn.
-
-        Also proves the truncated first line of a mid-file read is dropped
-        rather than exploding the scan.
-        """
-        filler = {"type": "assistant", "message": {"role": "assistant",
-                  "content": [{"type": "text", "text": "x" * 400}]}}
-        rows = [filler] * 3000 + [AUTH_ROW]
-        p = write_transcript(tmp_path / "big.jsonl", rows)
-        assert p.stat().st_size > auth_expired.TAIL_BYTES
-        assert auth_expired.transcript_auth_failure(p) is True
+@pytest.fixture
+def ok_email():
+    ok = SimpleNamespace(success=True, error=None)
+    with patch("agentwire.channels.email.send_email", return_value=ok):
+        yield
 
 
 # --------------------------------------------------------------------------
-# Locating the transcript — both routes, including the incident's own shape
+# Classification — the hard/transient split
 # --------------------------------------------------------------------------
 
 
-class TestLocatingTheTranscript:
-    def _place(self, env, cwd: str, conv_id: str, rows: list[dict]) -> Path:
-        from agentwire.history import encode_project_path
+class TestAuthErrorClassification:
+    def test_every_hard_code_gates(self):
+        for code in auth_expired.HARD_AUTH_CODES:
+            assert auth_expired.auth_error_is_hard({"code": code}) is True
 
-        return write_transcript(
-            env / "projects" / encode_project_path(cwd) / f"{conv_id}.jsonl", rows
-        )
+    def test_relogin_required_is_hard_even_with_unknown_code(self):
+        assert auth_expired.auth_error_is_hard(
+            {"code": "something_new", "relogin_required": True}) is True
 
-    def test_recorded_conversation_id_addresses_the_file(self, env):
-        from agentwire.core import store_session_metadata
+    def test_transient_codes_do_not_gate(self):
+        for code in auth_expired.TRANSIENT_CODES:
+            assert auth_expired.auth_error_is_hard({"code": code}) is False
 
-        cwd = "/Users/dotdev/projects/agentwire-dev"
-        self._place(env, cwd, "conv-1", HUNG_RUN)
-        store_session_metadata("memory-manager", {
-            "cwd_at_launch": cwd, "conversation_ids": ["conv-1"],
-        })
-        from agentwire.history import encode_project_path
+    def test_rate_limit_does_not_gate(self):
+        assert auth_expired.auth_error_is_hard({"code": "codex_rate_limited"}) is False
 
-        expected = env / "projects" / encode_project_path(cwd) / "conv-1.jsonl"
-        assert auth_expired.detect("memory-manager") == {
-            "session": "memory-manager",
-            "transcript": str(expected),
-            "source": "recorded",
-        }
+    def test_plain_overload_does_not_gate(self):
+        assert auth_expired.auth_error_is_hard({"code": "overloaded"}) is False
 
-    def test_memory_manager_shaped_record_still_detects(self, env):
-        """The incident's OWN metadata shape: no conversation_ids at all.
+    def test_missing_code_and_flag_is_not_hard(self):
+        assert auth_expired.auth_error_is_hard({}) is False
+        assert auth_expired.auth_error_is_hard({"message": "nope"}) is False
 
-        `memory-manager`'s record was written by a build that predated #871's
-        enrichment. A detector that only handled the recorded path would have
-        been blind to the exact run it exists for — the fixture trap, in the
-        implementation rather than the test.
-        """
-        from agentwire.core import store_session_metadata
+    def test_none_is_not_hard(self):
+        assert auth_expired.auth_error_is_hard(None) is False
 
-        cwd = "/Users/dotdev/projects/agentwire-dev"
-        store_session_metadata("memory-manager", dict(MINIMAL_METADATA))
-        assert auth_expired.recorded_transcripts("memory-manager") == []
+    def test_object_with_attributes_is_accepted(self):
+        err = SimpleNamespace(code="no_usable_credits", relogin_required=False)
+        assert auth_expired.auth_error_is_hard(err) is True
 
-        self._place(env, cwd, "conv-unknown", HUNG_RUN)
-        detail = auth_expired.detect("memory-manager", project_path=cwd, since=0)
+    def test_string_relogin_required_is_coerced_by_parser(self):
+        parsed = auth_expired.parse_auth_error(AUTH_ERROR_STDERR)
+        assert parsed is not None
+        assert parsed["relogin_required"] is True
+
+
+# --------------------------------------------------------------------------
+# Detection — parsing the stderr surface
+# --------------------------------------------------------------------------
+
+
+class TestParseAuthError:
+    def test_parses_the_real_hard_shape(self):
+        parsed = auth_expired.parse_auth_error(AUTH_ERROR_STDERR)
+        assert parsed is not None
+        assert parsed["provider"] == "nous"
+        assert parsed["code"] == "subscription_expired"
+        assert parsed["relogin_required"] is True
+
+    def test_parses_without_relogin_required(self):
+        text = ("hermes -z: agent failed: AuthError(provider='openrouter', "
+                "code='no_usable_credits')")
+        parsed = auth_expired.parse_auth_error(text)
+        assert parsed is not None
+        assert parsed["provider"] == "openrouter"
+        assert parsed["code"] == "no_usable_credits"
+        assert "relogin_required" not in parsed
+
+    def test_parses_double_quoted_and_bare_values(self):
+        parsed = auth_expired.parse_auth_error(
+            'AuthError(provider="nous", code="subscription_required")')
+        assert parsed is not None
+        assert parsed["provider"] == "nous"
+        assert parsed["code"] == "subscription_required"
+
+    def test_transient_code_is_parsed_but_not_hard(self):
+        parsed = auth_expired.parse_auth_error(TRANSIENT_STDERR)
+        assert parsed is not None
+        assert parsed["code"] == "codex_rate_limited"
+        assert auth_expired.auth_error_is_hard(parsed) is False
+
+    def test_non_auth_error_is_none(self):
+        assert auth_expired.parse_auth_error(OVERLOADED_STDERR) is None
+
+    def test_empty_and_none_are_none(self):
+        assert auth_expired.parse_auth_error("") is None
+        assert auth_expired.parse_auth_error(None) is None
+
+    def test_unclosed_auth_error_is_none(self):
+        assert auth_expired.parse_auth_error("AuthError(provider='nous'") is None
+
+
+# --------------------------------------------------------------------------
+# Detection — the pre-flight surface
+# --------------------------------------------------------------------------
+
+
+class TestProbeProviderAuth:
+    def _probe(self, stdout, returncode=0):
+        with patch("agentwire.auth_expired.subprocess.run",
+                   return_value=SimpleNamespace(stdout=stdout, stderr="",
+                                                returncode=returncode)) as run:
+            result = auth_expired.probe_provider_auth("nous")
+        return result
+
+    def test_hard_failure_reports(self):
+        result = self._probe(
+            '{"logged_in": false, "error": {"provider": "nous", '
+            '"code": "subscription_expired"}}')
+        assert result == {"provider": "nous", "code": "subscription_expired",
+                          "relogin_required": False}
+
+    def test_logged_in_is_healthy(self):
+        assert self._probe('{"logged_in": true}') is None
+
+    def test_string_error_is_parsed(self):
+        result = self._probe(
+            '{"logged_in": false, "error": "AuthError(provider=\'nous\', '
+            'code=\'no_usable_credits\')"}')
+        assert result == {"provider": "nous", "code": "no_usable_credits",
+                          "relogin_required": False}
+
+    def test_transient_error_is_not_an_outage(self):
+        assert self._probe(
+            '{"logged_in": false, "error": {"provider": "nous", '
+            '"code": "codex_rate_limited"}}') is None
+
+    def test_unparseable_output_is_none(self):
+        assert self._probe("not json") is None
+
+    def test_subprocess_failure_is_none(self):
+        with patch("agentwire.auth_expired.subprocess.run",
+                   side_effect=OSError("no hermes")):
+            assert auth_expired.probe_provider_auth("nous") is None
+
+    def test_no_provider_is_none(self):
+        assert auth_expired.probe_provider_auth("") is None
+
+
+# --------------------------------------------------------------------------
+# Detection — detect() orchestration
+# --------------------------------------------------------------------------
+
+
+class TestDetect:
+    def test_stderr_surface_wins(self):
+        detail = auth_expired.detect("s", stderr=AUTH_ERROR_STDERR)
         assert detail is not None
-        assert detail["source"] == "touched"
+        assert detail["source"] == "stderr"
+        assert detail["provider"] == "nous"
+        assert detail["code"] == "subscription_expired"
 
-    def test_no_session_record_at_all(self, env):
-        assert auth_expired.recorded_transcripts("never-existed") == []
-        assert auth_expired.detect("never-existed") is None
+    def test_transient_stderr_falls_through_to_preflight(self):
+        # Transient stderr + hard pre-flight → pre-flight decides.
+        with patch("agentwire.auth_expired.probe_provider_auth",
+                   return_value={"provider": "nous", "code": "account_missing"}):
+            detail = auth_expired.detect("s", stderr=TRANSIENT_STDERR, provider="nous")
+        assert detail is not None
+        assert detail["source"] == "preflight"
 
-    def test_a_transcript_older_than_the_run_does_not_count(self, env):
-        """Scoped to files written DURING this run, not 'the newest one'.
+    def test_preflight_only(self):
+        with patch("agentwire.auth_expired.probe_provider_auth",
+                   return_value={"provider": "nous", "code": "account_missing"}):
+            detail = auth_expired.detect("s", provider="nous")
+        assert detail == {"session": "s", "source": "preflight",
+                          "provider": "nous", "code": "account_missing"}
 
-        Otherwise last week's resolved outage gates today's dispatch.
-        """
-        cwd = "/Users/dotdev/projects/agentwire-dev"
-        p = self._place(env, cwd, "stale", HUNG_RUN)
-        import os
-        old = time.time() - 86400
-        os.utime(p, (old, old))
-        assert auth_expired.detect("s", project_path=cwd, since=time.time() - 60) is None
-        assert auth_expired.detect("s", project_path=cwd, since=0) is not None
+    def test_nothing_is_none(self):
+        assert auth_expired.detect("s") is None
+
+    def test_no_provider_skips_subprocess(self):
+        # The polling path passes no provider: no `hermes auth status` call.
+        with patch("agentwire.auth_expired.probe_provider_auth") as probe:
+            auth_expired.detect("s", stderr=None, provider=None)
+        probe.assert_not_called()
+
+
+# --------------------------------------------------------------------------
+# Active provider resolution
+# --------------------------------------------------------------------------
+
+
+class TestActiveProvider:
+    def test_env_override_wins(self, monkeypatch):
+        monkeypatch.setenv("AGENTWIRE_PROVIDER", "openrouter")
+        assert auth_expired._active_provider() == "openrouter"
+
+    def test_reads_auth_json(self, tmp_path, monkeypatch):
+        home = tmp_path / "home"
+        (home / ".hermes").mkdir(parents=True)
+        (home / ".hermes" / "auth.json").write_text(
+            '{"version": 1, "active_provider": "nous"}')
+        monkeypatch.setenv("HOME", str(home))
+        assert auth_expired._active_provider() == "nous"
+
+    def test_no_auth_json_is_none(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        assert auth_expired._active_provider() is None
 
 
 # --------------------------------------------------------------------------
@@ -359,18 +261,19 @@ class TestLocatingTheTranscript:
 
 
 class TestOutageState:
-    def test_first_detection_escalates_and_repeats_do_not(self, env):
-        ok = type("R", (), {"success": True, "error": None})()
-        with patch("agentwire.channels.email.send_email", return_value=ok) as mail:
-            auth_expired.record_outage({"session": "a", "transcript": "/t"})
-            auth_expired.record_outage({"session": "b", "transcript": "/t"})
-        assert mail.call_count == 1, "one outage, one email — not one per task"
+    def test_first_detection_escalates_and_repeats_do_not(self, env, ok_email):
+        auth_expired.record_outage({"session": "a", "provider": "nous",
+                                    "code": "subscription_expired"})
+        auth_expired.record_outage({"session": "b", "provider": "nous",
+                                    "code": "subscription_expired"})
         state = auth_expired.read_state()
         assert state["sessions"] == ["a", "b"]
+        assert state["provider"] == "nous"
+        assert state["code"] == "subscription_expired"
 
-    def test_escalation_resumes_after_the_ttl(self, env):
-        ok = type("R", (), {"success": True, "error": None})()
-        with patch("agentwire.channels.email.send_email", return_value=ok) as mail:
+    def test_escalation_resumes_after_the_ttl(self, env, ok_email):
+        with patch("agentwire.channels.email.send_email",
+                   return_value=SimpleNamespace(success=True, error=None)) as mail:
             auth_expired.record_outage({"session": "a"})
             state = auth_expired.read_state()
             stale = auth_expired._now() - auth_expired.ESCALATE_TTL - timedelta(minutes=1)
@@ -379,26 +282,20 @@ class TestOutageState:
             auth_expired.record_outage({"session": "a"})
         assert mail.call_count == 2
 
-    def test_detected_at_is_carried_forward_not_refreshed(self, env):
-        """A four-hour outage must not read as seconds old (the #905 defect)."""
-        ok = type("R", (), {"success": True, "error": None})()
-        with patch("agentwire.channels.email.send_email", return_value=ok):
-            first = auth_expired.record_outage({"session": "a"})
-            auth_expired.record_outage({"session": "a"})
+    def test_detected_at_is_carried_forward_not_refreshed(self, env, ok_email):
+        first = auth_expired.record_outage({"session": "a"})
+        auth_expired.record_outage({"session": "a"})
         assert auth_expired.read_state()["detected_at"] == first["detected_at"]
 
     def test_a_failing_escalation_still_records_the_outage(self, env):
-        """The gate must work with or without the email."""
-        with patch("agentwire.channels.email.send_email", side_effect=RuntimeError("no key")):
+        with patch("agentwire.channels.email.send_email",
+                   side_effect=RuntimeError("no key")):
             auth_expired.record_outage({"session": "a"})
         assert auth_expired.read_state() is not None
         assert auth_expired.outage_active() is not None
 
-    def test_a_stale_outage_stops_gating(self, env):
-        """Bounded on purpose: a flag that gated forever takes the fleet down."""
-        ok = type("R", (), {"success": True, "error": None})()
-        with patch("agentwire.channels.email.send_email", return_value=ok):
-            auth_expired.record_outage({"session": "a"})
+    def test_a_stale_outage_stops_gating(self, env, ok_email):
+        auth_expired.record_outage({"session": "a"})
         assert auth_expired.outage_active() is not None
         state = auth_expired.read_state()
         state["last_seen"] = (
@@ -415,3 +312,36 @@ class TestOutageState:
 
     def test_no_state_is_no_outage(self, env):
         assert auth_expired.outage_active() is None
+
+    def test_clear_state_removes_the_record(self, env, ok_email):
+        auth_expired.record_outage({"session": "a"})
+        assert auth_expired.clear_state() is True
+        assert auth_expired.read_state() is None
+        assert auth_expired.clear_state() is False
+
+
+# --------------------------------------------------------------------------
+# Copy: names the provider and the hermes commands, never /login
+# --------------------------------------------------------------------------
+
+
+class TestCopy:
+    def test_summary_line_names_provider_and_code(self):
+        detail = {"provider": "nous", "code": "subscription_expired",
+                  "source": "stderr"}
+        line = auth_expired.summary_line(detail)
+        assert "nous" in line
+        assert "subscription_expired" in line
+        assert "stderr" in line
+
+    def test_summary_line_without_detail_is_safe(self):
+        line = auth_expired.summary_line(None)
+        assert "login expired" in line
+
+    def test_no_claude_login_strings_remain(self):
+        import agentwire.auth_expired as mod
+
+        source = Path(mod.__file__).read_text()
+        for banned in ("authentication_failed", "/login", "Login expired",
+                       "PROJECTS_DIR", "encode_project_path"):
+            assert banned not in source, f"{banned!r} must not appear in auth_expired.py"

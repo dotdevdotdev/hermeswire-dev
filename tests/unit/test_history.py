@@ -1,179 +1,183 @@
-"""Tests for agentwire/history.py — cwd -> history-directory encoding.
+"""Tests for agentwire/history.py — Hermes session-store reads (#9).
 
-The expectations here are transcribed from measurements against real Claude
-Code, not from a reading of the docs (#871) — see
-:func:`agentwire.history.encode_project_path` for how they were taken.
-``decode_project_path`` used to live alongside it and has been deleted: the
-mapping is many-to-one, so an inverse cannot exist, and the old round-trip
-tests only passed by choosing paths that dodged the ambiguity.
+The Claude transcript store (``~/.claude/history.jsonl`` +
+``~/.claude/projects/<encoded-cwd>/<id>.jsonl``) is gone. These pin the Hermes
+mapping: sessions are keyed by id in ``~/.hermes/state.db``, resumability is
+"present in the store" (there is no orphaned state), and the historical dict
+shapes (``sessionId``/``firstMessage``/``lastSummary``/``timestamp``-ms/
+``messageCount``) are preserved so the CLI/routes/MCP consumers keep working
+unchanged.
 """
 
 import pytest
 
-from agentwire.history import encode_project_path, locate_conversation
+from agentwire import history
 
 
-class TestPathEncoding:
-    """The mapping cwd -> ``~/.claude/projects/<key>``, measured not assumed.
+class FakeDB:
+    """A stand-in for ``hermes_state.SessionDB`` with the surface history.py uses."""
 
-    Every expectation below was checked against the installed Claude Code
-    (2.1.222) by running a real one-shot in the directory and reading back the
-    key it created — the same discipline #878 used on tmux's name mapping.
-    """
+    def __init__(self, sessions=None, messages=None):
+        self.sessions = {s["id"]: dict(s) for s in (sessions or [])}
+        self.messages = {sid: list(ms) for sid, ms in (messages or {}).items()}
 
-    def test_encode(self):
-        assert encode_project_path("/home/user/projects/myapp") == "-home-user-projects-myapp"
+    def get_session(self, session_id):
+        return self.sessions.get(session_id)
 
-    def test_encode_root(self):
-        assert encode_project_path("/") == "-"
+    def resolve_session_id(self, prefix):
+        if prefix in self.sessions:
+            return prefix
+        matches = [sid for sid in self.sessions if sid.startswith(prefix)]
+        return matches[0] if len(matches) == 1 else None
 
-    def test_encode_home(self):
-        assert encode_project_path("/home/user") == "-home-user"
+    def list_sessions_rich(self, cwd_prefix=None, limit=20,
+                           order_by_last_active=False, **kwargs):
+        rows = []
+        for s in self.sessions.values():
+            if cwd_prefix and cwd_prefix not in (s.get("cwd") or ""):
+                continue
+            rows.append(s)
+        rows.sort(key=lambda r: r.get("last_active", 0), reverse=True)
+        return rows[:limit]
 
-    def test_hyphens_are_preserved_as_hyphens(self):
-        assert encode_project_path("/home/user/my-app") == "-home-user-my-app"
+    def export_session(self, session_id):
+        s = self.sessions.get(session_id)
+        if s is None:
+            return None
+        return {**s, "messages": self.messages.get(session_id, [])}
 
-    def test_dot_becomes_a_dash(self):
-        """The bug class this repo keeps hitting (#865 -> #868 -> #870 -> #878).
 
-        Ground truth: ``/Users/dotdev/.claude`` really is stored under
-        ``-Users-dotdev--claude`` locally. The old encoder, which replaced only
-        ``/``, produced ``-Users-dotdev-.claude`` and found nothing.
-        """
-        assert encode_project_path("/Users/dotdev/.claude") == "-Users-dotdev--claude"
-        assert (
-            encode_project_path("/Users/dotdev/.agentwire/council/craps/workspace")
-            == "-Users-dotdev--agentwire-council-craps-workspace"
-        )
+@pytest.fixture
+def db(monkeypatch):
+    def make(sessions=None, messages=None):
+        fake = FakeDB(sessions, messages)
+        monkeypatch.setattr(history, "_db", lambda: fake)
+        return fake
 
-    def test_dotted_project_directory(self):
-        assert encode_project_path("/Users/dotdev/projects/dotdev.dev") == "-Users-dotdev-projects-dotdev-dev"
+    return make
 
-    def test_every_punctuation_char_maps_one_to_one(self):
-        """Measured by sweeping a real ``claude`` run; nothing is dropped."""
-        assert encode_project_path("a_b.c+d~e@f,g=h!i#j%k^l&m n o'p") == "a-b-c-d-e-f-g-h-i-j-k-l-m-n-o-p"
 
-    def test_non_ascii_letters_are_not_alphanumeric(self):
-        """The class is ASCII ``[A-Za-z0-9]``, not ``str.isalnum()``.
+SESS = {
+    "id": "abc123",
+    "title": "Fix the thing",
+    "preview": "hello there",
+    "started_at": 1_700_000_000,
+    "ended_at": 1_700_000_100,
+    "last_active": 1_700_000_100,
+    "message_count": 7,
+    "cwd": "/proj/x",
+    "git_branch": "feat",
+}
 
-        ``str.isalnum()`` is True for é/日/Ω and would have preserved them;
-        real Claude Code replaces them.
-        """
-        assert encode_project_path("café-日本-Ωx") == "caf------x"
 
-    def test_case_and_digits_survive(self):
-        assert encode_project_path("/Users/Dev01/Repo9") == "-Users-Dev01-Repo9"
+class TestResolveSessionId:
+    def test_exact_match(self, db):
+        db(sessions=[SESS])
+        assert history.resolve_session_id("abc123") == "abc123"
 
-    def test_encoding_is_many_to_one(self):
-        """Why there is no inverse: distinct cwds share a directory name."""
-        assert encode_project_path("/a/b") == encode_project_path("/a-b") == encode_project_path("/a.b")
+    def test_unique_prefix(self, db):
+        db(sessions=[SESS])
+        assert history.resolve_session_id("abc") == "abc123"
 
-    def test_no_decode_function_is_exported(self):
-        import agentwire.history as history
+    def test_ambiguous_prefix(self, db):
+        db(sessions=[SESS, {**SESS, "id": "abc456"}])
+        assert history.resolve_session_id("abc") is None
 
-        assert not hasattr(history, "decode_project_path")
+    def test_unknown(self, db):
+        db(sessions=[SESS])
+        assert history.resolve_session_id("nope") is None
+
+    def test_remote_is_unsupported(self, db):
+        db(sessions=[SESS])
+        assert history.resolve_session_id("abc123", machine="other") is None
+
+
+class TestGetHistory:
+    def test_lists_sessions_for_a_cwd(self, db):
+        db(sessions=[SESS, {**SESS, "id": "other", "cwd": "/proj/y"}])
+        rows = history.get_history("/proj/x")
+        assert [r["sessionId"] for r in rows] == ["abc123"]
+
+    def test_maps_to_the_old_shape(self, db):
+        db(sessions=[SESS])
+        [r] = history.get_history("/proj/x")
+        assert r["sessionId"] == "abc123"
+        assert r["firstMessage"] == "hello there"
+        assert r["lastSummary"] == "Fix the thing"
+        assert r["timestamp"] == 1_700_000_100 * 1000  # ms, the old shape
+        assert r["messageCount"] == 7
+
+    def test_empty_when_no_store(self, monkeypatch):
+        monkeypatch.setattr(history, "_db", lambda: None)
+        assert history.get_history("/proj/x") == []
+
+    def test_remote_is_unsupported(self, db):
+        db(sessions=[SESS])
+        assert history.get_history("/proj/x", machine="other") == []
+
+
+class TestGetSessionDetail:
+    def test_detail_shape(self, db):
+        db(sessions=[SESS], messages={
+            "abc123": [
+                {"role": "user", "content": "hello"},
+                {"role": "assistant", "content": "hi there"},
+            ],
+        })
+        d = history.get_session_detail("abc123")
+        assert d["sessionId"] == "abc123"
+        assert d["firstMessage"] == "hello"
+        assert d["summaries"] == ["hi there"]  # assistant turns, no summary type
+        assert d["gitBranch"] == "feat"
+        assert d["messageCount"] == 7
+        assert d["timestamps"]["start"] == 1_700_000_000 * 1000
+        assert d["timestamps"]["end"] == 1_700_000_100 * 1000
+
+    def test_resolves_prefix(self, db):
+        db(sessions=[SESS], messages={"abc123": []})
+        d = history.get_session_detail("abc")
+        assert d is not None
+        assert d["sessionId"] == "abc123"
+
+    def test_none_when_absent(self, db):
+        db(sessions=[SESS])
+        assert history.get_session_detail("nope") is None
 
 
 class TestLocateConversation:
-    """``resumable(id, cwd) == exists(<encoded_cwd>/<id>.jsonl)`` (#871)."""
-
-    @pytest.fixture
-    def projects(self, tmp_path):
-        d = tmp_path / "projects"
-        d.mkdir()
-        return d
-
-    #: A transcript counts only if it holds a TURN — a metadata-only stub is
-    #: a dead id (see TestStubTranscripts below).
-    TURN = '{"type":"user","message":{"role":"user","content":"hi"}}\n'
-
-    def _write(self, projects, cwd, cid, body=None):
-        d = projects / encode_project_path(str(cwd))
-        d.mkdir(parents=True, exist_ok=True)
-        (d / f"{cid}.jsonl").write_text(body or self.TURN)
-
-    def test_resumable(self, projects, tmp_path):
-        self._write(projects, tmp_path / "wt", "cid")
-        loc = locate_conversation("cid", tmp_path / "wt", projects_dir=projects)
+    def test_present_is_resumable(self, db):
+        db(sessions=[SESS])
+        loc = history.locate_conversation("abc123", "/proj/x")
         assert loc.status == "resumable" and loc.resumable
-        assert loc.found_at.name == "cid.jsonl"
+        assert loc.found_at is not None
         assert loc.elsewhere == ()
 
-    def test_orphaned_when_it_lives_under_another_cwd_key(self, projects, tmp_path):
-        """A moved directory: intact and unreachable at the same time."""
-        self._write(projects, tmp_path / "old", "cid")
-        loc = locate_conversation("cid", tmp_path / "new", projects_dir=projects)
-        assert loc.status == "orphaned"
-        assert not loc.resumable
-        assert loc.elsewhere[0].parent.name == encode_project_path(str(tmp_path / "old"))
-
-    def test_gone_when_nothing_holds_it(self, projects, tmp_path):
-        """Never prompted (lazy transcript creation) or evicted — same shape."""
-        loc = locate_conversation("cid", tmp_path / "wt", projects_dir=projects)
+    def test_absent_is_gone(self, db):
+        db(sessions=[SESS])
+        loc = history.locate_conversation("nope", "/proj/x")
         assert loc.status == "gone"
+        assert not loc.resumable
         assert loc.found_at is None and loc.elsewhere == ()
 
-    def test_expected_dir_is_the_cwd_key(self, projects, tmp_path):
-        loc = locate_conversation("cid", tmp_path / "wt", projects_dir=projects)
-        assert loc.expected_dir.name == encode_project_path(str(tmp_path / "wt"))
+    def test_there_is_no_orphaned_state(self, db):
+        """A moved directory cannot strand a session: id lookup ignores cwd."""
+        db(sessions=[SESS])
+        loc = history.locate_conversation("abc123", "/somewhere/else")
+        assert loc.status == "resumable"
 
-    def test_missing_projects_dir_is_gone_not_an_error(self, tmp_path):
-        loc = locate_conversation("cid", tmp_path, projects_dir=tmp_path / "nope")
-        assert loc.status == "gone"
+    def test_holds_a_conversation_matches_presence(self, db):
+        db(sessions=[SESS])
+        assert history.holds_a_conversation("abc123") is True
+        assert history.holds_a_conversation("nope") is False
+
+    def test_resumable_predicate(self, db):
+        db(sessions=[SESS])
+        assert history.resumable("abc123") is True
+        assert history.resumable("nope") is False
 
 
-class TestStubTranscripts:
-    """A file that exists but holds no turns is a DEAD id, not a hit (#871).
-
-    Measured on real Claude Code 2.1.222, in the exact state a restart of a
-    moved session leaves behind — a 5-line metadata file at the new key while
-    the conversation sits under the old one:
-
-        claude --resume <id>      -> "No conversation found with session ID"
-        claude --session-id <id>  -> "Session ID <id> is already in use."
-
-    Neither flag will take it. Treating the file as a hit would have made
-    `restart` pass it to --resume, claude refuse to start, and the pane drop
-    to a bare shell — while doctor reported the orphan as healed.
-    """
-
-    STUB = ('{"type":"last-prompt"}\n{"type":"ai-title"}\n'
-            '{"type":"mode","mode":"normal"}\n')
-    TURN = '{"type":"user","message":{"role":"user"}}\n'
-
-    def test_a_metadata_stub_is_not_a_conversation(self, tmp_path):
-        from agentwire.history import holds_a_conversation
-
-        f = tmp_path / "stub.jsonl"
-        f.write_text(self.STUB)
-        assert holds_a_conversation(f) is False
-
-    def test_a_transcript_with_a_turn_is(self, tmp_path):
-        from agentwire.history import holds_a_conversation
-
-        f = tmp_path / "real.jsonl"
-        f.write_text(self.STUB + self.TURN)
-        assert holds_a_conversation(f) is True
-
-    def test_unreadable_reads_as_no_conversation(self, tmp_path):
-        """Safe direction: start fresh with the role, never hand claude an id
-        it will reject."""
-        from agentwire.history import holds_a_conversation
-
-        assert holds_a_conversation(tmp_path / "does-not-exist.jsonl") is False
-
-    def test_a_stub_at_the_expected_key_does_not_mask_the_real_orphan(self, tmp_path):
-        """The measured sequence: restart a moved session, and Claude leaves a
-        stub at the NEW key while the conversation stays at the old one."""
-        projects = tmp_path / "projects"
-        old = projects / encode_project_path(str(tmp_path / "old"))
-        new = projects / encode_project_path(str(tmp_path / "new"))
-        old.mkdir(parents=True)
-        new.mkdir(parents=True)
-        (old / "cid.jsonl").write_text(self.TURN)
-        (new / "cid.jsonl").write_text(self.STUB)
-
-        loc = locate_conversation("cid", tmp_path / "new", projects_dir=projects)
-        assert loc.status == "orphaned"
-        assert loc.found_at is None
-        assert loc.elsewhere[0].parent == old
+class TestRetainedEncoding:
+    def test_encode_project_path_is_still_exported_for_importers(self):
+        """``encode_project_path`` survives for auth_expired/handoff/session_cli."""
+        assert history.encode_project_path("/Users/dev/my-app") == "-Users-dev-my-app"
+        assert history.HISTORY_DIR_SHELL  # non-empty, retained for the same reason

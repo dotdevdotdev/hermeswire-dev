@@ -4,9 +4,6 @@ import pytest
 
 from agentwire import session_ready
 
-BANNER ="❯ \nBypassing Permissions"
-TRUST = "Do you trust this folder?\nPress Enter to confirm"
-
 RULE = "─" * 20
 
 
@@ -19,12 +16,6 @@ def render_box(content: str = "") -> str:
 def render_working(content: str = "") -> str:
     """An empty input box plus a visible activity marker (submitted+working)."""
     return "✶ Working… (esc to interrupt)\n" + render_box(content)
-
-
-# Readiness frames (#695): banner up with a parseable input box, empty or
-# holding the rendered probe char.
-READY = "Bypassing Permissions\n" + render_box()
-READY_PROBE = "Bypassing Permissions\n" + render_box(session_ready.PROBE_CHAR)
 
 
 def _scripted_capture(monkeypatch, frames):
@@ -43,20 +34,27 @@ def _scripted_capture(monkeypatch, frames):
 
 
 class TestWaitForSessionReady:
-    def setup_method(self):
-        self._sleeps = []
+    """Hermes readiness: the prompt glyph appears, then the screen stabilizes.
+
+    No keystroke probe (that was Claude's banner-render fix) and no
+    trust-this-folder prompt — prompt_toolkit draws the ``❯`` prompt inside its
+    own readline loop, so glyph-on-screen means the input handler is wired."""
 
     def _no_sleep(self, monkeypatch):
-        monkeypatch.setattr(session_ready.time, "sleep", lambda s: self._sleeps.append(s))
+        monkeypatch.setattr(session_ready.time, "sleep", lambda s: None)
 
-    def _keys(self, monkeypatch):
-        """Stub tmux key sends (trust-Enter + readiness probe); returns the log."""
-        sent = []
+    def _scripted_capture(self, monkeypatch, frames):
+        state = {"i": 0}
+
+        def fake_capture(session, pane_index, lines=20):
+            frame = frames[min(state["i"], len(frames) - 1)]
+            state["i"] += 1
+            if isinstance(frame, Exception):
+                raise frame
+            return frame
+
         from agentwire import pane_manager
-        monkeypatch.setattr(
-            pane_manager, "run_command",
-            lambda cmd, timeout=5: sent.append(cmd))
-        return sent
+        monkeypatch.setattr(pane_manager, "capture_pane", fake_capture)
 
     def _fake_time(self, monkeypatch, step=0.1):
         clock = {"t": 0.0}
@@ -67,82 +65,34 @@ class TestWaitForSessionReady:
 
         monkeypatch.setattr(session_ready.time, "time", fake_time)
 
-    # Happy-path frames: banner, READY_STABLE_SNAPSHOTS identical frames, the
-    # probe char rendering in the box (poll + erase-count captures), erased.
-    HAPPY = ["booting...", READY, READY, READY, READY_PROBE, READY_PROBE, READY]
+    READY = "❯"
 
-    def test_banner_stable_then_probe_roundtrip_returns_true(self, monkeypatch):
+    def test_glyph_then_stability_returns_true(self, monkeypatch):
         self._no_sleep(monkeypatch)
-        sent = self._keys(monkeypatch)
-        _scripted_capture(monkeypatch, self.HAPPY)
+        self._scripted_capture(
+            monkeypatch, ["booting...", self.READY, self.READY, self.READY, self.READY])
         assert session_ready.wait_for_session_ready("s", timeout=10)
-        # The probe was typed and erased — never left in the box.
-        assert any(c[-2:] == ["-l", session_ready.PROBE_CHAR] for c in sent)
-        assert any(c[-1] == "BSpace" for c in sent)
 
-    def test_churning_screen_times_out(self, monkeypatch):
+    def test_no_glyph_times_out(self, monkeypatch):
         self._no_sleep(monkeypatch)
-        # Banner up but screen never stabilizes: every frame differs
-        frames = [BANNER + f"\nline{i}" for i in range(1000)]
-        _scripted_capture(monkeypatch, frames)
+        self._scripted_capture(monkeypatch, ["booting...\n"] * 200)
         self._fake_time(monkeypatch)
         assert not session_ready.wait_for_session_ready("s", timeout=5)
 
-    def test_trust_prompt_accepted_then_ready(self, monkeypatch):
+    def test_churning_screen_times_out(self, monkeypatch):
+        # Glyph is up but the screen never stabilizes (every frame differs).
         self._no_sleep(monkeypatch)
-        sent = self._keys(monkeypatch)
-        _scripted_capture(monkeypatch, [TRUST] + self.HAPPY[1:])
-        assert session_ready.wait_for_session_ready("s", timeout=10)
-        assert sent[0][:2] == ["tmux", "send-keys"]
-        assert sent[0][-1] == "Enter"
+        frames = [self.READY + f"\nline{i}" for i in range(1000)]
+        self._scripted_capture(monkeypatch, frames)
+        self._fake_time(monkeypatch)
+        assert not session_ready.wait_for_session_ready("s", timeout=5)
 
     def test_capture_exception_tolerated(self, monkeypatch):
         self._no_sleep(monkeypatch)
-        sent = self._keys(monkeypatch)
-        _scripted_capture(
-            monkeypatch, [RuntimeError("no session")] + self.HAPPY[1:])
+        self._scripted_capture(
+            monkeypatch, [RuntimeError("no session"), self.READY, self.READY,
+                          self.READY, self.READY])
         assert session_ready.wait_for_session_ready("s", timeout=10)
-        assert sent  # probe ran
-
-    def test_unwired_input_handler_never_ready(self, monkeypatch):
-        # #695 live repro: banner up, screen stable, input box parseable and
-        # empty — but the input handler is not wired yet, so the probe char
-        # never renders. The old two-identical-frames rule declared ready here
-        # and the seed paste fragmented/sat unsubmitted; now the wait must
-        # keep re-probing and ultimately fail instead of green-lighting.
-        self._no_sleep(monkeypatch)
-        sent = self._keys(monkeypatch)
-        _scripted_capture(monkeypatch, [READY])  # stable forever, box empty
-        self._fake_time(monkeypatch)
-        assert not session_ready.wait_for_session_ready("s", timeout=20)
-        probes = [c for c in sent if c[-2:] == ["-l", session_ready.PROBE_CHAR]]
-        assert len(probes) >= 2  # kept re-probing, never trusted the screen
-
-    def test_render_pause_two_identical_frames_not_ready(self, monkeypatch):
-        # #695: a render pause (notice panel / effort banner loading) yields
-        # exactly two identical frames before the screen changes again. The
-        # pre-#695 rule returned ready at frame two; now nothing may be typed
-        # or pasted at the pane at all.
-        self._no_sleep(monkeypatch)
-        sent = self._keys(monkeypatch)
-        frames = [READY, READY] + [READY + f"\nnotice {i}" for i in range(1000)]
-        _scripted_capture(monkeypatch, frames)
-        self._fake_time(monkeypatch)
-        assert not session_ready.wait_for_session_ready("s", timeout=5)
-        assert sent == []  # probe never reached — no keystrokes sent
-
-    def test_buffered_probes_all_erased(self, monkeypatch):
-        # Keystrokes swallowed during wiring can be buffered and dumped into
-        # the box all at once ("..."); every one must be backspaced away so
-        # the real paste lands in a clean box.
-        self._no_sleep(monkeypatch)
-        sent = self._keys(monkeypatch)
-        piled = "Bypassing Permissions\n" + render_box(session_ready.PROBE_CHAR * 3)
-        _scripted_capture(
-            monkeypatch, [READY, READY, READY, piled, piled, READY])
-        assert session_ready.wait_for_session_ready("s", timeout=10)
-        bspaces = [c for c in sent if c[-1] == "BSpace"]
-        assert len(bspaces) == 3
 
 
 class TestBoxShowsMessage:
@@ -155,17 +105,6 @@ class TestBoxShowsMessage:
         msg = "build a voice diary app with daily summaries"
         capture = "❯ build a voice di\nary app with dai\nly summaries"
         assert session_ready.box_shows_message(capture, msg)
-
-    def test_pasted_placeholder_fallback(self):
-        msg = "line one\nline two\nline three"
-        assert session_ready.box_shows_message("❯ [Pasted text #1 +3 lines]", msg)
-
-    def test_pasted_placeholder_suppressed_for_pre_paste_callers(self):
-        # #851/#621: before WE have pasted, a chip can only be somebody else's
-        # draft -- skipping our paste and pressing Enter would force-submit it.
-        msg = "line one\nline two\nline three"
-        assert not session_ready.box_shows_message(
-            "❯ [Pasted text #1 +3 lines]", msg, allow_chip=False)
 
     def test_miss(self):
         assert not session_ready.box_shows_message(
@@ -395,17 +334,21 @@ class TestSendVerified:
 
 
 class TestPaneShowsActivity:
-    def test_esc_to_interrupt(self):
-        assert session_ready.pane_shows_activity("✶ Cogitating… (esc to interrupt)")
+    def test_agent_running_state(self):
+        assert session_ready.pane_shows_activity("⚕ running")
 
-    def test_token_counter(self):
-        assert session_ready.pane_shows_activity("· 1.2k tokens · esc")
+    def test_status_bar_timer(self):
+        assert session_ready.pane_shows_activity("⏱ 3m")
 
-    def test_tool_output_glyph(self):
-        assert session_ready.pane_shows_activity("⏺ Bash(ls)\n  ⎿ file.py")
+    def test_command_spinner_frame(self):
+        assert session_ready.pane_shows_activity("⠋ working")
 
-    def test_idle_no_activity(self):
-        assert not session_ready.pane_shows_activity("❯ \nBypassing Permissions")
+    def test_idle_prompt_is_not_activity(self):
+        assert not session_ready.pane_shows_activity("❯")
+
+    def test_legacy_claude_markers_are_not_activity(self):
+        assert not session_ready.pane_shows_activity("✶ Cogitating… (esc to interrupt)")
+        assert not session_ready.pane_shows_activity("· 1.2k tokens · esc")
 
 
 class TestSendVerifiedAdaptive:
@@ -453,23 +396,6 @@ class TestSendVerifiedAdaptive:
         actions = _env(monkeypatch, lambda a: f"> {msg}\n" + render_working())
         assert session_ready.send_verified("s", msg)
         assert actions["enters"] == 0
-
-    def test_large_paste_placeholder_lands(self, monkeypatch):
-        # Large paste renders as the [Pasted text] placeholder in the box; that
-        # counts as landed, then submits. (The box is empty until we paste --
-        # a chip sitting there BEFORE the paste is a foreign draft, #845.)
-        _fake_clock(monkeypatch)
-
-        def frame(a):
-            if a["pastes"] == 0:
-                return render_box()
-            if a["enters"] == 0:
-                return render_box("[Pasted text #1 +40 lines]")
-            return render_working()
-
-        actions = _env(monkeypatch, frame)
-        assert session_ready.send_verified("s", "line one\nline two\n...forty lines")
-        assert actions["enters"] == 1
 
     def test_genuine_failure_returns_false_not_silent(self, monkeypatch):
         # Empty box, no activity, never lands → hard False (caller learns), and
@@ -837,7 +763,7 @@ class TestClearInputBox:
         monkeypatch.setattr(prompt_router, "screen_shows_live_menu", lambda cap: live_menu)
 
         def run(cmd, timeout=5):
-            if cmd[-1] == "Escape":
+            if cmd[-1] == "C-u":
                 state["escapes"] += 1
             state["bspaces"] += sum(1 for k in cmd if k == "BSpace")
 
@@ -1245,36 +1171,3 @@ class TestRecoverFailedSeedNoClear:
 
         monkeypatch.setattr(inbox, "enqueue", boom)
         assert session_ready.recover_failed_seed("s", "x", clear=False) is None
-
-
-class TestLiveMenuAbort:
-    """#698 hardening — a live select-menu appearing on the target mid-send
-    owns the pane's keystrokes: Enter would confirm the highlighted option and
-    pasted text could select one. Both the re-press loop and the retry paste
-    must refuse and defer to the next tick's safe_deliver gate."""
-
-    MENU = (
-        "Do you want to proceed?\n"
-        "❯ 1. Yes\n"
-        "  2. No\n"
-        "Esc to cancel"
-    )
-
-    def test_no_enter_pressed_into_live_menu(self, monkeypatch):
-        _fake_clock(monkeypatch)
-
-        def frame(a):
-            if a["caps"] <= 2:
-                return render_box("report text")  # landed
-            return self.MENU  # dialog replaced the screen mid-submit
-
-        actions = _env(monkeypatch, frame)
-        assert not session_ready.send_verified("s", "report text")
-        assert actions["enters"] == 0
-
-    def test_retry_never_pastes_into_live_menu(self, monkeypatch):
-        _fake_clock(monkeypatch)
-        actions = _env(monkeypatch, lambda a: self.MENU)
-        assert not session_ready.send_verified("s", "report text", retries=2)
-        assert actions["pastes"] == 0
-        assert actions["enters"] == 0

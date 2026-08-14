@@ -22,25 +22,36 @@ STUB = '{"type":"ai-title"}\n{"type":"mode","mode":"normal"}\n'
 
 
 @pytest.fixture
-def store(tmp_path, monkeypatch):
-    """Isolated ~/.agentwire and ~/.claude/projects, plus a launch cwd."""
+def hermes_db(monkeypatch):
+    """A fake Hermes session store: a mutable set of 'present' session ids.
+
+    ``history.locate_conversation`` reads ``_db().get_session(id)``; a present id
+    is 'in the store' (resumable), an absent id is 'gone'. There is no orphan
+    state — a Hermes session's cwd is a data column, not part of its key.
+    """
+    present = set()
+
+    class FakeDB:
+        @staticmethod
+        def get_session(sid):
+            return {"id": sid} if sid in present else None
+
+    monkeypatch.setattr("agentwire.history._db", lambda: FakeDB())
+    return present
+
+
+@pytest.fixture
+def store(tmp_path, monkeypatch, hermes_db):
+    """Isolated ~/.agentwire + a launch cwd + the fake Hermes session store."""
     monkeypatch.setattr("agentwire.core.CONFIG_DIR", tmp_path / "agentwire")
-    monkeypatch.setattr("agentwire.history.PROJECTS_DIR", tmp_path / "projects")
     cwd = tmp_path / "worktree"
     cwd.mkdir()
-    (tmp_path / "projects").mkdir()
-    return types.SimpleNamespace(root=tmp_path, cwd=cwd, projects=tmp_path / "projects")
+    return types.SimpleNamespace(root=tmp_path, cwd=cwd, db=hermes_db)
 
 
 def write_history(store, cwd, conversation_id):
-    """Create the ``.jsonl`` Claude would write on the first turn."""
-    from agentwire.history import encode_project_path
-
-    d = store.projects / encode_project_path(str(cwd))
-    d.mkdir(parents=True, exist_ok=True)
-    f = d / f"{conversation_id}.jsonl"
-    f.write_text(TURN)
-    return f
+    """Mark *conversation_id* as present in the (fake) Hermes session store."""
+    store.db.add(conversation_id)
 
 
 def record(session="sess", *, cwd, ids=(), posture="bypass", roles=(), **extra):
@@ -101,35 +112,10 @@ class TestResolveResumeTarget:
                                                    str(store.cwd))
         assert rid == "older"
 
-    def test_orphaned_history_is_not_resumable(self, store):
-        moved = store.root / "elsewhere"
-        moved.mkdir()
-        write_history(store, moved, "cid")
-        rid, loc = restart_cli.resolve_resume_target(["cid"], str(store.cwd))
-        assert rid is None
-        assert loc.status == "orphaned"
-        assert loc.elsewhere
-
     def test_no_history_anywhere_is_gone(self, store):
         rid, loc = restart_cli.resolve_resume_target(["cid"], str(store.cwd))
         assert rid is None
         assert loc.status == "gone"
-
-    def test_orphaned_outranks_gone_when_reporting(self, store):
-        """A never-prompted newest id must not hide a recoverable orphan.
-
-        Chain tail is ``gone`` (launched, never spoken to), but an earlier
-        conversation is sitting under a stale key — that's the one finding
-        anyone can act on, so it's the one reported.
-        """
-        moved = store.root / "elsewhere"
-        moved.mkdir()
-        write_history(store, moved, "older")
-        rid, loc = restart_cli.resolve_resume_target(
-            ["older", "never-prompted"], str(store.cwd)
-        )
-        assert rid is None
-        assert loc.status == "orphaned" and loc.conversation_id == "older"
 
     def test_empty_chain(self, store):
         assert restart_cli.resolve_resume_target([], str(store.cwd)) == (None, None)
@@ -243,18 +229,6 @@ class TestDegradedRestart:
         assert "--session-id" not in cmd
         out = capsys.readouterr().out
         assert "No history found" in out and "role intact" in out
-
-    def test_orphaned_history_names_where_it_went(self, store, launched, capsys):
-        moved = store.root / "elsewhere"
-        moved.mkdir()
-        write_history(store, moved, "cid-1")
-        record(cwd=store.cwd, ids=["cid-1"])
-
-        assert run() == 0
-        cmd = launched.launch[0][3]
-        assert '--resume "cid-1"' not in cmd and "--fork-session" not in cmd
-        out = capsys.readouterr().out
-        assert "ORPHANED" in out
 
     def test_json_reports_the_degradation(self, store, launched, capsys):
         import json

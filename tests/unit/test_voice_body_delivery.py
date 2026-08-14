@@ -67,7 +67,7 @@ def worst_case_body():
 #: with a status footer below. A fixture that uses ``"> "`` still parses, since
 #: both glyphs are in ``prompt_router._PROMPT_GLYPHS`` — but it would be a
 #: fixture-shaped test of a shape the real pane never produces.
-REAL_PROMPT_GLYPH = "❯\xa0"
+REAL_PROMPT_GLYPH = "❯ "
 REAL_WIDTH = 80
 REAL_FOOTER = (
     "  opus  …/agentwire-dev/voice-control  voice-control\n"
@@ -76,24 +76,12 @@ REAL_FOOTER = (
 
 
 def fake_pane(rendered: str, width: int = REAL_WIDTH) -> str:
-    """A pane capture with *rendered* sitting unsubmitted in the input box.
+    """A Hermes prompt line: the glyph + the full (one-line) rendered body.
 
-    Mirrors what ``capture-pane`` actually produces (see the constants above):
-    horizontal rules bracketing the box, the real prompt glyph, the status
-    footer, and long lines WRAPPED at the pane width. The wrapping is the part a
-    hand-written fixture usually omits, and it is exactly what the substring
-    tests have to survive.
+    The body is asserted to be ONE line and short enough to fit, so it sits on
+    the single prompt_toolkit line after the glyph (no wrapping, no chip).
     """
-    wrapped = [rendered[i:i + width - 2] for i in range(0, len(rendered), width - 2)]
-    lines = [
-        "⏺ some earlier output",
-        "─" * width,
-        REAL_PROMPT_GLYPH + wrapped[0],
-        *["  " + chunk for chunk in wrapped[1:]],
-        "─" * width,
-        REAL_FOOTER,
-    ]
-    return "\n".join(lines)
+    return "⏺ some earlier output\n" + REAL_PROMPT_GLYPH + rendered + "\n"
 
 
 class TestTheBodyIsOneLine:
@@ -171,7 +159,7 @@ class TestTheBodySurvivesTheRealPastePath:
         )
         # And it is genuinely found once submitted.
         scrollback = "\n".join(
-            [rendered, "─" * 80, "> ", "─" * 80, "  ? for shortcuts"]
+            [rendered, "❯ ", "  ? for shortcuts"]
         )
         assert session_ready.message_on_scrollback(scrollback, rendered) is True
 
