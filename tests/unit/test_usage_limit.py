@@ -1,13 +1,15 @@
-"""Tests for usage-limit dialog recovery (agentwire/usage_limit.py).
+"""Tests for provider-limit recovery (agentwire/usage_limit.py, issue #8).
 
-The dialog fixture is the real pane capture from the 2026-06-10 incident
-(two scheduler verification runs parked on the dialog for ~11 hours).
+Claude's usage-limit select-menu (park/reset dialog) is gone — Hermes surfaces
+provider limits as structured ``AuthError`` codes on the failed turn's stderr
+or ``hermes auth status``. These tests cover the error-code detection
+(transient vs hard), the park state write (no keystrokes), the resume nudge,
+and the config gates, all against the #13 detector's primitives.
 """
 
 import json
 import subprocess
 from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -15,59 +17,6 @@ from agentwire import usage_limit
 
 # Original reader, captured before the autouse fixture stubs it per-test.
 _ORIG_RECOVERY_CONFIG = usage_limit._recovery_config
-
-
-# Real capture from the incident (fragmentz/scheduler-fragmentz-leads-daily).
-REAL_DIALOG = """\
-  ⎿  You've hit your session limit · resets 11:40pm (America/Toronto)
-
-✻ Baked for 23m 20s
-
-❯ /rate-limit-options
-
-────────────────────────────────────────────────────────────────────────────────
-  What do you want to do?
-
-  ❯ 1. Stop and wait for limit to reset
-    2. Switch to usage credits
-    3. Switch to Team plan
-
-  Enter to confirm · Esc to cancel
-
-"""
-
-# An orchestrator pane *displaying* a captured dialog (its own prompt below).
-DISPLAYED_DIALOG = REAL_DIALOG + """\
-```
-
-### jordan
-- Idle: 100min | Nagged: 49x
-- Posture: bypass
-
-❯ ready for your next instruction
-"""
-
-# A live menu that is NOT the usage-limit dialog (drift / other dialogs).
-OTHER_DIALOG = """\
-  What do you want to do?
-
-  ❯ 1. Yes, proceed
-    2. No, cancel
-
-  Enter to confirm · Esc to cancel
-"""
-
-# Narrow pane: the option line wraps mid-phrase.
-WRAPPED_DIALOG = """\
-  What do you want to do?
-
-  ❯ 1. Stop and wait for limit
-  to reset
-    2. Switch to usage credits
-
-  Enter to confirm · Esc to
-  cancel
-"""
 
 
 @pytest.fixture(autouse=True)
@@ -94,107 +43,63 @@ def events(tmp_path=None):
 
 
 # =============================================================================
-# Detection
+# Detection (provider limit errors, not menus)
 # =============================================================================
 
 
-class TestDetectDialog:
-    def test_real_incident_capture(self):
-        assert usage_limit.detect_dialog(REAL_DIALOG) is True
+class TestDetectLimit:
+    def test_transient_codex_rate_limited(self):
+        stderr = (
+            "hermes -z: agent failed: AuthError(provider='codex', "
+            "code='codex_rate_limited', relogin_required=False)"
+        )
+        d = usage_limit.detect_limit("s1", stderr=stderr)
+        assert d is not None
+        assert d["code"] == "codex_rate_limited"
+        assert d["transient"] is True
+        assert d["hard"] is False
+        assert d["source"] == "stderr"
 
-    def test_wrapped_narrow_pane(self):
-        assert usage_limit.detect_dialog(WRAPPED_DIALOG) is True
+    def test_hard_credit_error(self):
+        stderr = "agent failed: AuthError(provider='anthropic', code='insufficient_credits')"
+        d = usage_limit.detect_limit("s1", stderr=stderr)
+        assert d["code"] == "insufficient_credits"
+        assert d["transient"] is False
+        assert d["hard"] is True
 
-    def test_displayed_capture_is_not_live(self):
-        # A pane quoting the dialog (orchestrator review) must not match.
-        assert usage_limit.detect_dialog(DISPLAYED_DIALOG) is False
+    def test_no_auth_error_returns_none(self):
+        assert usage_limit.detect_limit("s1", stderr="all green") is None
+        assert usage_limit.detect_limit("s1") is None
+        assert usage_limit.detect_limit("s1", stderr="") is None
 
-    def test_other_menus_dont_match(self):
-        assert usage_limit.detect_dialog(OTHER_DIALOG) is False
+    def test_unrecognized_auth_code_is_not_a_limit(self):
+        # An AuthError whose code is neither transient (codex_rate_limited /
+        # temporarily_unavailable) nor hard/credit is not a park trigger.
+        # detect_limit never reads pane text at all — it keys on the session's
+        # OWN structured error (stderr / store / auth status), so an
+        # orchestrator merely *displaying* another session's error can never
+        # be parked (the #13 transcript-vs-pane rule).
+        stderr = "agent failed: AuthError(provider='x', code='some_other_error')"
+        assert usage_limit.detect_limit("s1", stderr=stderr) is None
 
-    def test_plain_output_doesnt_match(self):
-        assert usage_limit.detect_dialog("$ make test\nAll green\n") is False
-        assert usage_limit.detect_dialog("") is False
+    def test_preflight_hard_auth(self, monkeypatch):
+        monkeypatch.setattr(
+            "agentwire.auth_expired.probe_provider_auth",
+            lambda provider: {
+                "provider": provider,
+                "code": "no_usable_credits",
+                "relogin_required": False,
+            },
+        )
+        d = usage_limit.detect_limit("s1", provider="nous")
+        assert d["source"] == "preflight"
+        assert d["transient"] is False
+        assert d["hard"] is True
+        assert d["code"] == "no_usable_credits"
 
-    def test_scrollback_remnant_with_prompt_below(self):
-        # After parking, the menu text may linger above a live prompt.
-        text = REAL_DIALOG + "\n❯ \n"
-        assert usage_limit.detect_dialog(text) is False
-
-
-class TestDetectDialogLike:
-    def test_unknown_menu_is_dialog_like(self):
-        assert usage_limit.detect_dialog_like(OTHER_DIALOG) is True
-
-    def test_known_dialog_is_not_dialog_like(self):
-        assert usage_limit.detect_dialog_like(REAL_DIALOG) is False
-
-    def test_plain_output_is_not_dialog_like(self):
-        assert usage_limit.detect_dialog_like("compiling...") is False
-
-
-# =============================================================================
-# Reset time parsing
-# =============================================================================
-
-TORONTO = ZoneInfo("America/Toronto")
-
-
-class TestParseResetTime:
-    def test_real_capture(self):
-        now = datetime(2026, 6, 10, 22, 30, tzinfo=TORONTO)
-        result = usage_limit.parse_reset_time(REAL_DIALOG, now)
-        assert result == datetime(2026, 6, 10, 23, 40, tzinfo=TORONTO)
-        assert result.tzinfo == timezone.utc
-
-    def test_rolls_past_midnight(self):
-        now = datetime(2026, 6, 10, 23, 0, tzinfo=TORONTO)
-        result = usage_limit.parse_reset_time("resets 1:05am (America/Toronto)", now)
-        assert result == datetime(2026, 6, 11, 1, 5, tzinfo=TORONTO)
-
-    def test_stated_time_already_passed_means_reset_done(self):
-        # Dialog said 11:40pm; we only noticed at 11:50pm. Tomorrow-11:40pm
-        # is outside one 5h window, so the reset already happened.
-        now = datetime(2026, 6, 10, 23, 50, tzinfo=TORONTO)
-        result = usage_limit.parse_reset_time("resets 11:40pm (America/Toronto)", now)
-        assert result == now
-
-    def test_no_minutes_and_at_variant(self):
-        now = datetime(2026, 6, 10, 13, 0, tzinfo=TORONTO)
-        result = usage_limit.parse_reset_time("resets at 3pm (America/Toronto)", now)
-        assert result == datetime(2026, 6, 10, 15, 0, tzinfo=TORONTO)
-
-    def test_12am_and_12pm(self):
-        now = datetime(2026, 6, 10, 22, 0, tzinfo=TORONTO)
-        result = usage_limit.parse_reset_time("resets 12:15am (America/Toronto)", now)
-        assert result == datetime(2026, 6, 11, 0, 15, tzinfo=TORONTO)
-
-        now = datetime(2026, 6, 10, 10, 0, tzinfo=TORONTO)
-        result = usage_limit.parse_reset_time("resets 12:30pm (America/Toronto)", now)
-        assert result == datetime(2026, 6, 10, 12, 30, tzinfo=TORONTO)
-
-    def test_last_match_wins(self):
-        now = datetime(2026, 6, 10, 20, 0, tzinfo=TORONTO)
-        text = "resets 9:00pm (America/Toronto)\n...\nresets 11:40pm (America/Toronto)"
-        result = usage_limit.parse_reset_time(text, now)
-        assert result == datetime(2026, 6, 10, 23, 40, tzinfo=TORONTO)
-
-    def test_unknown_timezone_falls_back_to_local(self):
-        now = datetime(2026, 6, 10, 20, 0, tzinfo=timezone.utc)
-        result = usage_limit.parse_reset_time("resets 11:40pm (Mars/Olympus)", now)
-        assert result is not None
-
-    def test_no_timezone_uses_local(self):
-        now = datetime(2026, 6, 10, 20, 0, tzinfo=timezone.utc)
-        assert usage_limit.parse_reset_time("resets 11:40pm", now) is not None
-
-    def test_unparseable_returns_none(self):
-        assert usage_limit.parse_reset_time("no limits here", _now_utc()) is None
-        assert usage_limit.parse_reset_time("", _now_utc()) is None
-
-
-def _now_utc():
-    return datetime.now(timezone.utc)
+    def test_store_message_surface_is_stub(self):
+        # Mirrors auth_expired._session_last_auth_error: not yet wired (#9).
+        assert usage_limit._session_last_limit_error("s1") is None
 
 
 # =============================================================================
@@ -238,88 +143,54 @@ class TestState:
 # =============================================================================
 
 
-class FakeTmux:
-    """Scriptable stand-in for usage_limit._tmux."""
-
-    def __init__(self, screens):
-        # screens: list of visible-screen strings; each capture pops the next
-        # (last one repeats).
-        self.screens = list(screens)
-        self.sent_keys = []
-
-    def __call__(self, args, timeout=5):
-        cmd = args[0]
-        if cmd == "capture-pane":
-            text = self.screens[0]
-            if len(self.screens) > 1:
-                self.screens.pop(0)
-            return subprocess.CompletedProcess(args, 0, stdout=text, stderr="")
-        if cmd == "send-keys":
-            self.sent_keys.append(args[-1])
-            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
-        if cmd == "display-message":
-            return subprocess.CompletedProcess(args, 0, stdout="/tmp/proj\n", stderr="")
-        if cmd == "has-session":
-            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
-        if cmd == "list-panes":
-            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
-        return subprocess.CompletedProcess(args, 1, stdout="", stderr="unknown")
-
-
 class TestPark:
-    def test_parks_and_writes_state(self, monkeypatch):
-        # Captures: park() detect → scrollback → confirm (dismissed)
-        fake = FakeTmux([REAL_DIALOG, REAL_DIALOG, "❯ waiting...\n"])
-        monkeypatch.setattr(usage_limit, "_tmux", fake)
+    def test_parks_and_writes_state_no_keystrokes(self, monkeypatch):
+        # A limit-parked Hermes session needs NO keystroke — no tmux at all.
+        def boom(*a, **k):
+            raise AssertionError("park must not touch tmux (no menu to answer)")
 
-        now = datetime(2026, 6, 11, 2, 30, tzinfo=timezone.utc)  # 22:30 Toronto
+        monkeypatch.setattr(usage_limit, "_tmux", boom)
+        monkeypatch.setattr(usage_limit, "_task_info", lambda session: {})
+        monkeypatch.setattr(usage_limit, "_notify_parked", lambda state: True)
+        now = datetime(2026, 6, 11, 2, 30, tzinfo=timezone.utc)
         monkeypatch.setattr(usage_limit, "_now", lambda: now)
 
-        state = usage_limit.park("fragmentz/leads", pane_index=0)
+        limit = {
+            "provider": "codex",
+            "code": "codex_rate_limited",
+            "transient": True,
+            "evidence": "AuthError(code='codex_rate_limited')",
+        }
+        state = usage_limit.park("fragmentz/leads", pane_index=0, limit=limit)
 
         assert state is not None
-        assert fake.sent_keys == ["1", "Enter"]
         assert state["status"] == "parked"
-        assert state["reset_parse_failed"] is False
-        # 11:40pm Toronto == 03:40 UTC
-        assert state["reset_at"] == "2026-06-11T03:40:00+00:00"
-        assert state["resume_at"] == "2026-06-11T03:42:00+00:00"
+        assert state["code"] == "codex_rate_limited"
+        assert state["provider"] == "codex"
+        assert state["transient"] is True
+        assert state["reset_at"] == "2026-06-11T02:35:00+00:00"
+        assert state["resume_at"] == "2026-06-11T02:36:00+00:00"
         assert usage_limit.is_parked("fragmentz/leads")
         assert any(e["event"] == "session_parked" for e in events())
 
-    def test_idempotent_when_already_parked(self, monkeypatch):
-        usage_limit.write_park_state({"session": "s1", "status": "parked"})
-        fake = FakeTmux([REAL_DIALOG])
-        monkeypatch.setattr(usage_limit, "_tmux", fake)
-        assert usage_limit.park("s1") is None
-        assert fake.sent_keys == []
-
-    def test_no_dialog_no_park(self, monkeypatch):
-        fake = FakeTmux(["just normal output\n"])
-        monkeypatch.setattr(usage_limit, "_tmux", fake)
-        assert usage_limit.park("s1") is None
-        assert not usage_limit.is_parked("s1")
-        assert fake.sent_keys == []
-
-    def test_unparseable_reset_falls_back_5h(self, monkeypatch):
-        dialog = WRAPPED_DIALOG  # no "resets ..." line anywhere
-        fake = FakeTmux([dialog, dialog, ""])
-        monkeypatch.setattr(usage_limit, "_tmux", fake)
-        now = datetime(2026, 6, 11, 2, 0, tzinfo=timezone.utc)
+    def test_park_hard_credit_error(self, monkeypatch):
+        monkeypatch.setattr(usage_limit, "_task_info", lambda session: {})
+        monkeypatch.setattr(usage_limit, "_notify_parked", lambda state: True)
+        now = datetime(2026, 6, 11, 2, 30, tzinfo=timezone.utc)
         monkeypatch.setattr(usage_limit, "_now", lambda: now)
 
-        state = usage_limit.park("s1")
-        assert state["reset_parse_failed"] is True
-        assert state["reset_at"] == "2026-06-11T07:00:00+00:00"
-        assert any(e["event"] == "reset_parse_failed" for e in events())
+        state = usage_limit.park(
+            "s1",
+            limit={"provider": "anthropic", "code": "insufficient_credits",
+                   "transient": False},
+        )
+        assert state["transient"] is False
+        assert state["code"] == "insufficient_credits"
 
-    def test_retries_menu_confirm_once(self, monkeypatch):
-        # Menu survives the first 1+Enter, dismissed after the second.
-        fake = FakeTmux([REAL_DIALOG, REAL_DIALOG, REAL_DIALOG, "❯\n"])
-        monkeypatch.setattr(usage_limit, "_tmux", fake)
-        state = usage_limit.park("s1")
-        assert state is not None
-        assert fake.sent_keys == ["1", "Enter", "1", "Enter"]
+    def test_idempotent_when_already_parked(self, monkeypatch):
+        usage_limit.write_park_state({"session": "s1", "status": "parked"})
+        monkeypatch.setattr(usage_limit, "_task_info", lambda s: {})
+        assert usage_limit.park("s1") is None
 
 
 # =============================================================================
@@ -335,8 +206,8 @@ class TestResume:
             "status": "parked",
             "detected_at": "2026-06-11T02:30:00+00:00",
             "parked_at": "2026-06-11T02:30:05+00:00",
-            "reset_at": "2026-06-11T03:40:00+00:00",
-            "resume_at": resume_at or "2026-06-11T03:42:00+00:00",
+            "reset_at": "2026-06-11T02:35:00+00:00",
+            "resume_at": resume_at or "2026-06-11T02:36:00+00:00",
             "notified": True,
             "resume_attempts": 0,
             **extra,
@@ -393,7 +264,7 @@ class TestResume:
         assert archived["status"] == "resume_failed"
 
     def test_resume_due_only_past_resume_at(self, monkeypatch):
-        self._parked(session="due", resume_at="2026-06-11T03:42:00+00:00")
+        self._parked(session="due", resume_at="2026-06-11T02:36:00+00:00")
         self._parked(session="later", resume_at="2026-06-11T09:00:00+00:00")
         monkeypatch.setattr(usage_limit, "_session_exists", lambda s: True)
         resumed_calls = []
@@ -424,101 +295,60 @@ class TestResume:
 
 
 class TestSweep:
-    def test_sweep_parks_dialog_panes(self, monkeypatch):
-        panes = "work\t0\tnode\nidle\t0\tzsh\nworker\t2\tclaude"
-        screens = {
-            "work.0": REAL_DIALOG,
-            "worker.2": "normal output",
-        }
+    def test_sweep_parks_limited_sessions(self, monkeypatch):
+        monkeypatch.setattr(usage_limit, "_list_sessions", lambda: ["work", "idle"])
 
-        def fake_tmux(args, timeout=5):
-            if args[0] == "list-panes":
-                return subprocess.CompletedProcess(args, 0, stdout=panes, stderr="")
-            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+        def fake_detect(session, pane_index=0):
+            return {"session": session, "code": "codex_rate_limited"} if session == "work" else None
 
-        monkeypatch.setattr(usage_limit, "_tmux", fake_tmux)
-        monkeypatch.setattr(
-            usage_limit, "_capture",
-            lambda target, scrollback=None: screens.get(target, ""),
-        )
+        monkeypatch.setattr(usage_limit, "detect_limit", fake_detect)
         parked_calls = []
         monkeypatch.setattr(
             usage_limit, "park",
-            lambda session, pane_index=0, source="watchdog": parked_calls.append(
-                (session, pane_index)
-            ) or {"session": session},
+            lambda session, pane_index=0, source="watchdog", limit=None:
+                parked_calls.append(session) or {"session": session},
         )
 
         result = usage_limit.sweep()
-        assert parked_calls == [("work", 0)]  # zsh pane skipped, normal pane no match
+        assert parked_calls == ["work"]
         assert [s["session"] for s in result] == ["work"]
-
-    def test_sweep_logs_unmatched_dialog_once(self, monkeypatch):
-        panes = "odd\t0\tnode"
-
-        def fake_tmux(args, timeout=5):
-            if args[0] == "list-panes":
-                return subprocess.CompletedProcess(args, 0, stdout=panes, stderr="")
-            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
-
-        monkeypatch.setattr(usage_limit, "_tmux", fake_tmux)
-        monkeypatch.setattr(
-            usage_limit, "_capture", lambda target, scrollback=None: OTHER_DIALOG
-        )
-
-        usage_limit.sweep()
-        usage_limit.sweep()  # same screen → no duplicate event
-        unmatched = [e for e in events() if e["event"] == "unmatched_dialog"]
-        assert len(unmatched) == 1
-        assert "Yes, proceed" in unmatched[0]["excerpt"]
 
     def test_sweep_disabled_by_config(self, monkeypatch):
         monkeypatch.setattr(usage_limit, "_recovery_config", lambda: (False, set()))
 
         def boom(*a, **k):
-            raise AssertionError("disabled sweep must not touch tmux")
+            raise AssertionError("disabled sweep must not list sessions")
 
-        monkeypatch.setattr(usage_limit, "_tmux", boom)
+        monkeypatch.setattr(usage_limit, "_list_sessions", boom)
         assert usage_limit.sweep() == []
 
     def test_sweep_skips_excluded_sessions(self, monkeypatch):
         monkeypatch.setattr(
             usage_limit, "_recovery_config", lambda: (True, {"precious"})
         )
-        panes = "precious\t0\tnode\nother\t0\tnode"
-
-        def fake_tmux(args, timeout=5):
-            if args[0] == "list-panes":
-                return subprocess.CompletedProcess(args, 0, stdout=panes, stderr="")
-            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
-
-        monkeypatch.setattr(usage_limit, "_tmux", fake_tmux)
-        captured = []
+        monkeypatch.setattr(usage_limit, "_list_sessions", lambda: ["precious", "other"])
         monkeypatch.setattr(
-            usage_limit, "_capture",
-            lambda target, scrollback=None: captured.append(target) or REAL_DIALOG,
+            usage_limit, "detect_limit",
+            lambda session, pane_index=0: {"session": session, "code": "codex_rate_limited"},
         )
         parked_calls = []
         monkeypatch.setattr(
             usage_limit, "park",
-            lambda session, pane_index=0, source="watchdog": parked_calls.append(session)
-            or {"session": session},
+            lambda session, pane_index=0, source="watchdog", limit=None:
+                parked_calls.append(session) or {"session": session},
         )
 
         usage_limit.sweep()
         assert parked_calls == ["other"]
-        assert "precious.0" not in captured  # excluded session never captured
 
     def test_sweep_skips_already_parked(self, monkeypatch):
         usage_limit.write_park_state({"session": "work", "status": "parked"})
-        panes = "work\t0\tnode"
+        monkeypatch.setattr(usage_limit, "_list_sessions", lambda: ["work"])
 
-        def fake_tmux(args, timeout=5):
-            if args[0] == "list-panes":
-                return subprocess.CompletedProcess(args, 0, stdout=panes, stderr="")
-            raise AssertionError("should not capture a parked session")
+        def boom(*a, **k):
+            raise AssertionError("should not detect a parked session")
 
-        monkeypatch.setattr(usage_limit, "_tmux", fake_tmux)
+        monkeypatch.setattr(usage_limit, "detect_limit", boom)
         assert usage_limit.sweep() == []
 
 
@@ -532,33 +362,32 @@ class TestCheckAndPark:
         usage_limit.write_park_state({"session": "s1", "status": "parked"})
 
         def boom(*a, **k):
-            raise AssertionError("must not capture when already parked")
+            raise AssertionError("must not detect when already parked")
 
-        monkeypatch.setattr(usage_limit, "_capture", boom)
+        monkeypatch.setattr(usage_limit, "detect_limit", boom)
         assert usage_limit.check_and_park("s1") is True
 
-    def test_dialog_parks(self, monkeypatch):
+    def test_limit_parks(self, monkeypatch):
         monkeypatch.setattr(
-            usage_limit, "_capture", lambda target, scrollback=None: REAL_DIALOG
+            usage_limit, "detect_limit",
+            lambda session, pane_index=0: {"session": session, "code": "codex_rate_limited"},
         )
         monkeypatch.setattr(
             usage_limit, "park",
-            lambda session, pane_index=0, source="ensure": usage_limit.write_park_state(
-                {"session": session, "status": "parked"}
-            ),
+            lambda session, pane_index=0, source="ensure", limit=None:
+                usage_limit.write_park_state({"session": session, "status": "parked"}),
         )
         assert usage_limit.check_and_park("s1", source="ensure") is True
 
-    def test_normal_screen_is_false(self, monkeypatch):
-        monkeypatch.setattr(
-            usage_limit, "_capture", lambda target, scrollback=None: "working...\n"
-        )
+    def test_no_limit_is_false(self, monkeypatch):
+        monkeypatch.setattr(usage_limit, "detect_limit", lambda *a, **k: None)
         assert usage_limit.check_and_park("s1") is False
 
     def test_disabled_gates_new_parks(self, monkeypatch):
         monkeypatch.setattr(usage_limit, "_recovery_config", lambda: (False, set()))
         monkeypatch.setattr(
-            usage_limit, "_capture", lambda target, scrollback=None: REAL_DIALOG
+            usage_limit, "detect_limit",
+            lambda session, pane_index=0: {"session": session, "code": "codex_rate_limited"},
         )
         assert usage_limit.check_and_park("s1") is False
         assert not usage_limit.is_parked("s1")
@@ -566,7 +395,8 @@ class TestCheckAndPark:
     def test_excluded_session_gates_new_parks(self, monkeypatch):
         monkeypatch.setattr(usage_limit, "_recovery_config", lambda: (True, {"s1"}))
         monkeypatch.setattr(
-            usage_limit, "_capture", lambda target, scrollback=None: REAL_DIALOG
+            usage_limit, "detect_limit",
+            lambda session, pane_index=0: {"session": session, "code": "codex_rate_limited"},
         )
         assert usage_limit.check_and_park("s1") is False
         assert not usage_limit.is_parked("s1")

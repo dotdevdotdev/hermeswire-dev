@@ -157,7 +157,7 @@ def test_every_content_reading_tool_is_policed():
     secret could be exfiltrated without traversing damage control."""
     from agentwire.safety_commands import DAMAGE_CONTROL_MATCHERS
 
-    for tool in ("Read", "Grep", "Glob"):
+    for tool in ("read_file", "search_files"):
         assert DAMAGE_CONTROL_MATCHERS.get(tool) == "read-tool-damage-control.py", (
             f"{tool} is not covered by the damage-control read hook"
         )

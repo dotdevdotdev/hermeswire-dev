@@ -7,8 +7,13 @@
 AgentWire Write Tool Damage Control
 ===================================
 
-Claude Code PreToolUse hook for Write tool calls. Blocks writes to protected
-files using the same shared rule set as the Bash and Edit hooks.
+Hermes Agent ``pre_tool_call`` hook for the ``write_file`` tool. Blocks writes
+to protected files using the same shared rule set as the Bash and Edit hooks.
+
+Wire contract (Hermes): stdin is a ``pre_tool_call`` payload
+(``{"tool_name": "write_file", "tool_input": {"path": "..."}, ...}``). A block
+is ``{"action": "block", "message": "<reason>"}`` on stdout; otherwise exit 0
+(audit-logged).
 
 Implementation: the body of ``agentwire/safety/_core.py`` is inlined below
 between the BEGIN/END GENERATED markers. Edit ``_core.py``, then run
@@ -3686,12 +3691,14 @@ def main() -> None:
         sys.exit(1)
 
     tool_name = input_data.get("tool_name", "")
-    tool_input = input_data.get("tool_input", {})
+    tool_input = input_data.get("tool_input", {}) or {}
 
-    if tool_name != "Write":
+    # Hermes names the file-write tool ``write_file`` (Claude's ``Write`` no
+    # longer exists) and passes the target in ``tool_input.path``.
+    if tool_name != "write_file":
         sys.exit(0)
 
-    file_path = tool_input.get("file_path", "")
+    file_path = tool_input.get("path", "") or tool_input.get("file_path", "")
     if not file_path:
         sys.exit(0)
 
@@ -3699,15 +3706,15 @@ def main() -> None:
     # disabled, so it must run BEFORE the kill-switch short-circuit (#466).
     blocked, reason = check_path(file_path, config)
     if blocked:
-        log_blocked("Write", file_path, reason)
-        print(f"SECURITY: Blocked write to {reason}: {file_path}", file=sys.stderr)
-        sys.exit(2)
-
-    if config["safety"].get("enabled", True) is False:
-        log_disabled("Write", file_path)
+        log_blocked("write_file", file_path, reason)
+        print(json.dumps({"action": "block", "message": reason}))
         sys.exit(0)
 
-    log_allowed("Write", file_path, user_approved=False)
+    if config["safety"].get("enabled", True) is False:
+        log_disabled("write_file", file_path)
+        sys.exit(0)
+
+    log_allowed("write_file", file_path, user_approved=False)
     sys.exit(0)
 
 

@@ -7,10 +7,18 @@
 AgentWire Bash Tool Damage Control
 ==================================
 
-Claude Code PreToolUse hook for Bash tool calls. Decides allow/block/ask based
-on the merged rule set under ``agentwire/hooks/damage-control/rules/*.yaml``
-(or the user's ``~/.agentwire/damage-control/*.yaml`` override) plus
-ask-patterns generated from write-tier tooldef commands.
+Hermes Agent ``pre_tool_call`` hook for the ``terminal`` tool. Decides
+allow/block/ask based on the merged rule set under
+``agentwire/hooks/damage-control/rules/*.yaml`` (or the user's
+``~/.agentwire/damage-control/*.yaml`` override) plus ask-patterns generated
+from write-tier tooldef commands.
+
+Wire contract (Hermes): stdin is a ``pre_tool_call`` payload
+(``{"hook_event_name": "pre_tool_call", "tool_name": "terminal",
+"tool_input": {"command": "..."}, "cwd": "...", ...}``). stdout directives:
+block -> ``{"action": "block", "message": "<reason>"}``; ask (escalate to the
+native human-approval gate) -> ``{"action": "approve", "message": "<reason>",
+"rule_key": "<rule_id>"}``; allow/escape/disabled -> exit 0 (audit-logged).
 
 Implementation: the body of ``agentwire/safety/_core.py`` is inlined below
 between the BEGIN/END GENERATED markers. Edit ``_core.py``, then run
@@ -3730,17 +3738,13 @@ def main() -> None:
         sys.exit(1)
 
     tool_name = input_data.get("tool_name", "")
-    tool_input = input_data.get("tool_input", {})
-    # Claude Code passes ``permission_mode`` in the hook input. Two modes
-    # indicate the user has explicitly opted out of ask-escalation friction:
-    #   - "bypassPermissions" → --dangerously-skip-permissions
-    #   - "auto"              → autonomous /loop or similar auto mode
-    # Hard blocks still fire either way; ``ask:true`` patterns become allow —
-    # EXCEPT an unverifiable (verb-concealing) ask, which stays an ask (#934).
-    permission_mode = input_data.get("permission_mode", "")
-    bypass_modes = {"bypassPermissions", "auto"}
-
-    if tool_name != "Bash":
+    tool_input = input_data.get("tool_input", {}) or {}
+    # Hermes pre_tool_call contract: the shell tool is named ``terminal``
+    # (Claude's ``Bash`` no longer exists), and its payload carries
+    # ``tool_input.command``. There is no per-call ``permission_mode``; ask
+    # escalation is expressed via the ``approve`` directive, not a bypass
+    # demotion.
+    if tool_name != "terminal":
         sys.exit(0)
 
     command = tool_input.get("command", "")
@@ -3753,12 +3757,13 @@ def main() -> None:
 
     if decision == "block":
         try:
-            log_blocked("Bash", command, reason, pattern=result.get("pattern"), rule_id=result.get("id"))
+            log_blocked("terminal", command, reason, pattern=result.get("pattern"), rule_id=result.get("id"))
         except TypeError:
-            log_blocked("Bash", command, reason)
-        print(f"SECURITY: Blocked: {reason}", file=sys.stderr)
-        print(f"Command: {command[:100]}{'...' if len(command) > 100 else ''}", file=sys.stderr)
-        sys.exit(2)
+            log_blocked("terminal", command, reason)
+        # Hermes parses stdout JSON, not exit codes — a block must be a
+        # ``{"action": "block", "message": ...}`` directive printed to stdout.
+        print(json.dumps({"action": "block", "message": reason}))
+        sys.exit(0)
     elif decision == "ask" and is_unattended():
         # No human present (scheduler dispatch). The interactive confirm is
         # meaningless, so fail closed: BLOCK + notify the owner, unless the
@@ -3775,7 +3780,7 @@ def main() -> None:
         # case is caught by its verb's own rule — so the unattended refusal is
         # scoped to `unverifiable`, which no grant and no bypass demotes.
         if rule_id == "core.ambiguous-command" and not result.get("unverifiable"):
-            log_allowed("Bash", command, user_approved=False)
+            log_allowed("terminal", command, user_approved=False)
             sys.exit(0)
         hook_cwd = input_data.get("cwd") or os.environ.get("PWD") or os.getcwd()
         grants = resolve_unattended_grants(config)
@@ -3783,51 +3788,43 @@ def main() -> None:
             rule_id, command, grants, hook_cwd, pattern=result.get("pattern"),
         )
         if granted:
-            log_allowed("Bash", command, user_approved=False)
+            log_allowed("terminal", command, user_approved=False)
             sys.exit(0)
         try:
-            log_blocked("Bash", command, f"unattended: {reason} — {why}",
+            log_blocked("terminal", command, f"unattended: {reason} — {why}",
                         pattern=result.get("pattern"), rule_id=rule_id)
         except TypeError:
-            log_blocked("Bash", command, f"unattended: {reason} — {why}")
+            log_blocked("terminal", command, f"unattended: {reason} — {why}")
         _notify_unattended_block(command, f"{reason} — {why}", rule_id)
-        print(f"SECURITY: Blocked (unattended — no human to confirm): {reason}", file=sys.stderr)
-        print(f"Command: {command[:100]}{'...' if len(command) > 100 else ''}", file=sys.stderr)
-        print(f"Why: {why}", file=sys.stderr)
+        message = f"Blocked (unattended — no human to confirm): {reason} — {why}"
         if rule_id and rule_id not in grants:
-            print(f"To permit this for an unattended task, add rule id "
-                  f"'{rule_id}' to its .agentwire.tasks.yml task `unattended_allow` "
-                  f"(optionally scoped: `- {{id: {rule_id}, paths: [<dir>/]}}`).",
-                  file=sys.stderr)
-        sys.exit(2)
-    elif decision == "ask" and (
-        permission_mode not in bypass_modes or result.get("unverifiable")
-    ):
-        # `unverifiable` (#934): a verb-concealing shape — eval, base64-pipe,
-        # a substitution deciding what runs or feeding a wrapper's payload —
-        # keeps its ask even under bypassPermissions/auto. Bypass means "don't
-        # stop me for things you recognize"; it never meant "don't stop me for
-        # things you can't see", and demoting these made obscuring a payload
-        # the permissive path (`psql -c "$(cat drop.sql)"` ran with no gate
-        # while the literal statement blocked).
-        log_asked("Bash", command, reason)
-        output = {
-            "hookSpecificOutput": {
-                "hookEventName": "PreToolUse",
-                "permissionDecision": "ask",
-                "permissionDecisionReason": reason,
-            }
-        }
-        print(json.dumps(output))
+            message += (
+                f" To permit this for an unattended task, add rule id "
+                f"'{rule_id}' to its .agentwire.tasks.yml task `unattended_allow` "
+                f"(optionally scoped: `- {{id: {rule_id}, paths: [<dir>/]}}`)."
+            )
+        print(json.dumps({"action": "block", "message": message}))
+        sys.exit(0)
+    elif decision == "ask":
+        # Hermes has no Claude-style `permissionDecision`. An ask escalates to
+        # the native human-approval gate via the `approve` directive; the
+        # matched rule id rides in `rule_key` so `[a]lways` approvals get the
+        # right allowlist grain (not the coarse default).
+        log_asked("terminal", command, reason)
+        print(json.dumps({
+            "action": "approve",
+            "message": reason,
+            "rule_key": result.get("id", ""),
+        }))
         sys.exit(0)
     elif result.get("escape"):
-        log_escape("Bash", command, result.get("escape_reason") or "")
+        log_escape("terminal", command, result.get("escape_reason") or "")
         sys.exit(0)
     elif result.get("disabled"):
-        log_disabled("Bash", command)
+        log_disabled("terminal", command)
         sys.exit(0)
     else:
-        log_allowed("Bash", command, user_approved=False)
+        log_allowed("terminal", command, user_approved=False)
         sys.exit(0)
 
 

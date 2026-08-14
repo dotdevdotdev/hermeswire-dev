@@ -1,96 +1,82 @@
-"""Session context observability + auto-management (issue #442).
+"""Session context observability + auto-management (issue #442, Hermes rewrite #8).
 
 Phase 0 made context bloat *visible* and queryable (parse the bar, flag low
 sessions, expose via CLI/MCP). Phase 1 adds the *deterministic, zero-LLM*
 auto-action: opted-in sessions whose remaining context crosses the warn
-threshold get ``/clear`` (stateless service sessions) or ``/compact`` while
-they sit idle at an empty prompt. See :func:`tick` and :func:`resolve_policy`.
+threshold get ``/clear`` (stateless service sessions) or ``/compress`` while
+they sit idle. See :func:`tick` and :func:`resolve_policy`.
 
 **Opt-in only.** A session is auto-managed solely when it carries an explicit
 ``context_policy`` (``clear`` | ``compact``); the default everywhere is
 ``none``. Bundled stateless service sessions are default-on via their
-service-registry entry — the ``agentwire-notifications`` idle-nag bridge is the
-canonical case (it accumulates ~1440 prompts/day and needs none of its backlog).
-The watchdog never touches a session without a policy.
+service-registry entry. The watchdog never touches a session without a policy.
 
-What the bar means (verified empirically, 2026-06-22)
------------------------------------------------------
-The Claude Code footer renders a line like::
+Where the headroom comes from (Hermes, v0.19.0)
+------------------------------------------------
+Hermes has **no** Claude-style ``NN%`` context-remaining footer and no
+model-name meta line in ``tmux capture-pane`` — the old Claude-Code bar scraper
+is gone. Headroom is instead read from Hermes's SQLite session store
+(``~/.hermes/state.db``, ``hermes_state.SessionDB``): the ``sessions`` table
+carries cumulative ``input_tokens`` / ``output_tokens`` per session plus the
+``model`` column, so
 
-    [████████████████████████░░░░░] 92%
+    headroom = 1 - (input_tokens + output_tokens) / get_model_context_length(model)
 
-The percentage is **context REMAINING** — the headroom left before Claude
-Code's own auto-compaction kicks in, NOT the amount consumed. Evidence:
+``get_model_context_length`` lives in ``agent/model_metadata.py`` (Hermes's
+own package; imported lazily, ``MINIMUM_CONTEXT_LENGTH`` as fallback). The
+pane is matched to its store row by the pane's ``#{pane_current_path}`` —
+``list_sessions_rich(cwd_prefix=...)`` returns the most-recent session in that
+cwd, then ``get_session(id)`` supplies the token columns.
 
-- A fresh session reads high (~94%); the gap from 100% is the baseline
-  system-prompt + tools + CLAUDE.md overhead that every session pays.
-- Driving a live session and watching the number move: it *decreases* as the
-  conversation grows (observed 92% → 91% after loading ~1.4k lines of files
-  into one session's context).
-- It does NOT correlate with age — a 6-day-old service session read 92% while
-  a freshly-created session read 83% — because Claude Code auto-compacts and
-  the number jumps back up afterward. So it is a live, resettable headroom
-  gauge, not a lifetime-usage counter.
-
-Therefore "bloated" == **LOW remaining %**. A session is flagged when its
-remaining context drops to/below the warn threshold (default 20% remaining,
-i.e. ~80% of the way toward the limit — the framing used in #442).
-
-How it is parsed
-----------------
-Straight from ``tmux capture-pane`` text, the same mechanism agentwire already
-uses for usage-limit dialogs (:func:`usage_limit._capture`) and prompt boxes
-(:func:`prompt_router.input_box_content`). No new API into Claude Code.
+**Advisory, never a live gauge.** Token columns are cumulative session totals,
+not a resettable bar: after a ``/compress`` they may not jump back the way
+Claude's bar did, and Hermes auto-compresses on its own
+(``agent/context_compressor.py``). So a low headroom must persist across two
+watchdog ticks before an auto-``/clear`` fires, and a pane whose cwd has no
+store row reads as "unknown / skip" — never "0% → /clear".
 
 Daemon sessions (scheduler / portal / tts / stt / kokoro) run plain processes,
-not Claude conversations — they have no bar and nothing to bloat. They are
-detected via the pane's current command (not an agent binary) and skipped
-gracefully (surfaced as non-interactive, never flagged).
+not Hermes conversations — they have no store row and nothing to bloat. They
+are detected via the pane's current command and skipped gracefully.
 """
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from .usage_limit import _capture, _tmux
+from .usage_limit import _tmux
 from .utils.event_log import append_event
 
-# The context bar: a bracketed run of block-element glyphs (U+2580–U+259F
-# covers full/partial/empty blocks) followed by "NN%". ANSI is stripped first.
-#
-# HARDENING (Phase 1, issue #442) — because auto-``/clear`` now keys off the
-# parsed value, a false read must never be able to trigger an action. Two
-# anchors over the naive "any [blocks] N%":
-#   1. **Trailing token** — the bar+pct must be the last thing on its line
-#      (``[ \t]*$`` with re.MULTILINE). The real Claude footer renders the bar
-#      as the trailing token; an inline ``CPU [███░░] 50% busy`` mid-line is
-#      rejected.
-#   2. **Longest glyph-run wins** — :func:`parse_context_bar` scans every
-#      matching line and returns the percentage of the *widest* bar, so when a
-#      worker pane renders its own short progress bar alongside the real (wide)
-#      Claude footer, the footer dominates rather than the leftmost match.
-# The lookahead requires ≥1 block glyph so an all-spaces ``[   ]`` never matches.
-# Belt-and-suspenders: the auto-action sweep also gates on an idle, empty Claude
-# input box (:func:`prompt_router.prompt_is_empty`), which a pane merely drawing
-# a download meter does not present.
-_ANSI = re.compile(r"\x1b\[[0-9;]*m|\x1b\].*?\x07")
-_CONTEXT_BAR_RE = re.compile(
-    r"\[(?=[^\]\n]*[▀-▟])([▀-▟ ]+)\][ \t]*(\d{1,3})[ \t]*%[ \t]*$",
-    re.MULTILINE,
-)
-# The meta line above the bar: "… main   opus  $1805.19  7988m".
-_MODEL_RE = re.compile(r"\b(opus|sonnet|haiku|fable)\b", re.IGNORECASE)
-
 # pane_current_command values that mean an interactive agent runs in the pane.
-# Claude Code panes report the node binary or a bare version string
-# (e.g. "2.1.185"); daemons report python3.13 / uv / a bare shell. Mirrors
-# prompt_router._AGENT_COMMAND_RE — kept local to avoid an import cycle risk.
-_AGENT_COMMAND_RE = re.compile(r"^(node|claude|\d+\.\d+\.\d+\S*)$")
+# Hermes REPL panes report `hermes` / `uv` / `python3*` (prompt_toolkit); the
+# legacy Claude binary names (node / bare version string) are gone. Mirrors the
+# Hermes half of prompt_router._AGENT_COMMAND_RE (#7) — kept local to avoid an
+# import cycle.
+_AGENT_COMMAND_RE = re.compile(r"^(hermes|uv|python3(?:\.\d+)?)$")
 
 DEFAULT_WARN_REMAINING_PCT = 20
+
+# Lazily-opened Hermes SessionDB, mirroring history._db() (#9). ``None`` both
+# before first use and when ``hermes_state`` cannot be imported (the wheel must
+# not hard-depend on a Hermes version). Tests monkeypatch this to inject a fake
+# store.
+_db_instance = None
+
+
+def _db():
+    """Open the Hermes session store once, or return ``None`` if unavailable."""
+    global _db_instance
+    if _db_instance is None:
+        try:
+            from hermes_state import DEFAULT_DB_PATH, SessionDB
+        except ImportError:
+            return None
+        _db_instance = SessionDB(DEFAULT_DB_PATH)
+    return _db_instance
 
 
 @dataclass
@@ -99,41 +85,14 @@ class SessionContext:
 
     session: str
     pane: int
-    is_agent: bool  # interactive Claude session (vs daemon / bare shell)
-    remaining_pct: int | None  # % context HEADROOM left; None when no bar
+    is_agent: bool  # interactive Hermes session (vs daemon / bare shell)
+    remaining_pct: int | None  # % context HEADROOM left; None when unknown
     model: str | None
     flagged: bool  # remaining_pct <= warn threshold (agents only)
     note: str  # human-readable one-liner
 
     def to_dict(self) -> dict:
         return asdict(self)
-
-
-def parse_context_bar(visible: str) -> int | None:
-    """Remaining-context % from a Claude Code status bar, or None.
-
-    None means no bar on screen — a daemon pane, a busy/starting render, or a
-    pane that simply isn't a Claude conversation. When several bars are present
-    (e.g. a worker pane drawing its own progress bar under the Claude footer),
-    the widest one wins — see :data:`_CONTEXT_BAR_RE` hardening notes.
-    """
-    clean = _ANSI.sub("", visible)
-    best_pct: int | None = None
-    best_run = -1
-    for m in _CONTEXT_BAR_RE.finditer(clean):
-        pct = int(m.group(2))
-        if not 0 <= pct <= 100:
-            continue
-        run = len(m.group(1))
-        if run > best_run:
-            best_run, best_pct = run, pct
-    return best_pct
-
-
-def parse_model(visible: str) -> str | None:
-    clean = _ANSI.sub("", visible)
-    m = _MODEL_RE.search(clean)
-    return m.group(1).lower() if m else None
 
 
 def _pane_command(session: str, pane: int) -> str:
@@ -146,43 +105,147 @@ def _pane_command(session: str, pane: int) -> str:
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
+def _pane_cwd(session: str, pane: int) -> str:
+    """The pane's current working directory ('' on any error)."""
+    try:
+        result = _tmux(
+            ["display", "-t", f"{session}.{pane}", "-p", "#{pane_current_path}"]
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return ""
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
 def _is_agent_command(command: str) -> bool:
     return bool(_AGENT_COMMAND_RE.match(command.strip()))
+
+
+def _session_row(session: str, pane: int) -> dict | None:
+    """The Hermes store row for this pane's cwd (most-recent session), or None.
+
+    A pane that launched but was never prompted has no store row and reads as
+    None — the "unknown / skip" fail-safe, never a "0% -> /clear".
+    """
+    db = _db()
+    if db is None:
+        return None
+    cwd = _pane_cwd(session, pane)
+    if not cwd:
+        return None
+    try:
+        rows = db.list_sessions_rich(
+            cwd_prefix=cwd, order_by_last_active=True, limit=1
+        )
+    except Exception:
+        return None
+    if not rows:
+        return None
+    sid = rows[0].get("id")
+    if not sid:
+        return None
+    try:
+        return db.get_session(sid)
+    except Exception:
+        return None
+
+
+def _context_length(model: str) -> int | None:
+    """The model's context window, or None when unknown/unavailable.
+
+    ``agent.model_metadata`` is Hermes's own package (heavy import, and the
+    AgentWire interpreter may not be Hermes's) — imported lazily, with
+    ``MINIMUM_CONTEXT_LENGTH`` as the fallback.
+    """
+    try:
+        from agent.model_metadata import get_model_context_length
+
+        return get_model_context_length(model)
+    except Exception:
+        try:
+            from agent.model_metadata import MINIMUM_CONTEXT_LENGTH
+
+            return MINIMUM_CONTEXT_LENGTH
+        except Exception:
+            return None
+
+
+def _headroom_pct(row: dict) -> int | None:
+    """int % context REMAINING (headroom), or None when unknowable.
+
+    ``headroom = 1 - (input_tokens + output_tokens) / context_length``,
+    clamped to 0..100. ``None`` when the row lacks a model or the context
+    length can't be resolved — the advisory read must never masquerade as 0%.
+    """
+    model = row.get("model")
+    if not model:
+        return None
+    ctx_len = _context_length(model)
+    if not ctx_len or ctx_len <= 0:
+        return None
+    used = int(row.get("input_tokens") or 0) + int(row.get("output_tokens") or 0)
+    pct = round((1 - used / ctx_len) * 100)
+    return max(0, min(100, pct))
 
 
 def session_context(
     session: str, pane: int = 0, warn_threshold: int | None = None
 ) -> SessionContext:
-    """Read one session's context state from its pane.
+    """Read one session's context state from the Hermes session store.
 
     ``warn_threshold`` is the *remaining* % at/below which the session is
     flagged (default :data:`DEFAULT_WARN_REMAINING_PCT`). A daemon / non-agent
-    pane is surfaced as ``is_agent=False`` and never flagged.
+    pane is surfaced as ``is_agent=False`` and never flagged. An agent pane
+    whose cwd has no store row reads as ``remaining_pct=None`` (unknown —
+    fail safe, never 0%).
     """
     threshold = warn_threshold if warn_threshold is not None else _warn_threshold()
     command = _pane_command(session, pane)
     is_agent = _is_agent_command(command)
-    visible = _capture(f"{session}.{pane}")
-    remaining = parse_context_bar(visible)
-    model = parse_model(visible) if remaining is not None else None
 
+    if not is_agent:
+        return SessionContext(
+            session=session,
+            pane=pane,
+            is_agent=False,
+            remaining_pct=None,
+            model=None,
+            flagged=False,
+            note=f"daemon / non-agent ({command or 'unknown'}) — no session store",
+        )
+
+    row = _session_row(session, pane)
+    if row is None:
+        return SessionContext(
+            session=session,
+            pane=pane,
+            is_agent=True,
+            remaining_pct=None,
+            model=None,
+            flagged=False,
+            note="agent pane but no store row (pre-first-turn or unmatched cwd)",
+        )
+
+    model = row.get("model")
+    remaining = _headroom_pct(row)
     if remaining is None:
-        flagged = False
-        note = (
-            f"daemon / non-agent ({command or 'unknown'}) — no context bar"
-            if not is_agent
-            else "agent pane but no bar visible (busy render or starting up)"
-        )
-    else:
-        flagged = remaining <= threshold
-        note = f"{remaining}% context remaining" + (
-            f" — LOW (<= {threshold}% warn threshold)" if flagged else ""
+        return SessionContext(
+            session=session,
+            pane=pane,
+            is_agent=True,
+            remaining_pct=None,
+            model=model,
+            flagged=False,
+            note="store row present but no token/model data (unknown headroom)",
         )
 
+    flagged = remaining <= threshold
+    note = f"{remaining}% context remaining" + (
+        f" — LOW (<= {threshold}% warn threshold)" if flagged else ""
+    )
     return SessionContext(
         session=session,
         pane=pane,
-        is_agent=is_agent,
+        is_agent=True,
         remaining_pct=remaining,
         model=model,
         flagged=flagged,
@@ -211,7 +274,7 @@ def _warn_threshold() -> int:
 
 
 # =============================================================================
-# Phase 1 — opt-in auto-management (clear / compact)
+# Phase 1 — opt-in auto-management (clear / compress)
 # =============================================================================
 
 POLICY_NONE = "none"
@@ -219,10 +282,42 @@ POLICY_CLEAR = "clear"
 POLICY_COMPACT = "compact"
 VALID_POLICIES = (POLICY_NONE, POLICY_CLEAR, POLICY_COMPACT)
 
-# The slash command each acting policy sends to the session.
-_POLICY_COMMAND = {POLICY_CLEAR: "/clear", POLICY_COMPACT: "/compact"}
+# The slash command each acting policy sends to the session. Hermes names:
+# ``/clear`` (start a new session) and ``/compress`` (context compression —
+# there is NO ``/compact``). Verified in hermes_cli/commands.py.
+_POLICY_COMMAND = {POLICY_CLEAR: "/clear", POLICY_COMPACT: "/compress"}
 
 EVENTS_FILE = Path.home() / ".agentwire" / "session-context-events.jsonl"
+
+# Two-tick low-headroom markers. Token columns are cumulative session totals,
+# not a live gauge, so a low headroom must be observed on TWO consecutive
+# watchdog ticks before an auto-action fires (mirror STUCK_BOX_SWEEPS's
+# conservatism). One marker file per session under ~/.agentwire.
+_LOW_MARKER_DIR = Path.home() / ".agentwire" / "session-context-low"
+
+
+def _low_marker_path(session: str) -> Path:
+    return _LOW_MARKER_DIR / f"{session}.json"
+
+
+def _low_seen(session: str) -> bool:
+    return _low_marker_path(session).exists()
+
+
+def _mark_low(session: str) -> None:
+    from datetime import datetime, timezone
+
+    _LOW_MARKER_DIR.mkdir(parents=True, exist_ok=True)
+    _low_marker_path(session).write_text(
+        json.dumps({"ts": datetime.now(timezone.utc).isoformat()})
+    )
+
+
+def _clear_low(session: str) -> None:
+    try:
+        _low_marker_path(session).unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def _log_event(event: str, **fields) -> None:
@@ -272,7 +367,7 @@ def resolve_policy(session: str, cfg=None) -> str:
 
 
 def act_on_session(session: str, policy: str, threshold: int | None = None) -> dict:
-    """Evaluate one opted-in session and ``/clear`` | ``/compact`` if warranted.
+    """Evaluate one opted-in session and ``/clear`` | ``/compress`` if warranted.
 
     Returns a result dict (always; never raises). ``acted`` is True **only when
     the command was a verified delivery** — the paste is routed through
@@ -280,19 +375,16 @@ def act_on_session(session: str, policy: str, threshold: int | None = None) -> d
     failure is logged honestly as NOT acted (and retried next tick), never
     assumed sent.
 
-    Delivery mirrors the sibling inbox drain (:func:`inbox.flush_session`):
+    Delivery mirrors the sibling inbox drain (:func:`inbox.flush_session`), and
+    the two conservatism guards replace the old Claude ``prompt_is_empty``
+    collision check (removed in #7 — Hermes has no scrapeable prompt box to
+    gate on, and ``safe_deliver`` already refuses gone/non-agent targets):
 
-    1. **Collision guard first** — :func:`prompt_router.prompt_is_empty` must
-       see a clean, empty Claude box (it returns False for a live dialog, a
-       busy render, a human's half-typed draft, or any unparseable screen). This
-       also closes the TOCTOU window as far as a *human* draft goes: we never
-       paste over uncommitted text.
-    2. **safe_deliver** — adds the parked / non-agent / live-menu refusals AND a
-       verified paste (:func:`session_ready.send_verified`, marker = the command
-       text, which Claude Code echoes as ``❯ /clear`` after the slash command
-       runs). A turn that races in between the two steps either leaves the box
-       non-empty (→ refused) or shows a live render (→ refused), so the clear
-       can't land mid-stream.
+    1. **Low-headroom must persist across two ticks.** The store token columns
+       are cumulative totals, not a live gauge — the first low sighting is
+       recorded (``first_low_sighting``) and only acted on the next tick.
+    2. **safe_deliver** — adds the gone / non-agent refusals AND a verified
+       paste (:func:`session_ready.send_verified`, marker = the command text).
     """
     if policy not in _POLICY_COMMAND:
         return {"session": session, "acted": False, "skipped": "no_policy"}
@@ -301,25 +393,27 @@ def act_on_session(session: str, policy: str, threshold: int | None = None) -> d
     ctx = session_context(session, 0, threshold)
 
     if not ctx.is_agent or ctx.remaining_pct is None:
-        return {"session": session, "acted": False, "skipped": "no_bar"}
+        return {"session": session, "acted": False, "skipped": "unknown"}
     if not ctx.flagged:
+        _clear_low(session)
         return {
             "session": session, "acted": False, "skipped": "above_threshold",
             "remaining_pct": ctx.remaining_pct,
         }
 
-    from . import prompt_router
-
-    # Collision guard before anything is pasted (mirrors inbox.flush_session).
-    if not prompt_router.prompt_is_empty(session, 0):
+    # Low headroom: require it to persist across two ticks before acting.
+    if not _low_seen(session):
+        _mark_low(session)
         _log_event(
-            "deferred", session=session, policy=policy,
-            remaining_pct=ctx.remaining_pct, reason="box_not_empty",
+            "first_low_sighting", session=session, policy=policy,
+            remaining_pct=ctx.remaining_pct,
         )
         return {
-            "session": session, "acted": False, "deferred": "box_not_empty",
+            "session": session, "acted": False, "deferred": "first_low_sighting",
             "remaining_pct": ctx.remaining_pct,
         }
+
+    from . import prompt_router
 
     command = _POLICY_COMMAND[policy]
     try:
@@ -332,8 +426,8 @@ def act_on_session(session: str, policy: str, threshold: int | None = None) -> d
         return {"session": session, "acted": False, "deferred": "send_failed"}
 
     if not delivered:
-        # Guarded refusal (parked / not-agent / live-menu) or an unverified
-        # paste — logged honestly as not acted, retried next tick.
+        # Guarded refusal (gone / not-agent) or an unverified paste — logged
+        # honestly as not acted, retried next tick.
         _log_event(
             "deferred", session=session, policy=policy,
             remaining_pct=ctx.remaining_pct, reason=reason,
@@ -343,6 +437,7 @@ def act_on_session(session: str, policy: str, threshold: int | None = None) -> d
             "remaining_pct": ctx.remaining_pct,
         }
 
+    _clear_low(session)
     _log_event(
         "acted", session=session, policy=policy, command=command,
         remaining_pct=ctx.remaining_pct, threshold=threshold,
@@ -358,14 +453,15 @@ def tick() -> dict:
 
     The 4th sweep on ``agentwire limits tick`` (after usage-limit park, prompt
     routing, and the inbox drain). For every local session carrying a
-    ``clear``/``compact`` policy whose remaining context has crossed the warn
-    threshold *and* which is idle at an empty prompt, send ``/clear`` |
-    ``/compact``. Deterministic, zero-LLM. Never raises.
+    ``clear``/``compact`` policy whose store-derived headroom has crossed the
+    warn threshold for two consecutive ticks, send ``/clear`` | ``/compress``.
+    Deterministic, zero-LLM. Never raises.
 
-    A session that defers (busy / parked / mid-turn) is simply retried next
-    tick; a session above threshold is left alone. No cooldown is needed — a
-    successful ``/clear`` resets the bar above the threshold, so it won't be
-    re-flagged, and a silently-failed one *should* be retried.
+    A session that defers (first sighting / busy / parked / mid-turn) is simply
+    retried next tick; a session above threshold is left alone. A successful
+    ``/clear`` starts a NEW Hermes session (new id), so the headroom read jumps
+    back up and it won't be re-flagged; a silently-failed one *should* be
+    retried.
     """
     try:
         from .config import get_config

@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -556,69 +557,93 @@ def safety_tooldefs_show_cmd(tool: str) -> int:
     return 0
 
 
-# PreToolUse matcher → damage-control hook script. The matcher is the Claude Code
-# tool name (regex). MCP tools use the ``mcp__<server>__<tool>`` form; the outbound
-# tools that reach real people irreversibly are gated like the Bash shell-out.
+# pre_tool_call matcher → damage-control hook script. The matcher is the Hermes
+# tool name (regex). MCP tools use the ``mcp__<server>__<tool>`` form; the
+# outbound tools that reach real people irreversibly are gated like the shell-out.
 DAMAGE_CONTROL_MATCHERS = {
-    "Bash": "bash-tool-damage-control.py",
-    "Edit": "edit-tool-damage-control.py",
-    "Write": "write-tool-damage-control.py",
-    # Content-reading tools: PreToolUse fires (and can block) for these, so a
+    "terminal": "bash-tool-damage-control.py",
+    "write_file": "write-tool-damage-control.py",
+    "patch": "edit-tool-damage-control.py",
+    # Content-reading tools: pre_tool_call fires (and can block) for these, so a
     # zero-access secret read can't slip past the shell/edit/write hooks.
-    "Read": "read-tool-damage-control.py",
-    "Grep": "read-tool-damage-control.py",
-    "Glob": "read-tool-damage-control.py",
-    # NotebookEdit writes files without matching Edit or Write (#923).
-    "NotebookEdit": "edit-tool-damage-control.py",
+    "read_file": "read-tool-damage-control.py",
+    "search_files": "read-tool-damage-control.py",
     # Every MCP tool, ours and third-party (#923): outbound tools are gated
-    # like their Bash shell-outs; every other tool call gets its path-valued
+    # like their shell-outs; every other tool call gets its path-valued
     # arguments screened against zeroAccessPaths and (for write-shaped tools)
     # the protected control plane. The hook exits 0 fast for anything else.
     "mcp__.*": "mcp-tool-damage-control.py",
 }
 
 
+def _hermes_config_path() -> Path:
+    """``~/.hermes/config.yaml`` resolved at call time (tests monkeypatch Path.home)."""
+    return Path.home() / ".hermes" / "config.yaml"
+
+
 def register_damage_control_in_settings() -> int:
-    """Ensure every damage-control PreToolUse matcher is in ``~/.claude/settings.json``.
+    """Ensure every damage-control pre_tool_call matcher is in ``~/.hermes/config.yaml``.
 
-    Idempotent: only appends matchers/commands that aren't already present.
-    Returns the number of entries added.
+    Hermes registers hooks in a ``hooks:`` block in ``~/.hermes/config.yaml``
+    (not Claude's ``settings.json``). Idempotent: only appends matchers/commands
+    that aren't already present. Returns the number of entries added.
     """
-    settings_file = Path.home() / ".claude" / "settings.json"
-    if settings_file.exists():
+    config_path = _hermes_config_path()
+    if config_path.exists():
         try:
-            settings = json.loads(settings_file.read_text())
-        except json.JSONDecodeError:
-            settings = {}
+            config = yaml.safe_load(config_path.read_text())
+        except (yaml.YAMLError, OSError):
+            config = {}
     else:
-        settings = {}
+        config = {}
+    if not isinstance(config, dict):
+        config = {}
 
-    hooks = settings.setdefault("hooks", {})
-    pre = hooks.setdefault("PreToolUse", [])
+    hooks = config.setdefault("hooks", {})
+    if not isinstance(hooks, dict):
+        hooks = {}
+        config["hooks"] = hooks
+    pre = hooks.setdefault("pre_tool_call", [])
+    if not isinstance(pre, list):
+        pre = []
+        hooks["pre_tool_call"] = pre
 
     added = 0
     for matcher, hook_file in DAMAGE_CONTROL_MATCHERS.items():
         command = f"~/.agentwire/hooks/damage-control/{hook_file}"
         # Dedup on the (matcher, command) pair, not the command alone: several
-        # matchers (Read/Grep/Glob) legitimately share one hook script, so a
-        # command-only check would register only the first and silently drop the
-        # rest.
+        # matchers (read_file/search_files) legitimately share one hook script,
+        # so a command-only check would register only the first and silently
+        # drop the rest.
         already = any(
-            entry.get("matcher") == matcher and h.get("command") == command
-            for entry in pre
-            for h in entry.get("hooks", [])
+            isinstance(e, dict)
+            and e.get("matcher") == matcher
+            and e.get("command") == command
+            for e in pre
         )
         if already:
             continue
-        pre.append({
-            "matcher": matcher,
-            "hooks": [{"type": "command", "command": command}],
-        })
+        pre.append({"matcher": matcher, "command": command, "timeout": 60})
         added += 1
 
     if added:
-        settings_file.parent.mkdir(parents=True, exist_ok=True)
-        settings_file.write_text(json.dumps(settings, indent=2))
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        text = yaml.safe_dump(
+            config, default_flow_style=False, sort_keys=False, allow_unicode=True
+        )
+        fd, tmp = tempfile.mkstemp(
+            dir=str(config_path.parent), prefix="config.yaml.", suffix=".tmp"
+        )
+        try:
+            with os.fdopen(fd, "w") as f:
+                f.write(text)
+            os.replace(tmp, config_path)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
     return added
 
 
@@ -855,26 +880,26 @@ def rule_file_delta(live: Path, bundled: Path) -> Dict[str, List[str]]:
 
 
 def missing_damage_control_matchers() -> List[str]:
-    """Damage-control matchers not registered in ``~/.claude/settings.json``.
+    """Damage-control matchers not registered in ``~/.hermes/config.yaml``.
 
     Checks the (matcher, command) PAIR, mirroring
     ``register_damage_control_in_settings``'s dedup. Several matchers
-    (Read/Grep/Glob) legitimately share one hook script, so a command-only
-    check would treat all three as present the moment *any* one is registered —
-    silently hiding a real gap in a security hook (e.g. Read guarded but
-    Grep/Glob not).
+    (read_file/search_files) legitimately share one hook script, so a
+    command-only check would treat both as present the moment *any* one is
+    registered — silently hiding a real gap in a security hook.
     """
-    settings_file = Path.home() / ".claude" / "settings.json"
+    config_path = _hermes_config_path()
     try:
-        settings = json.loads(settings_file.read_text())
-    except (OSError, json.JSONDecodeError):
-        settings = {}
-    pre = settings.get("hooks", {}).get("PreToolUse", []) if isinstance(settings, dict) else []
+        config = yaml.safe_load(config_path.read_text()) if config_path.exists() else {}
+    except (yaml.YAMLError, OSError):
+        config = {}
+    if not isinstance(config, dict):
+        config = {}
+    hooks = config.get("hooks") if isinstance(config.get("hooks"), dict) else {}
+    pre = hooks.get("pre_tool_call", []) if isinstance(hooks.get("pre_tool_call"), list) else []
     registered_pairs = {
-        (entry.get("matcher"), h.get("command"))
-        for entry in pre if isinstance(entry, dict)
-        for h in (entry.get("hooks", []) if isinstance(entry.get("hooks"), list) else [])
-        if isinstance(h, dict)
+        (e.get("matcher"), e.get("command"))
+        for e in pre if isinstance(e, dict)
     }
     missing = []
     for matcher, hook_file in DAMAGE_CONTROL_MATCHERS.items():

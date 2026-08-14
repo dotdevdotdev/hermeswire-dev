@@ -109,18 +109,20 @@ class TestDriftDetectors:
         assert safety_commands.missing_damage_control_matchers() == []
 
     def test_partial_shared_command_matcher_still_flagged(self, fake_env):
-        """Read/Grep/Glob share one hook script. Registering only Read must NOT
-        mark Grep/Glob as present — a command-only check would (the bug); the
-        (matcher, command) check catches the gap."""
-        settings = Path.home() / ".claude" / "settings.json"
-        settings.parent.mkdir(parents=True, exist_ok=True)
+        """read_file/search_files share one hook script. Registering only
+        read_file must NOT mark search_files as present — a command-only check
+        would (the bug); the (matcher, command) check catches the gap."""
+        import yaml as _yaml
+
+        config = Path.home() / ".hermes" / "config.yaml"
+        config.parent.mkdir(parents=True, exist_ok=True)
         cmd = "~/.agentwire/hooks/damage-control/read-tool-damage-control.py"
-        settings.write_text(json.dumps({"hooks": {"PreToolUse": [
-            {"matcher": "Read", "hooks": [{"type": "command", "command": cmd}]},
+        config.write_text(_yaml.safe_dump({"hooks": {"pre_tool_call": [
+            {"matcher": "read_file", "command": cmd, "timeout": 60},
         ]}}))
         missing = set(safety_commands.missing_damage_control_matchers())
-        assert "Read" not in missing            # the one we registered
-        assert {"Grep", "Glob"} <= missing      # genuinely absent, must be flagged
+        assert "read_file" not in missing        # the one we registered
+        assert {"search_files"} <= missing       # genuinely absent, must be flagged
 
 
 class TestInstallCmdNonInteractive:
@@ -174,8 +176,8 @@ class TestDoctorDamageControlSection:
     def test_missing_matcher_flagged(self, monkeypatch, capsys):
         from agentwire.doctor_cli import _render_damage_control_section
         self._patch_safety_enabled(monkeypatch, True)
-        settings = Path.home() / ".claude" / "settings.json"
-        settings.write_text(json.dumps({"hooks": {"PreToolUse": []}}))
+        config = Path.home() / ".hermes" / "config.yaml"
+        config.write_text("hooks: {}\n")
         issues = _render_damage_control_section()
         out = capsys.readouterr().out
         assert issues >= 1

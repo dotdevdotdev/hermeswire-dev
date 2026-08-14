@@ -7,14 +7,20 @@
 AgentWire Read Tool Damage Control
 ==================================
 
-Claude Code PreToolUse hook for the content-reading tools (``Read``, ``Grep``,
-``Glob``). The Bash/Edit/Write hooks never see these tools, so without this hook
-a ``zeroAccessPaths`` secret (``~/.agentwire/.env``, ``~/.ssh/id_rsa``, ``*.pem``)
-could be read directly and exfiltrated. PreToolUse fires (and can block, exit 2)
-for read tools too, so we run the targeted path through ``check_read_path``.
+Hermes Agent ``pre_tool_call`` hook for the content-reading tools (``read_file``,
+``search_files``). The Bash/Edit/Write hooks never see these tools, so without
+this hook a ``zeroAccessPaths`` secret (``~/.agentwire/.env``, ``~/.ssh/id_rsa``,
+``*.pem``) could be read directly and exfiltrated. The ``pre_tool_call`` event
+fires (and can block) for read tools too, so we run the targeted path through
+``check_read_path``.
 
 Only zero-access reads are blocked — read-only paths and the host-owned control
 plane stay readable. Writes/edits are handled by the dedicated hooks.
+
+Wire contract (Hermes): stdin is a ``pre_tool_call`` payload
+(``{"tool_name": "read_file" | "search_files", "tool_input": {"path": "..."},
+...}``). A block is ``{"action": "block", "message": "<reason>"}`` on stdout;
+otherwise exit 0 (audit-logged).
 
 Implementation: the body of ``agentwire/safety/_core.py`` is inlined below
 between the BEGIN/END GENERATED markers. Edit ``_core.py``, then run
@@ -3683,12 +3689,12 @@ def _resolve_rules_dir() -> Path:
 
 
 # Tools that read file content (or list paths), keyed to the tool_input field
-# that names the target path. ``Glob`` only reveals filenames, but a zero-access
-# directory is still off-limits, so it is covered for consistency.
+# that names the target path. ``search_files`` (Grep/Glob's Hermes successor)
+# only reveals filenames or matches, but a zero-access directory is still
+# off-limits, so it is covered for consistency.
 READ_TOOL_PATH_FIELDS = {
-    "Read": "file_path",
-    "Grep": "path",
-    "Glob": "path",
+    "read_file": "path",
+    "search_files": "path",
 }
 
 
@@ -3703,21 +3709,21 @@ def main() -> None:
         sys.exit(1)
 
     tool_name = input_data.get("tool_name", "")
-    tool_input = input_data.get("tool_input", {})
+    tool_input = input_data.get("tool_input", {}) or {}
 
     field = READ_TOOL_PATH_FIELDS.get(tool_name)
     if not field:
         sys.exit(0)
 
-    file_path = tool_input.get(field, "")
+    file_path = tool_input.get(field, "") or tool_input.get("file_path", "")
     if not file_path:
         sys.exit(0)
 
     blocked, reason = check_read_path(file_path, config)
     if blocked:
         log_blocked(tool_name, file_path, reason)
-        print(f"SECURITY: Blocked read of {reason}: {file_path}", file=sys.stderr)
-        sys.exit(2)
+        print(json.dumps({"action": "block", "message": reason}))
+        sys.exit(0)
 
     if config["safety"].get("enabled", True) is False:
         log_disabled(tool_name, file_path)

@@ -7,18 +7,25 @@
 AgentWire MCP Tool Damage Control
 =================================
 
-Claude Code PreToolUse hook for the outbound ``mcp__agentwire__*`` tools that
-reach real people irreversibly (``email_send``, ``quo_send``). PreToolUse fires
-for MCP tools and receives their args in ``tool_input``, so we gate them at the
-tool-call boundary.
+Hermes Agent ``pre_tool_call`` hook for the outbound ``mcp__agentwire__*`` tools
+that reach real people irreversibly (``email_send``, ``quo_send``). The
+``pre_tool_call`` event fires for MCP tools and receives their args in
+``tool_input``, so we gate them at the tool-call boundary.
 
 The tools run exactly ``agentwire email …`` / ``agentwire quo …`` under the hood
 (``run_agentwire_cmd``), so this hook *synthesizes the equivalent command* from
 ``tool_name`` + ``tool_input`` and runs it through the SAME decision ladder the
-Bash hook uses (``check_command`` + ``is_unattended`` + ``resolve_unattended_allow``).
-That reuses the existing ``outbound.agentwire-email`` / ``outbound.agentwire-quo``
-rules verbatim — same IDs, same ``unattended_allow``, same owner-notify on an
-unattended block. No new verb/tier taxonomy.
+terminal hook uses (``check_command`` + ``is_unattended`` +
+``resolve_unattended_allow``). That reuses the existing
+``outbound.agentwire-email`` / ``outbound.agentwire-quo`` rules verbatim — same
+IDs, same ``unattended_allow``, same owner-notify on an unattended block. No new
+verb/tier taxonomy.
+
+Wire contract (Hermes): stdin is a ``pre_tool_call`` payload
+(``{"tool_name": "mcp__agentwire__email_send", "tool_input": {...}, ...}``). A
+block is ``{"action": "block", "message": "<reason>"}`` on stdout; an ask
+escalates via ``{"action": "approve", "message": "<reason>", "rule_key":
+"<rule_id>"}``; otherwise exit 0 (audit-logged).
 
 Implementation: the body of ``agentwire/safety/_core.py`` is inlined below
 between the BEGIN/END GENERATED markers. Edit ``_core.py``, then run
@@ -3798,7 +3805,8 @@ def _pathlike_args(tool_input: dict):
 
 
 def _screen_tool_paths(tool_name: str, tool_input: dict, config: dict) -> None:
-    """Exit 2 when a path-valued argument violates the path ladders (#923)."""
+    """Emit a block directive when a path-valued argument violates the path
+    ladders (#923)."""
     short = tool_name.split("__")[-1]
     writeish = bool(_WRITEISH_TOOL_RE.search(short))
     allowed = load_allowed_paths(config)
@@ -3808,8 +3816,8 @@ def _screen_tool_paths(tool_name: str, tool_input: dict, config: dict) -> None:
             blocked, reason = check_protected_path(p, allowed)
         if blocked:
             log_blocked(tool_name, p, reason)
-            print(f"SECURITY: Blocked MCP tool argument: {reason}: {p}", file=sys.stderr)
-            sys.exit(2)
+            print(json.dumps({"action": "block", "message": reason}))
+            sys.exit(0)
 
 
 def main() -> None:
@@ -3827,17 +3835,15 @@ def main() -> None:
 
     tool_name = input_data.get("tool_name", "")
     tool_input = input_data.get("tool_input", {}) or {}
-    # Same bypass semantics as the Bash hook: bypassPermissions / auto turn the
-    # interactive ask into allow, but hard blocks and the unattended fail-closed
-    # ladder still fire.
-    permission_mode = input_data.get("permission_mode", "")
-    bypass_modes = {"bypassPermissions", "auto"}
+    # Hermes pre_tool_call contract: MCP tools keep their ``mcp__<srv>__<tool>``
+    # name; there is no per-call ``permission_mode`` — ask escalation is
+    # expressed via the ``approve`` directive, not a bypass demotion.
 
     command = _synthesize_command(tool_name, tool_input)
     if not command:
         # Not a gated outbound tool: screen its path-valued arguments against
         # the path ladders instead (#923) — an operation refused via Bash must
-        # not be permitted via a tool. Exits 2 on a violation, 0 otherwise.
+        # not be permitted via a tool.
         _screen_tool_paths(tool_name, tool_input, config)
         sys.exit(0)
 
@@ -3850,9 +3856,10 @@ def main() -> None:
             log_blocked(tool_name, command, reason, pattern=result.get("pattern"), rule_id=result.get("id"))
         except TypeError:
             log_blocked(tool_name, command, reason)
-        print(f"SECURITY: Blocked: {reason}", file=sys.stderr)
-        print(f"Command: {command[:100]}{'...' if len(command) > 100 else ''}", file=sys.stderr)
-        sys.exit(2)
+        # Hermes parses stdout JSON, not exit codes — a block must be a
+        # ``{"action": "block", "message": ...}`` directive printed to stdout.
+        print(json.dumps({"action": "block", "message": reason}))
+        sys.exit(0)
     elif decision == "ask" and is_unattended():
         # No human present (scheduler dispatch). The interactive confirm is
         # meaningless, so fail closed: BLOCK + notify the owner, unless the
@@ -3875,28 +3882,25 @@ def main() -> None:
         except TypeError:
             log_blocked(tool_name, command, f"unattended: {reason} — {why}")
         _notify_unattended_block(command, f"{reason} — {why}", rule_id)
-        print(f"SECURITY: Blocked (unattended — no human to confirm): {reason}", file=sys.stderr)
-        print(f"Command: {command[:100]}{'...' if len(command) > 100 else ''}", file=sys.stderr)
-        print(f"Why: {why}", file=sys.stderr)
+        message = f"Blocked (unattended — no human to confirm): {reason} — {why}"
         if rule_id and rule_id not in grants:
-            print(f"To permit this for an unattended task, add rule id "
-                  f"'{rule_id}' to its .agentwire.tasks.yml task `unattended_allow`.",
-                  file=sys.stderr)
-        sys.exit(2)
-    elif decision == "ask" and (
-        permission_mode not in bypass_modes or result.get("unverifiable")
-    ):
-        # Same #934 rule as the Bash hook: a verb-concealing (unverifiable)
-        # ask is never demoted to allow by bypassPermissions/auto.
+            message += (
+                f" To permit this for an unattended task, add rule id "
+                f"'{rule_id}' to its .agentwire.tasks.yml task `unattended_allow`."
+            )
+        print(json.dumps({"action": "block", "message": message}))
+        sys.exit(0)
+    elif decision == "ask":
+        # Hermes has no Claude-style `permissionDecision`; an ask escalates to
+        # the native human-approval gate via the `approve` directive, with the
+        # matched rule id in `rule_key` so `[a]lways` approvals get the right
+        # allowlist grain.
         log_asked(tool_name, command, reason)
-        output = {
-            "hookSpecificOutput": {
-                "hookEventName": "PreToolUse",
-                "permissionDecision": "ask",
-                "permissionDecisionReason": reason,
-            }
-        }
-        print(json.dumps(output))
+        print(json.dumps({
+            "action": "approve",
+            "message": reason,
+            "rule_key": result.get("id", ""),
+        }))
         sys.exit(0)
     elif result.get("escape"):
         log_escape(tool_name, command, result.get("escape_reason") or "")

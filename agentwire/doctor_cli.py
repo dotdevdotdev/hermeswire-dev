@@ -7,7 +7,7 @@ optionally auto-fixes the local ones. ``network status`` is the read-only
 network-health glance.
 
 The hook/skill drift helpers (``get_hooks_source``, ``_managed_hook_files``,
-``_managed_file_state``, ``skill_drift``, ``CLAUDE_SKILLS_DIR``) are owned by
+``_managed_file_state``, ``skill_drift``, ``HERMES_SKILLS_DIR``) are owned by
 the hooks domain and live in ``hooks_cli``; doctor reads them via a
 function-local deferred import to stay single-source-of-truth.
 """
@@ -243,11 +243,11 @@ def _render_skill_section() -> int:
     (running from a checkout, where skills only live in the built wheel) is NOT a
     drift problem — there's nothing to install from — so it never bumps the count.
     """
-    from .hooks_cli import CLAUDE_SKILLS_DIR, skill_drift
+    from .hooks_cli import HERMES_SKILLS_DIR, skill_drift
 
     issues = 0
     for name, state in sorted(skill_drift().items()):
-        target = CLAUDE_SKILLS_DIR / name
+        target = HERMES_SKILLS_DIR / name
         if state == "ok":
             print(f"  [ok] /{name} skill: {target}")
         elif state == "source-unavailable":
@@ -1378,7 +1378,12 @@ def _render_beta_section() -> int:
 
 def cmd_doctor(args) -> int:
     """Auto-diagnose and fix common issues."""
-    from .hooks_cli import _managed_file_state, _managed_hook_files, get_hooks_source
+    from .hooks_cli import (
+        _managed_file_state,
+        _managed_hook_files,
+        get_hooks_source,
+        is_hook_registered,
+    )
     from .network import NetworkContext
     from .tunnels import TunnelManager, test_service_health, test_ssh_connectivity
     from .validation import validate_config
@@ -1497,7 +1502,7 @@ def cmd_doctor(args) -> int:
     except FileNotFoundError:
         hooks_source = None
 
-    for hook_name, target_dir, _event in _managed_hook_files():
+    for hook_name, target_dir, event in _managed_hook_files():
         label, required, why = hook_meta[hook_name]
         target = target_dir / hook_name
         source = hooks_source / hook_name if hooks_source else None
@@ -1517,6 +1522,15 @@ def cmd_doctor(args) -> int:
         else:
             print(f"  [..] {label}: not found ({why})")
             print("     Run: agentwire hooks install")
+
+        # The config.yaml ``hooks:`` block is the new "settings" drift surface:
+        # a hook file can be present and current while its registration was
+        # hand-edited away, which silently disables it (Hermes only fires what's
+        # in the block).
+        if event and not is_hook_registered(event, hook_name):
+            print(f"  [!!] {label}: not registered (hooks.{event} in ~/.hermes/config.yaml)")
+            print("     Run: agentwire hooks install")
+            issues_found += 1
 
     # 4a-bis. Global skills (currently just /wiki). Hand-placed at wiki-setup and
     # never resynced, so a stale or missing copy was invisible until #475. Flag

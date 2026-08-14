@@ -228,7 +228,7 @@ class TestUnverifiableTier:
 
     HOOK = HOOKS_DIR / "bash-tool-damage-control.py"
 
-    def _run_hook(self, command, permission_mode, unattended=False, tmp=None):
+    def _run_hook(self, command, unattended=False, tmp=None):
         env = {
             "PATH": "/usr/bin:/bin:/usr/local/bin",
             "HOME": str(tmp),
@@ -236,9 +236,8 @@ class TestUnverifiableTier:
         if unattended:
             env["AGENTWIRE_UNATTENDED"] = "1"
         payload = {
-            "tool_name": "Bash",
+            "tool_name": "terminal",
             "tool_input": {"command": command},
-            "permission_mode": permission_mode,
         }
         return subprocess.run(
             [sys.executable, str(self.HOOK)],
@@ -247,47 +246,43 @@ class TestUnverifiableTier:
         )
 
     def test_mode_matrix_through_the_real_hook(self, tmp_path):
-        """#934 acceptance: the probe through the shipped hook per mode.
-        exit 0 + ask-JSON = confirm; exit 0 + no output = allow; exit 2 =
-        block. The unattended column must stay a block."""
+        """#934 acceptance: the probe through the shipped hook. There is no
+        per-call permission_mode under Hermes — an unverifiable ask escalates
+        via ``approve`` (attended) and fails closed as ``block`` (unattended)."""
         command = 'psql -c "$(cat drop.sql)"'
 
-        # interactive → ask JSON
-        proc = self._run_hook(command, "default", tmp=tmp_path)
-        assert proc.returncode == 0 and '"permissionDecision": "ask"' in proc.stdout
+        # interactive → approve (escalate to the native approval gate)
+        proc = self._run_hook(command, tmp=tmp_path)
+        assert proc.returncode == 0
+        assert json.loads(proc.stdout)["action"] == "approve"
 
-        # bypassPermissions / auto → STILL ask (the #934 fix; was allow)
-        for mode in ("bypassPermissions", "auto"):
-            proc = self._run_hook(command, mode, tmp=tmp_path)
-            assert proc.returncode == 0, proc.stderr
-            assert '"permissionDecision": "ask"' in proc.stdout, (
-                f"mode={mode}: unverifiable command resolved without a confirm"
-            )
+        # unattended → block (fail closed)
+        proc = self._run_hook(command, unattended=True, tmp=tmp_path)
+        assert proc.returncode == 0
+        assert json.loads(proc.stdout)["action"] == "block"
 
-        # unattended → block
-        proc = self._run_hook(command, "bypassPermissions", unattended=True, tmp=tmp_path)
-        assert proc.returncode == 2
-
-        # an operand-position substitution under bypass keeps the old demote
-        proc = self._run_hook('echo "$(hostname)"', "bypassPermissions", tmp=tmp_path)
-        assert proc.returncode == 0 and not proc.stdout.strip()
+        # an operand-position substitution is demotable (unverifiable=None), but
+        # with no bypass mode it still escalates like any ask → approve
+        proc = self._run_hook('echo "$(hostname)"', tmp=tmp_path)
+        assert proc.returncode == 0
+        assert json.loads(proc.stdout)["action"] == "approve"
 
     def test_unattended_operand_substitution_now_allowed(self, tmp_path):
         """#925 Part 3: the for-loop shape (54% of all unattended blocks) is
         no longer refused unattended — only verb concealment is."""
         loop = 'for p in a b; do echo "$(basename $p)"; done'
-        proc = self._run_hook(loop, "bypassPermissions", unattended=True, tmp=tmp_path)
+        proc = self._run_hook(loop, unattended=True, tmp=tmp_path)
         assert proc.returncode == 0, proc.stderr
 
         # control (must-fail direction): concealment still blocks unattended
-        proc = self._run_hook('eval "$PAYLOAD"', "bypassPermissions",
-                              unattended=True, tmp=tmp_path)
-        assert proc.returncode == 2
+        proc = self._run_hook('eval "$PAYLOAD"', unattended=True, tmp=tmp_path)
+        assert proc.returncode == 0
+        assert json.loads(proc.stdout)["action"] == "block"
 
         # and a HARD block is untouched unattended
-        proc = self._run_hook("rm -rf /srv/data", "bypassPermissions",
-                              unattended=True, tmp=tmp_path)
-        assert proc.returncode == 2
+        proc = self._run_hook("rm -rf /srv/data", unattended=True, tmp=tmp_path)
+        assert proc.returncode == 0
+        assert json.loads(proc.stdout)["action"] == "block"
 
     def test_mutation_breaking_the_classifier_goes_red(
         self, bash_hook, bundled_config, monkeypatch
@@ -370,6 +365,9 @@ def _hook_env(tmp_path):
 
 
 class TestNotebookEditCoverage:
+    """#923 — NotebookEdit no longer exists under Hermes; all file mutation
+    funnels through write_file (whole-file) and patch (targeted edit)."""
+
     HOOK = HOOKS_DIR / "edit-tool-damage-control.py"
 
     def _run(self, payload, tmp_path):
@@ -381,28 +379,26 @@ class TestNotebookEditCoverage:
             timeout=15,
         )
 
-    def test_notebookedit_to_control_plane_blocks(self, tmp_path):
-        """An operation refused via Edit must be refused via NotebookEdit."""
+    def test_patch_to_control_plane_blocks(self, tmp_path):
+        """An operation refused via Edit must be refused via patch."""
         target = HERMETIC_HOME + "/.claude/settings.json"
-        edit = self._run({"tool_name": "Edit", "tool_input": {"file_path": target}}, tmp_path)
-        nb = self._run(
-            {"tool_name": "NotebookEdit", "tool_input": {"notebook_path": target}},
-            tmp_path,
-        )
-        assert edit.returncode == 2, "control test: Edit itself must block"
-        assert nb.returncode == 2, "NotebookEdit slipped past the guard (#923)"
+        proc = self._run({"tool_name": "patch", "tool_input": {"path": target}}, tmp_path)
+        assert proc.returncode == 0, proc.stderr
+        assert json.loads(proc.stdout)["action"] == "block"
 
-    def test_ordinary_notebook_passes(self, tmp_path):
+    def test_ordinary_file_passes(self, tmp_path):
         proc = self._run(
-            {"tool_name": "NotebookEdit",
-             "tool_input": {"notebook_path": HERMETIC_HOME + "/proj/analysis.ipynb"}},
+            {"tool_name": "patch",
+             "tool_input": {"path": HERMETIC_HOME + "/proj/analysis.py"}},
             tmp_path,
         )
         assert proc.returncode == 0
 
-    def test_matcher_table_names_notebookedit(self):
+    def test_matcher_table_names_hermes_tools(self):
         from agentwire.safety_commands import DAMAGE_CONTROL_MATCHERS
-        assert DAMAGE_CONTROL_MATCHERS.get("NotebookEdit") == "edit-tool-damage-control.py"
+        assert DAMAGE_CONTROL_MATCHERS.get("patch") == "edit-tool-damage-control.py"
+        assert DAMAGE_CONTROL_MATCHERS.get("write_file") == "write-tool-damage-control.py"
+        assert DAMAGE_CONTROL_MATCHERS.get("terminal") == "bash-tool-damage-control.py"
         assert "mcp__.*" in DAMAGE_CONTROL_MATCHERS
 
 
@@ -410,8 +406,7 @@ class TestMcpPathScreening:
     HOOK = HOOKS_DIR / "mcp-tool-damage-control.py"
 
     def _run(self, tool_name, tool_input, tmp_path):
-        payload = {"tool_name": tool_name, "tool_input": tool_input,
-                   "permission_mode": "bypassPermissions"}
+        payload = {"tool_name": tool_name, "tool_input": tool_input}
         return subprocess.run(
             [sys.executable, str(self.HOOK)],
             input=json.dumps(payload),
@@ -429,7 +424,8 @@ class TestMcpPathScreening:
             {"path": HERMETIC_HOME + "/.ssh/id_rsa"},
             tmp_path,
         )
-        assert proc.returncode == 2, proc.stderr
+        assert proc.returncode == 0, proc.stderr
+        assert json.loads(proc.stdout)["action"] == "block"
 
     def test_writeish_tool_naming_control_plane_blocks(self, tmp_path):
         proc = self._run(
@@ -437,7 +433,8 @@ class TestMcpPathScreening:
             {"path": HERMETIC_HOME + "/.claude/settings.json", "content": "x"},
             tmp_path,
         )
-        assert proc.returncode == 2, proc.stderr
+        assert proc.returncode == 0, proc.stderr
+        assert json.loads(proc.stdout)["action"] == "block"
 
     def test_readish_tool_may_read_control_plane(self, tmp_path):
         """The control plane is readable by design; only writes are gated."""

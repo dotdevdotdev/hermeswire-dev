@@ -351,8 +351,7 @@ class TestUnattendedSubprocess:
 
     HOOK = HOOKS_DIR / "bash-tool-damage-control.py"
 
-    def _run(self, command, unattended, permission_mode="bypassPermissions",
-             allow_env=None):
+    def _run(self, command, unattended, allow_env=None):
         env = {
             "PATH": "/usr/bin:/bin:/usr/local/bin",
             "HOME": "/tmp",  # no ~/.agentwire/config.yaml → safety enabled (default)
@@ -362,9 +361,8 @@ class TestUnattendedSubprocess:
         if allow_env:
             env["AGENTWIRE_UNATTENDED_ALLOW"] = allow_env
         payload = {
-            "tool_name": "Bash",
+            "tool_name": "terminal",
             "tool_input": {"command": command},
-            "permission_mode": permission_mode,
         }
         return subprocess.run(
             [sys.executable, str(self.HOOK)],
@@ -372,11 +370,18 @@ class TestUnattendedSubprocess:
             capture_output=True, text=True, env=env, timeout=15,
         )
 
+    @staticmethod
+    def _directive(proc):
+        """Parse the Hermes stdout directive; None when stdout is empty (allow)."""
+        out = proc.stdout.strip()
+        return json.loads(out) if out else None
+
     def test_ask_tier_blocks_when_unattended(self):
         # gh pr merge is ask-tier and NOT on the allowlist → fail closed
         proc = self._run("gh pr merge 5", unattended=True)
-        assert proc.returncode == 2
-        assert "unattended" in proc.stderr.lower()
+        d = self._directive(proc)
+        assert proc.returncode == 0 and d["action"] == "block"
+        assert "unattended" in d["message"].lower()
 
     def test_allowlisted_proceeds_when_unattended(self):
         # git commit is on the default allowlist → proceeds
@@ -386,13 +391,14 @@ class TestUnattendedSubprocess:
     def test_hard_block_still_fires_when_unattended(self):
         # git push --force is hard-block tier → blocked regardless
         proc = self._run("git push --force", unattended=True)
-        assert proc.returncode == 2
-
-    def test_interactive_bypass_unchanged(self):
-        # Same ask-tier command with no unattended marker → allow (legacy bypass)
-        proc = self._run("gh pr merge 5", unattended=False,
-                         permission_mode="bypassPermissions")
         assert proc.returncode == 0
+        assert self._directive(proc)["action"] == "block"
+
+    def test_interactive_ask_escalates_to_approve(self):
+        # Same ask-tier command, attended → approve (native approval gate)
+        proc = self._run("gh pr merge 5", unattended=False)
+        assert proc.returncode == 0
+        assert self._directive(proc)["action"] == "approve"
 
     def test_per_task_env_extension_allows(self):
         # Extending the allowlist via the per-task env var lets it proceed
@@ -412,8 +418,9 @@ class TestUnattendedSubprocess:
         # agentwire quo (SMS) is a separate outbound channel and unaffected —
         # still fails closed unless explicitly allowlisted.
         proc = self._run("agentwire quo --to +15551234567", unattended=True)
-        assert proc.returncode == 2
-        assert "outbound.agentwire-quo" in proc.stderr
+        d = self._directive(proc)
+        assert proc.returncode == 0 and d["action"] == "block"
+        assert "outbound.agentwire-quo" in d["message"]
 
 
 # ---------------------------------------------------------------------------
@@ -1799,8 +1806,7 @@ class TestMcpHookSubprocess:
 
     HOOK = HOOKS_DIR / "mcp-tool-damage-control.py"
 
-    def _run(self, tool_name, tool_input, unattended=False,
-             permission_mode="default", allow_env=None):
+    def _run(self, tool_name, tool_input, unattended=False, allow_env=None):
         env = {
             "PATH": "/usr/bin:/bin:/usr/local/bin",
             "HOME": "/tmp",  # no ~/.agentwire/config.yaml → safety enabled (default)
@@ -1812,13 +1818,18 @@ class TestMcpHookSubprocess:
         payload = {
             "tool_name": tool_name,
             "tool_input": tool_input,
-            "permission_mode": permission_mode,
         }
         return subprocess.run(
             [sys.executable, str(self.HOOK)],
             input=json.dumps(payload),
             capture_output=True, text=True, env=env, timeout=15,
         )
+
+    @staticmethod
+    def _directive(proc):
+        """Parse the Hermes stdout directive; None when stdout is empty (allow)."""
+        out = proc.stdout.strip()
+        return json.loads(out) if out else None
 
     def test_non_gated_tool_passes(self):
         proc = self._run("mcp__agentwire__say", {"text": "hi"})
@@ -1840,9 +1851,10 @@ class TestMcpHookSubprocess:
             "mcp__agentwire__quo_send", {"body": "x", "to": "+1555"},
             unattended=True,
         )
-        assert proc.returncode == 2
-        assert "unattended" in proc.stderr.lower()
-        assert "outbound.agentwire-quo" in proc.stderr
+        d = self._directive(proc)
+        assert proc.returncode == 0 and d["action"] == "block"
+        assert "unattended" in d["message"].lower()
+        assert "outbound.agentwire-quo" in d["message"]
 
     def test_quo_unattended_allowlisted_proceeds(self):
         proc = self._run(
@@ -1851,20 +1863,10 @@ class TestMcpHookSubprocess:
         )
         assert proc.returncode == 0
 
-    def test_attended_non_bypass_asks(self):
+    def test_attended_ask_escalates_to_approve(self):
         proc = self._run(
             "mcp__agentwire__email_send", {"body": "x", "to": "a@b.com"},
-            unattended=False, permission_mode="default",
+            unattended=False,
         )
         assert proc.returncode == 0
-        out = json.loads(proc.stdout)
-        decision = out["hookSpecificOutput"]["permissionDecision"]
-        assert decision == "ask"
-
-    def test_attended_bypass_allows(self):
-        proc = self._run(
-            "mcp__agentwire__email_send", {"body": "x", "to": "a@b.com"},
-            unattended=False, permission_mode="bypassPermissions",
-        )
-        assert proc.returncode == 0
-        assert proc.stdout.strip() == ""
+        assert self._directive(proc)["action"] == "approve"

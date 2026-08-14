@@ -1,22 +1,34 @@
 """CLI for hook/skill installation — ``agentwire hooks ...``.
 
-Installs and heals agentwire-owned Claude Code integration: the permission
-hook, idle handler, queue processor, slash commands, and global skills. These
-files are agentwire-owned (no user edits to preserve), so any drift from the
-packaged source is replaced.
+Installs and heals agentwire-owned Hermes Agent integration: the permission
+hook, idle handler, queue processor, and global skills. These files are
+agentwire-owned (no user edits to preserve), so any drift from the packaged
+source is replaced.
+
+Hermes registers hooks in a ``hooks:`` block inside ``~/.hermes/config.yaml``
+(the same YAML the Hermes CLI reads at startup) — there is no
+``~/.hermes/settings.json``. Each event maps to a list of ``{command, ...}``
+entries. See issue #10 for the verified hook contract (events, stdin/stdout
+JSON, and the ``~/.hermes/shell-hooks-allowlist.json`` consent gate).
 """
 
 from __future__ import annotations
 
 import importlib.resources
-import json
+import os
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
-CLAUDE_HOOKS_DIR = Path.home() / ".claude" / "hooks"
-CLAUDE_COMMANDS_DIR = Path.home() / ".claude" / "commands"
-CLAUDE_SKILLS_DIR = Path.home() / ".claude" / "skills"
+import yaml
+
+HERMES_HOOKS_DIR = Path.home() / ".hermes" / "hooks"
+HERMES_SKILLS_DIR = Path.home() / ".hermes" / "skills"
+# Canonical config path for docs/display. Config *writes* resolve through
+# _config_path() (Path.home() at call time) so a monkeypatched home in tests
+# isolates them — the constants are frozen at import time.
+HERMES_CONFIG = Path.home() / ".hermes" / "config.yaml"
 
 
 def get_hooks_source() -> Path:
@@ -38,53 +50,10 @@ def get_hooks_source() -> Path:
     raise FileNotFoundError("Could not find hooks directory in package")
 
 
-def get_commands_source() -> Path:
-    """Get the path to the commands directory in the installed package."""
-    package_dir = Path(__file__).parent
-    commands_dir = package_dir / "commands"
-    if commands_dir.exists():
-        return commands_dir
-
-    try:
-        with importlib.resources.files("agentwire").joinpath("commands") as p:
-            if p.exists():
-                return Path(p)
-    except (TypeError, FileNotFoundError):
-        pass
-
-    raise FileNotFoundError("Could not find commands directory in package")
-
-
-def install_commands(force: bool = False) -> list[str]:
-    """Symlink bundled slash commands into ~/.claude/commands/.
-
-    Returns list of command names that were installed or updated.
-    """
-    try:
-        commands_source = get_commands_source()
-    except FileNotFoundError:
-        return []
-
-    CLAUDE_COMMANDS_DIR.mkdir(parents=True, exist_ok=True)
-
-    installed = []
-    for src_file in commands_source.glob("*.md"):
-        target = CLAUDE_COMMANDS_DIR / src_file.name
-        if target.exists() or target.is_symlink():
-            if target.is_symlink() and target.resolve() == src_file.resolve() and not force:
-                continue  # Already correctly symlinked
-            target.unlink()
-
-        target.symlink_to(src_file.resolve())
-        installed.append(src_file.stem)
-
-    return installed
-
-
 def get_skills_source() -> Path:
     """Get the path to the skills directory in the installed package.
 
-    Mirrors get_commands_source(): resolves to the bundled package dir so the
+    Mirrors get_hooks_source(): resolves to the bundled package dir so the
     installed symlink is auto-current after `agentwire rebuild` (which reinstalls
     the wheel), never a transient checkout path.
     """
@@ -104,7 +73,7 @@ def get_skills_source() -> Path:
 
 
 def _managed_global_skills() -> list[str]:
-    """Agentwire-owned skills that belong GLOBALLY in ~/.claude/skills/.
+    """Agentwire-owned skills that belong GLOBALLY in ~/.hermes/skills/.
 
     Only `wiki` is global — the wiki store lives at ~/.agentwire/wiki/ and is
     usable from any session. The agentwire-* skills stay project-scoped (shipped
@@ -140,7 +109,7 @@ def _remove_skill_target(target: Path) -> None:
 
 
 def install_skills(force: bool = False, copy: bool = False) -> dict[str, str]:
-    """Install/refresh agentwire-owned global skills into ~/.claude/skills/.
+    """Install/refresh agentwire-owned global skills into ~/.hermes/skills/.
 
     Each managed skill is a directory installed as a symlink (or copied with
     --copy) pointing at the packaged source, drift-aware: a correct symlink is
@@ -162,14 +131,14 @@ def install_skills(force: bool = False, copy: bool = False) -> dict[str, str]:
             results[name] = "missing-source"
             continue
 
-        target = CLAUDE_SKILLS_DIR / name
+        target = HERMES_SKILLS_DIR / name
         state = _managed_skill_state(target, source)
         if state == "ok" and not force:
             results[name] = "current"
             continue
 
         existed = target.exists() or target.is_symlink()
-        CLAUDE_SKILLS_DIR.mkdir(parents=True, exist_ok=True)
+        HERMES_SKILLS_DIR.mkdir(parents=True, exist_ok=True)
         _remove_skill_target(target)
         if copy:
             shutil.copytree(source, target)
@@ -203,7 +172,7 @@ def skill_drift() -> dict[str, str]:
     drift: dict[str, str] = {}
     for name in _managed_global_skills():
         source = skills_source / name
-        target = CLAUDE_SKILLS_DIR / name
+        target = HERMES_SKILLS_DIR / name
         if not source.exists():
             drift[name] = "source-unavailable"
             continue
@@ -211,73 +180,129 @@ def skill_drift() -> dict[str, str]:
     return drift
 
 
-def register_hook_in_settings(event: str, hook_name: str) -> bool:
-    """Register a hook under `event` in Claude's settings.json.
+# ---------------------------------------------------------------------------
+# Hermes ``hooks:`` block registration (in ~/.hermes/config.yaml, YAML).
+# ---------------------------------------------------------------------------
 
-    Returns True if settings were updated, False if already configured.
 
-    Claude Code hook format:
-    {
-      "hooks": {
-        "<event>": [
-          {
-            "matcher": ".*",
-            "hooks": [
-              {"type": "command", "command": "~/.claude/hooks/<hook_name>"}
-            ]
-          }
-        ]
-      }
-    }
+def _hermes_hook_command(hook_name: str) -> str:
+    """The ``command`` string registered for a managed hook (uses ``~`` like the
+    old Claude registration, for portability across machines)."""
+    return f"~/.hermes/hooks/{hook_name}"
+
+
+def _config_path() -> Path:
+    """Resolve ``~/.hermes/config.yaml`` at call time, not import time.
+
+    The old Claude settings.json writer resolved its path via ``Path.home()``
+    inside the function, so tests that monkeypatch ``Path.home`` isolate
+    correctly. The module constants (``HERMES_CONFIG`` etc.) are computed at
+    import time and would otherwise escape that monkeypatch, so the config
+    reader/writer resolves through this helper instead.
     """
-    settings_file = Path.home() / ".claude" / "settings.json"
-    # Use ~ for portability
-    hook_command = f"~/.claude/hooks/{hook_name}"
+    return Path.home() / ".hermes" / "config.yaml"
 
-    # Load existing settings or create new
-    if settings_file.exists():
+
+def _config_entry_for(event: str, hook_name: str) -> dict:
+    """Build the config.yaml entry for a managed hook under ``event``.
+
+    Hermes only honors ``matcher``/``timeout`` on the tool gates
+    (pre/post_tool_call); lifecycle events (on_session_end) take a bare
+    ``{command}`` entry. The permission hook is a general gate that matches
+    every tool, so it gets a timeout but no matcher.
+    """
+    entry: dict = {"command": _hermes_hook_command(hook_name)}
+    if event == "pre_tool_call":
+        entry["timeout"] = 60
+    return entry
+
+
+def _load_hermes_config() -> dict:
+    """Load ~/.hermes/config.yaml as a dict; ``{}`` when missing/unparseable."""
+    config_path = _config_path()
+    if not config_path.exists():
+        return {}
+    try:
+        data = yaml.safe_load(config_path.read_text())
+    except (yaml.YAMLError, OSError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _save_hermes_config(config: dict) -> None:
+    """Atomically write config.yaml, preserving unrelated keys and file mode.
+
+    Mirrors the Hermes shell-hooks allowlist writer: write to a temp file in the
+    same dir, then os.replace() so a crash never leaves a half-written config.
+    """
+    config_path = _config_path()
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    mode = 0o600
+    if config_path.exists():
         try:
-            settings = json.loads(settings_file.read_text())
-        except json.JSONDecodeError:
-            settings = {}
-    else:
-        settings = {}
+            mode = config_path.stat().st_mode & 0o777
+        except OSError:
+            mode = 0o600
+    text = yaml.safe_dump(
+        config, default_flow_style=False, sort_keys=False, allow_unicode=True
+    )
+    fd, tmp = tempfile.mkstemp(
+        dir=str(config_path.parent), prefix="config.yaml.", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(text)
+        os.chmod(tmp, mode)
+        os.replace(tmp, config_path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
-    # Ensure hooks structure exists
-    if "hooks" not in settings:
-        settings["hooks"] = {}
-    if event not in settings["hooks"]:
-        settings["hooks"][event] = []
 
-    # Check if already registered (check nested hooks array)
-    for entry in settings["hooks"][event]:
-        if "hooks" in entry:
-            for h in entry["hooks"]:
-                if h.get("command") == hook_command:
-                    return False  # Already registered
+def register_hook_in_config(event: str, hook_name: str) -> bool:
+    """Register a hook under ``event`` in the Hermes ``hooks:`` config block.
 
-    # Add hook with correct Claude Code format
-    hook_entry = {
-        "matcher": ".*",
-        "hooks": [
-            {"type": "command", "command": hook_command}
-        ]
-    }
-    settings["hooks"][event].append(hook_entry)
+    Returns True if config was updated, False if already configured.
 
-    # Write back
-    settings_file.parent.mkdir(parents=True, exist_ok=True)
-    settings_file.write_text(json.dumps(settings, indent=2))
+    Hermes hook format (config.yaml, not settings.json):
 
+        hooks:
+          pre_tool_call:
+            - command: "~/.hermes/hooks/agentwire-permission.sh"
+              timeout: 60
+          on_session_end:
+            - command: "~/.hermes/hooks/idle-handler.sh"
+    """
+    config = _load_hermes_config()
+
+    hooks = config.get("hooks")
+    if not isinstance(hooks, dict):
+        hooks = {}
+        config["hooks"] = hooks
+
+    entries = hooks.get(event)
+    if not isinstance(entries, list):
+        entries = []
+        hooks[event] = entries
+
+    command = _hermes_hook_command(hook_name)
+    if any(isinstance(e, dict) and e.get("command") == command for e in entries):
+        return False  # Already registered
+
+    entries.append(_config_entry_for(event, hook_name))
+    _save_hermes_config(config)
     return True
 
 
 # Agentwire-owned files deployed by `hooks install`. Each entry:
-# (filename in agentwire/hooks/, target directory, settings.json event or None)
+# (filename in agentwire/hooks/, target directory, Hermes config event or None)
 def _managed_hook_files() -> list[tuple[str, Path, str | None]]:
     return [
-        ("agentwire-permission.sh", CLAUDE_HOOKS_DIR, "PermissionRequest"),
-        ("idle-handler.sh", CLAUDE_HOOKS_DIR, "Notification"),
+        ("agentwire-permission.sh", HERMES_HOOKS_DIR, "pre_tool_call"),
+        ("idle-handler.sh", HERMES_HOOKS_DIR, "on_session_end"),
         ("queue-processor.sh", Path.home() / ".agentwire", None),
     ]
 
@@ -331,7 +356,7 @@ def install_hooks(
     copy: bool = False,
     allow_foreign: bool = False,
 ) -> dict[str, str]:
-    """Install/refresh all agentwire-owned hook files + settings.json registration.
+    """Install/refresh all agentwire-owned hook files + config.yaml registration.
 
     Returns {filename: "installed" | "updated" | "current" | "missing-source" |
     "refused-foreign"}.
@@ -372,14 +397,13 @@ def install_hooks(
             results[hook_name] = "current"
 
         if event:
-            register_hook_in_settings(event, hook_name)
+            register_hook_in_config(event, hook_name)
 
-    # Heal the full damage-control surface (hook scripts + rules + tooldefs +
-    # PreToolUse matchers), not just the settings.json matchers. This closes the
-    # documented post-rebuild gap: CLAUDE.md tells users to re-run `hooks install`
-    # after a rebuild, so it must actually sync the DC files/rules — drift-aware,
-    # bringing previously-shipped versions forward and never clobbering a
-    # file it does not recognize.
+    # Heal the full damage-control surface (hook scripts + rules + tooldefs),
+    # not just the config matchers. This closes the documented post-rebuild gap:
+    # CLAUDE.md tells users to re-run `hooks install` after a rebuild, so it must
+    # actually sync the DC files/rules — drift-aware, bringing previously-shipped
+    # versions forward and never clobbering a file it does not recognize.
     #
     # NOT quiet, and NOT silently swallowed: this heal can now legitimately
     # decline to act (a newer installed hook, a hand-edited rule), and a decline
@@ -415,7 +439,7 @@ def install_hooks(
 
 
 def cmd_hooks_install(args) -> int:
-    """Install agentwire-owned hook files and slash commands for AgentWire integration."""
+    """Install agentwire-owned hook files and global skills for AgentWire integration."""
     results = install_hooks(
         force=args.force,
         copy=args.copy,
@@ -431,19 +455,11 @@ def cmd_hooks_install(args) -> int:
         elif state == "current":
             print(f"{hook_name} already current.")
 
-    installed_commands = install_commands(force=args.force)
-    if installed_commands:
-        print(f"\nInstalled slash commands to {CLAUDE_COMMANDS_DIR}:")
-        for name in installed_commands:
-            print(f"  /{name}")
-    else:
-        print("Slash commands already installed.")
-
     refreshed_skills = False
     for name in _managed_global_skills():
         state = results.get(name)
         if state in ("installed", "updated"):
-            print(f"{state.capitalize()} skill -> /{name} ({CLAUDE_SKILLS_DIR / name})")
+            print(f"{state.capitalize()} skill -> /{name} ({HERMES_SKILLS_DIR / name})")
             refreshed_skills = True
     if not refreshed_skills:
         print("Skills already current.")
@@ -451,80 +467,63 @@ def cmd_hooks_install(args) -> int:
     return 0
 
 
-def unregister_hook_from_settings(event: str, hook_name: str) -> bool:
-    """Remove a hook registered under `event` from Claude's settings.json.
+def unregister_hook_from_config(event: str, hook_name: str) -> bool:
+    """Remove a hook registered under ``event`` from the Hermes config.yaml.
 
-    Returns True if settings were updated, False if not found.
+    Returns True if config was updated, False if not found.
     """
-    settings_file = Path.home() / ".claude" / "settings.json"
-    hook_command = f"~/.claude/hooks/{hook_name}"
-
-    if not settings_file.exists():
+    if not _config_path().exists():
         return False
 
-    try:
-        settings = json.loads(settings_file.read_text())
-    except json.JSONDecodeError:
+    config = _load_hermes_config()
+    hooks = config.get("hooks")
+    if not isinstance(hooks, dict) or event not in hooks:
         return False
 
-    if "hooks" not in settings or event not in settings["hooks"]:
+    entries = hooks[event]
+    if not isinstance(entries, list):
         return False
 
-    # Filter out entries containing our hook
-    original_len = len(settings["hooks"][event])
-    new_entries = []
-    for entry in settings["hooks"][event]:
-        if "hooks" in entry:
-            # Check if any hook in this entry matches ours
-            has_our_hook = any(h.get("command") == hook_command for h in entry["hooks"])
-            if not has_our_hook:
-                new_entries.append(entry)
-        else:
-            new_entries.append(entry)
-
-    settings["hooks"][event] = new_entries
-
-    if len(settings["hooks"][event]) == original_len:
+    command = _hermes_hook_command(hook_name)
+    kept = [
+        e for e in entries
+        if not (isinstance(e, dict) and e.get("command") == command)
+    ]
+    if len(kept) == len(entries):
         return False  # Hook wasn't registered
 
-    # Clean up empty structures
-    if not settings["hooks"][event]:
-        del settings["hooks"][event]
-    if not settings["hooks"]:
-        del settings["hooks"]
+    # Clean up empty structures.
+    if kept:
+        hooks[event] = kept
+    else:
+        del hooks[event]
+    if not hooks:
+        del config["hooks"]
 
-    # Write back
-    settings_file.write_text(json.dumps(settings, indent=2))
+    _save_hermes_config(config)
     return True
 
 
 def is_hook_registered(event: str, hook_name: str) -> bool:
-    """Check if a hook is registered under `event` in Claude's settings.json."""
-    settings_file = Path.home() / ".claude" / "settings.json"
-    hook_command = f"~/.claude/hooks/{hook_name}"
-
-    if not settings_file.exists():
+    """Check if a hook is registered under ``event`` in the Hermes config.yaml."""
+    if not _config_path().exists():
         return False
 
-    try:
-        settings = json.loads(settings_file.read_text())
-    except json.JSONDecodeError:
+    config = _load_hermes_config()
+    hooks = config.get("hooks")
+    if not isinstance(hooks, dict) or event not in hooks:
         return False
 
-    if "hooks" not in settings or event not in settings["hooks"]:
+    entries = hooks[event]
+    if not isinstance(entries, list):
         return False
 
-    # Check nested hooks array for our command
-    for entry in settings["hooks"][event]:
-        if "hooks" in entry:
-            for h in entry["hooks"]:
-                if h.get("command") == hook_command:
-                    return True
-    return False
+    command = _hermes_hook_command(hook_name)
+    return any(isinstance(e, dict) and e.get("command") == command for e in entries)
 
 
 def cmd_hooks_uninstall(args) -> int:
-    """Remove all agentwire-owned hook files and their settings.json registration."""
+    """Remove all agentwire-owned hook files and their config.yaml registration."""
     removed_any = False
     for hook_name, target_dir, event in _managed_hook_files():
         target = target_dir / hook_name
@@ -532,8 +531,8 @@ def cmd_hooks_uninstall(args) -> int:
             target.unlink()
             print(f"Removed: {target}")
             removed_any = True
-        if event and unregister_hook_from_settings(event, hook_name):
-            print(f"Unregistered {hook_name} from Claude settings.json")
+        if event and unregister_hook_from_config(event, hook_name):
+            print(f"Unregistered {hook_name} from Hermes config.yaml")
 
     if not removed_any:
         print("No hooks installed")
@@ -569,7 +568,7 @@ def cmd_hooks_status(args) -> int:
 
         if event:
             if is_hook_registered(event, hook_name):
-                print(f"  Registered: yes ({event} in ~/.claude/settings.json)")
+                print(f"  Registered: yes ({event} in ~/.hermes/config.yaml)")
             else:
                 print("  Registered: NO - run 'agentwire hooks install' to fix")
 
@@ -648,7 +647,7 @@ def register_hooks_parser(subparsers) -> None:
 
     # hooks install
     hooks_install = hooks_subparsers.add_parser(
-        "install", help="Install/refresh agentwire hook files and slash commands"
+        "install", help="Install/refresh agentwire hook files and global skills"
     )
     hooks_install.add_argument(
         "--force", "-f", action="store_true", help="Reinstall even when already current"

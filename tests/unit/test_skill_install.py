@@ -3,7 +3,7 @@
 Global skills (currently just `/wiki`) were hand-placed at wiki-setup and never
 resynced, so a stale or missing copy rotted invisibly. These tests cover the
 drift-aware symlink install + doctor-facing drift report. Everything runs against
-monkeypatched temp dirs — the real ~/.claude/skills/ is never touched.
+monkeypatched temp dirs — the real ~/.hermes/skills/ is never touched.
 """
 
 import pathlib
@@ -29,9 +29,9 @@ def env(tmp_path, monkeypatch):
     (source / "wiki").mkdir(parents=True)
     (source / "wiki" / "SKILL.md").write_text("# wiki skill\n")
 
-    target_root = tmp_path / "claude" / "skills"
+    target_root = tmp_path / "hermes" / "skills"
 
-    monkeypatch.setattr(m, "CLAUDE_SKILLS_DIR", target_root)
+    monkeypatch.setattr(m, "HERMES_SKILLS_DIR", target_root)
     monkeypatch.setattr(m, "get_skills_source", lambda: source)
     return source, target_root
 
