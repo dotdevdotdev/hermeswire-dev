@@ -294,15 +294,34 @@ def input_box_content(visible: str) -> "str | None":
     (including the ``⚕ ❯`` agent-running state), the draft otherwise, and None
     when no prompt line is visible (busy render / non-REPL pane) — the
     conservative "defer" signal.
+
+    A draft taller than the terminal width WRAPS: the glyph renders on the
+    first row and the continuation rows follow below with no glyph of their own
+    (#851). Those rows are part of the draft, so they are read until a
+    horizontal rule, a blank line, or another prompt glyph ends the input region.
     """
     clean = ANSI_PATTERN.sub("", visible)
-    for line in reversed(clean.split("\n")):
-        s = line.strip()
-        idx = s.find(PROMPT_GLYPH)
-        if idx == -1:
-            continue
-        return s[idx + len(PROMPT_GLYPH):].strip()
-    return None
+    lines = clean.split("\n")
+    start = None
+    for i in range(len(lines) - 1, -1, -1):
+        if PROMPT_GLYPH in lines[i].strip():
+            start = i
+            break
+    if start is None:
+        return None
+    s = lines[start].strip()
+    idx = s.find(PROMPT_GLYPH)
+    parts = [s[idx + len(PROMPT_GLYPH):].strip()]
+    for j in range(start + 1, len(lines)):
+        cont = lines[j].strip()
+        if not cont:
+            break
+        if set(cont) <= {"─", "═", "-", "·", " "}:  # horizontal rule / separator
+            break
+        if PROMPT_GLYPH in cont:
+            break
+        parts.append(cont)
+    return "".join(parts).strip()
 
 
 def input_box_content_sgr(visible: str) -> "str | None":

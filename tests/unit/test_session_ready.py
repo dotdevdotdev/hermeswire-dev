@@ -34,14 +34,28 @@ def _scripted_capture(monkeypatch, frames):
 
 
 class TestWaitForSessionReady:
-    """Hermes readiness: the prompt glyph appears, then the screen stabilizes.
+    """Hermes readiness: the prompt glyph appears, the screen stabilizes, then
+    the input handler is proven wired by a keystroke probe (#695).
 
-    No keystroke probe (that was Claude's banner-render fix) and no
-    trust-this-folder prompt — prompt_toolkit draws the ``❯`` prompt inside its
-    own readline loop, so glyph-on-screen means the input handler is wired."""
+    prompt_toolkit draws the ``❯`` prompt before its readline loop consumes
+    stdin, so glyph-on-screen alone is not proof the handler is wired — a
+    paste in that window fragments. The probe (typed char renders then erases)
+    is the positive proof, exercised end-to-end by the real-tmux integration
+    test; here it is stubbed so the unit test pins the glyph -> stability ->
+    probe flow."""
 
     def _no_sleep(self, monkeypatch):
         monkeypatch.setattr(session_ready.time, "sleep", lambda s: None)
+
+    def _stub_probe(self, monkeypatch):
+        calls = {"n": 0}
+
+        def fake_probe(session, pane_index, deadline):
+            calls["n"] += 1
+            return True
+
+        monkeypatch.setattr(session_ready, "_probe_input_handler", fake_probe)
+        return calls
 
     def _scripted_capture(self, monkeypatch, frames):
         state = {"i": 0}
@@ -71,7 +85,9 @@ class TestWaitForSessionReady:
         self._no_sleep(monkeypatch)
         self._scripted_capture(
             monkeypatch, ["booting...", self.READY, self.READY, self.READY, self.READY])
+        calls = self._stub_probe(monkeypatch)
         assert session_ready.wait_for_session_ready("s", timeout=10)
+        assert calls["n"] == 1  # probe runs after glyph + stability
 
     def test_no_glyph_times_out(self, monkeypatch):
         self._no_sleep(monkeypatch)
@@ -92,7 +108,9 @@ class TestWaitForSessionReady:
         self._scripted_capture(
             monkeypatch, [RuntimeError("no session"), self.READY, self.READY,
                           self.READY, self.READY])
+        calls = self._stub_probe(monkeypatch)
         assert session_ready.wait_for_session_ready("s", timeout=10)
+        assert calls["n"] == 1
 
 
 class TestBoxShowsMessage:

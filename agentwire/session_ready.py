@@ -49,11 +49,15 @@ MIN_ENTER_ATTEMPTS = 4
 
 # Readiness: require the Hermes prompt glyph on screen AND READY_STABLE_SNAPSHOTS
 # consecutive identical 500ms frames. prompt_toolkit redraws aggressively while
-# the model/spinner initializes, so stability — not a keystroke probe — is the
-# signal the REPL has settled. (Claude Code's probe-char proof of a wired input
-# handler is unnecessary here: prompt_toolkit draws the prompt inside its own
-# readline loop.)
+# the model/spinner initializes, so stability signals the REPL has settled —
+# but the prompt glyph rendering is NOT proof the readline loop consumes stdin
+# yet (#695): prompt_toolkit draws the prompt before its input handler wires,
+# so a paste in that window fragments. The keystroke probe below is the
+# positive proof.
 READY_STABLE_SNAPSHOTS = 3  # consecutive identical frames (~1s of stability)
+PROBE_CHAR = "."             # a keystroke whose render proves the handler wired
+PROBE_APPEAR_TIMEOUT = 3.0   # per-send budget for the probe char to appear
+PROBE_ERASE_TIMEOUT = 3.0    # budget to confirm the probe char is erased
 
 # Seed-failure recovery: bounded attempts at clearing a partial paste out of
 # the prompt line (C-u kills the line in prompt_toolkit's emacs bindings), and
@@ -193,6 +197,61 @@ def _poll(predicate, timeout: float) -> bool:
         time.sleep(POLL_INTERVAL)
 
 
+def _box_is_probe(box: "str | None") -> bool:
+    """Is the input box showing nothing but our probe char(s)?
+
+    Swallowed-then-buffered keystrokes can pile up, so any run of probe chars
+    counts. Ghost/placeholder hint text (a sentence) never matches, and a
+    leftover draft never matches — both correctly read as "probe not proven".
+    """
+    if not box:
+        return False
+    s = "".join(box.split())
+    return bool(s) and set(s) == {PROBE_CHAR}
+
+
+def _probe_input_handler(session: str, pane_index: int, deadline: float) -> bool:
+    """Positive proof the input handler consumes keystrokes (#695).
+
+    Types PROBE_CHAR, polls the input box until the char actually renders,
+    then erases it and confirms the box moved on. A prompt-up-but-unwired
+    session swallows (or buffers) the keystroke, so the probe never confirms
+    and we re-send until *deadline* — failing safe instead of pasting into a
+    session that would fragment the paste and swallow its Enters.
+    """
+    from agentwire import pane_manager
+
+    target = f"{session}.{pane_index}"
+
+    def box() -> "str | None":
+        return input_box(capture_session(session, pane_index=pane_index))
+
+    while time.time() < deadline:
+        pane_manager.run_command(
+            ["tmux", "send-keys", "-t", target, "-l", PROBE_CHAR], timeout=5
+        )
+        appear_budget = min(
+            PROBE_APPEAR_TIMEOUT, max(deadline - time.time(), POLL_INTERVAL)
+        )
+        if not _poll(lambda: _box_is_probe(box()), appear_budget):
+            continue  # swallowed — handler not wired yet; re-send and re-check
+        # Erase: buffered keystrokes may have piled up ("..."), so backspace
+        # what's visible and confirm the box no longer shows probe chars.
+        while time.time() < deadline:
+            try:
+                visible = box() or ""
+            except Exception:
+                visible = ""
+            for _ in range(len("".join(visible.split())) or 1):
+                pane_manager.run_command(
+                    ["tmux", "send-keys", "-t", target, "BSpace"], timeout=5
+                )
+            if _poll(lambda: not _box_is_probe(box()), PROBE_ERASE_TIMEOUT):
+                return True
+        return False
+    return False
+
+
 def wait_for_session_ready(
     session_full_name: str, timeout: float = 30.0, pane_index: int = 0
 ) -> bool:
@@ -243,7 +302,7 @@ def wait_for_session_ready(
             stable_count = 0
         last_snapshot = out
         if stable_count >= READY_STABLE_SNAPSHOTS - 1:
-            return True
+            return _probe_input_handler(session_full_name, pane_index, deadline)
         time.sleep(0.5)
 
     return False
