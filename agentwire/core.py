@@ -28,7 +28,7 @@ from .project_config import (
     get_parent_from_config,
     resolve_posture,
 )
-from .roles import RoleConfig, merge_roles
+from .roles import RoleConfig, merge_roles, role_skill_name
 from .worktree import git_common_dir, git_root, main_worktree, parse_session_name
 
 # Default config directory
@@ -109,29 +109,6 @@ def run_agentwire_cmd(
         return {"success": False, "error": str(e)}
 
 
-def role_prompts_dir() -> Path:
-    """Durable home for the per-conversation ``--append-system-prompt`` file (#871).
-
-    This used to be a ``tempfile.NamedTemporaryFile`` under /var/folders, which
-    macOS garbage-collects. The launch line references the file by path
-    (``--append-system-prompt "$(<path>)"``), so once the GC ran, relaunching a
-    session older than the GC window substituted an EMPTY string: the
-    conversation came back, the role silently did not. Nothing failed loudly —
-    the agent just quietly stopped being a worker/orchestrator/reviewer.
-
-    Keyed by conversation id so the prompt a conversation launched with stays
-    recoverable even after its session's roles change.
-
-    A FUNCTION, not the module constant it used to be (#884). A constant
-    computed at import time does not follow this repo's established test seam,
-    ``monkeypatch.setattr("agentwire.core.CONFIG_DIR", tmp_path)`` — a test
-    that believes it has isolated the config dir would still resolve to the
-    operator's REAL store. Harmless while the only operation was "write a
-    file"; a live landmine the moment something SWEEPS this directory.
-    """
-    return CONFIG_DIR / "role-prompts"
-
-
 def _check_tmux_installed() -> bool:
     """Check tmux is on PATH; print install hint if not. Returns False on miss."""
     if shutil.which("tmux") is None:
@@ -183,11 +160,9 @@ class AgentCommand:
     :func:`extract_hermes_session_id`), so it is ``None`` here.
     """
     command: str  # The shell command to execute
-    role_prompt_path: str | None = None  # Durable role-prompt file (see role_prompts_dir())
     env: dict[str, str] = field(default_factory=dict)  # Secrets to inject via tmux set-environment (keeps keys out of `ps`)
     conversation_id: str | None = None  # Hermes session id: --resume keeps it; None until captured for a fresh launch (#4)
     resumed_from: str | None = None  # Hermes session id this launch resumed, if any
-    record_key: str | None = None  # Local opaque key for the durable role-prompt file — NOT session identity (#4)
     posture: str = BARE
     roles: list[str] = field(default_factory=list)  # Role NAMES, in merge order
     model: str | None = None  # --model override, if the launch chose one
@@ -400,81 +375,6 @@ def write_owner_only(path: Path, text: str) -> None:
         raise
 
 
-def write_role_prompt(conversation_id: str, instructions: str) -> Path:
-    """Write *instructions* to this conversation's durable role-prompt file.
-
-    The one place a role prompt is written to disk (see :func:`role_prompts_dir`
-    for why "durable" is load-bearing). Returns the path the launch line
-    should read; the file deliberately OUTLIVES the launch so a later
-    relaunch can reuse it, and the recorded ``roles``/``posture`` can
-    regenerate it if it's ever gone. Retention is
-    :mod:`agentwire.role_prompts`' job, not this function's (#884).
-
-    A role prompt is complete system-prompt text — role content, project
-    context, whatever else the prompt carries — so it is written owner-only
-    via :func:`write_owner_only`, and never through a window where it isn't.
-    The directory mode is re-asserted on every write because ``mkdir`` never
-    touches an existing path: a store created before #881 must heal rather
-    than stay world-readable forever.
-    """
-    store = role_prompts_dir()
-    store.mkdir(parents=True, exist_ok=True, mode=_SECRET_DIR_MODE)
-    os.chmod(store, _SECRET_DIR_MODE)
-
-    path = store / f"{conversation_id}.txt"
-    write_owner_only(path, instructions)
-    return path
-
-
-def mirror_role_prompt_remote(agent: "AgentCommand", machine_id: str, agent_cmd: str) -> str:
-    """Copy a role prompt to *machine_id* and repoint the launch line at it.
-
-    The launch line references the prompt BY PATH
-    (``--append-system-prompt "$(<path>)"``), so a remote session handed a
-    local path reads a file that isn't there and starts with an EMPTY system
-    prompt — the same silent role-loss the /var/folders GC caused, just
-    reached by a different route. The one implementation of the mirror, used
-    by every remote launch (``new`` / ``recreate`` / ``fork``); only ``new``
-    had it before, and only into ``/tmp``.
-
-    Mutates ``agent.role_prompt_path`` to the remote path so the recorded
-    identity names where the prompt actually lives for that session. Returns
-    the rewritten command (unchanged on failure — best-effort, matching the
-    rest of the remote path's tolerance).
-    """
-    if not agent.role_prompt_path or not agent_cmd:
-        return agent_cmd
-    try:
-        content = Path(agent.role_prompt_path).read_text()
-    except OSError as e:
-        print(f"Warning: Failed to read system prompt: {e}", file=sys.stderr)
-        return agent_cmd
-
-    # `$HOME`, not `~`: this path is substituted into the launch line mid-word
-    # (`"$(<...)"`) where tilde expansion is not guaranteed, and it is
-    # recorded verbatim — the remote's home isn't knowable from here.
-    remote_dir = "$HOME/.agentwire/role-prompts"
-    remote_prompt = f"{remote_dir}/{agent.record_key}.txt"
-    # Same owner-only posture as the local store, stated the same way: `umask
-    # 077` covers the create, and the explicit chmods cover a pre-existing
-    # path (which umask never touches) on a remote whose defaults we don't
-    # control. The heredoc body starts on the line after the full command.
-    write_cmd = (
-        f'umask 077 && mkdir -p "{remote_dir}" && chmod 700 "{remote_dir}" && '
-        f'cat > "{remote_prompt}" << \'AGENTWIRE_EOF\'\n{content}\nAGENTWIRE_EOF\n'
-        f'chmod 600 "{remote_prompt}"'
-    )
-    result = _run_remote(machine_id, write_cmd)
-    if result.returncode != 0:
-        print(f"Warning: Failed to write system prompt to {machine_id}: {result.stderr}",
-              file=sys.stderr)
-        return agent_cmd
-
-    rewritten = agent_cmd.replace(agent.role_prompt_path, remote_prompt)
-    agent.role_prompt_path = remote_prompt
-    return rewritten
-
-
 def build_agent_command(
     posture: str,
     roles: list[RoleConfig] | None = None,
@@ -501,11 +401,9 @@ def build_agent_command(
       continues the SAME session (no new id is minted), so the resulting
       ``conversation_id`` IS ``resume_session_id``. A fresh launch mints
       nothing — its Hermes id is captured post-launch (issue #4).
-    - Role instructions previously rode ``--append-system-prompt``, which
-      Hermes has no equivalent for; injection is deferred to issue #15. The
-      durable role-prompt file is still written (keyed by a local ``record_key``,
-      not the session id, since a fresh launch has no id yet) so the record
-      stays reconstructible.
+    - Role instructions ride ``-s <role-skill>`` (Hermes loads them on demand);
+      there is no ``--append-system-prompt`` and no temp prompt file (#15).
+      ``soul`` is the SOUL.md identity, never a skill.
     """
     if posture == BARE:
         return AgentCommand(command="", posture=BARE)
@@ -528,9 +426,8 @@ def build_agent_command(
     if model:
         parts.append(f"-m {model}")
 
-    # Role-based flags (merged roles always apply)
-    role_prompt_path = None
-    record_key = None
+    # Role-based flags: tools map to -t toolsets; instructions ride the -s
+    # skills (Hermes loads them on demand). No temp prompt file (#15).
     if merged:
         if merged.tools:
             # -t selects TOOLSETS, not tool names — coarse fidelity (#3).
@@ -545,22 +442,17 @@ def build_agent_command(
                 ",".join(merged.disallowed_tools),
             )
 
-        if merged.instructions:
-            # Written to a file rather than inlined to avoid shell escaping.
-            # Hermes has no --append-system-prompt; injection deferred (#15).
-            # Keyed by a LOCAL record key, not the session id: a fresh launch's
-            # Hermes id is minted by Hermes and not known at build time (#4).
-            record_key = str(uuid.uuid4())
-            role_prompt_path = str(
-                write_role_prompt(record_key, merged.instructions)
-            )
+    if role_names:
+        # Role instructions are loadable skills, not pre-injected prompt text.
+        # soul is the SOUL.md identity slot, never a -s skill (#15).
+        skills = [role_skill_name(n) for n in role_names if n != "soul"]
+        if skills:
+            parts.append(f"-s {','.join(skills)}")
 
     return AgentCommand(
         command=" ".join(parts),
-        role_prompt_path=role_prompt_path,
         conversation_id=resume_session_id,
         resumed_from=resume_session_id,
-        record_key=record_key,
         posture=posture,
         roles=role_names,
         model=model,
@@ -1327,7 +1219,6 @@ def record_session_launch(
         # them means `agentwire restart` silently drops the third and hands the
         # conversation back on a different model than it was running on.
         "model": agent.model,
-        "role_prompt_path": agent.role_prompt_path,
         "launched_at": now,
         **({"repo": None, "branch": None, "worktree_path": None}
            if remote else git_identity(cwd)),

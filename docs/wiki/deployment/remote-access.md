@@ -246,7 +246,7 @@ launchctl load ~/Library/LaunchAgents/com.agentwire.tts-tunnel.plist
 
 ## Failsafe Access (Emergency Recovery)
 
-If the portal, claude, or other tooling breaks, you need a way to get in and fix things. This section covers browser-based SSH and VNC access that works from any device.
+If the portal, hermes, or other tooling breaks, you need a way to get in and fix things. This section covers browser-based SSH and VNC access that works from any device.
 
 ### What's Set Up
 
@@ -358,7 +358,7 @@ sudo tail -20 /Library/Logs/com.cloudflare.cloudflared.err.log
 | Problem | Solution |
 |---------|----------|
 | Portal not responding | SSH in via `ssh.solodev.dev` → `agentwire portal restart` |
-| Claude binary corrupted | SSH in → `brew reinstall claude` or download fresh |
+| Hermes Agent binary corrupted | SSH in → `brew reinstall hermes-agent` (or `uv tool install hermes-agent --force`) |
 | Can't type in browser SSH | Use Termux `ssh mac` or browser VNC instead |
 | VNC shows "connection closed" | Check Screen Sharing is enabled, VNC password is set |
 | Tunnel not connecting | SSH locally or physically → check `cloudflared` logs |

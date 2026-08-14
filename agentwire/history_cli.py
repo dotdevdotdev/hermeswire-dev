@@ -25,7 +25,6 @@ from .core import (
     build_agent_command,
     format_relative_time,
     load_config,
-    mirror_role_prompt_remote,
     record_session_launch,
 )
 from .project_config import ProjectConfig, load_project_config
@@ -257,10 +256,6 @@ def cmd_history_resume(args) -> int:
         result = _run_remote(machine_id, check_cmd)
         if result.returncode == 0:
             return _output_result(False, json_mode, f"Session '{name}' already exists on {machine_id}")
-
-        # The launch line names the role prompt BY PATH; mirror it to the
-        # remote before sending, or the resumed session starts role-less.
-        agent_cmd = mirror_role_prompt_remote(agent, machine_id, agent_cmd)
 
         # Create remote tmux session and send the hermes command
         create_cmd = (

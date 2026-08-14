@@ -160,7 +160,7 @@ do nothing without the token, but confirm "an agentwire portal lives here" (fing
 - Refuse-to-start on non-loopback without a token (`security.py:170`).
 - Constant-time token compare (`security.py:368`).
 - WS token in subprotocol, not the URL.
-- MCP server is stdio-only (`mcp_server.py:47`, `transport="stdio"`) — started by Claude Code
+- MCP server is stdio-only (`mcp_server.py:47`, `transport="stdio"`) — started by Hermes Agent
   locally, **never network-exposed.** Not part of the remote surface at all. (`mcp_server.py` is now
   a thin ~51-line per-domain import index post-#495 split.)
 - **Artifact DELETE path-traversal is already closed** — `api_artifacts_delete`

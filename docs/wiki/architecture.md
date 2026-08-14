@@ -12,13 +12,13 @@ tmux is the substrate. One agentwire session = one tmux session. Inside that ses
 
 ```
 tmux session "myproject"
-├── pane 0  → orchestrator   (Claude Code)
+├── pane 0  → orchestrator   (Hermes Agent)
 ├── pane 1  → worker          (spawned via pane_spawn, auto-kills on idle)
 ├── pane 2  → worker
 └── ...
 ```
 
-The orchestrator coordinates work and dispatches workers via the MCP `pane_spawn` tool. Workers fire an *idle notification* on completion (via `~/.claude/hooks/idle-handler.sh`); the hook routes the alert to pane 0 and kills the worker. Pane 0's own idle notifications route to whatever session is named in `parent:` (typically the human-facing session).
+The orchestrator coordinates work and dispatches workers via the MCP `pane_spawn` tool. Workers fire an *idle notification* on completion (via `~/.hermes/hooks/idle-handler.sh`); the hook routes the alert to pane 0 and kills the worker. Pane 0's own idle notifications route to whatever session is named in `parent:` (typically the human-facing session).
 
 Role (orchestrator/worker) and topology (main/worktree/pane) are independent axes (#716): a worker doesn't have to live in a pane — `agentwire worktree <name>` spawns it as a standalone tmux session instead, pushing a branch and opening a draft PR on completion rather than firing a pane-idle notification. The pane diagram above is the pane-topology case; see [worktree sessions](sessions/worktree-sessions.md) for the other.
 
@@ -144,7 +144,7 @@ Non-interactive work runs through the scheduler:
 
 | Path | Field | Dispatch | Best for |
 |---|---|---|---|
-| **Ensure task** | `task: <name>` in scheduler.yaml + `tasks: <name>:` in .agentwire.tasks.yml | `agentwire ensure` → tmux session → Claude Code | Recurring agent work |
+| **Ensure task** | `task: <name>` in scheduler.yaml + `tasks: <name>:` in .agentwire.tasks.yml | `agentwire ensure` → tmux session → Hermes Agent | Recurring agent work |
 
 ```
                 ┌──────── ~/.agentwire/scheduler.yaml ─────────┐
@@ -153,7 +153,7 @@ Non-interactive work runs through the scheduler:
                 └──────────────────┬───────────────────────────┘
                                    ▼
                           agentwire ensure
-                          (tmux + Claude)
+                          (tmux + Hermes)
 ```
 
 Decision shortcut:
@@ -168,11 +168,11 @@ Decision shortcut:
 
 Defense in depth, three layers:
 
-1. **Damage control hooks** (always on if `agentwire hooks install` was run): PreToolUse hooks on Bash/Edit/Write/Read/Grep/Glob match commands and paths against `agentwire/hooks/damage-control/rules/*.yaml`. Block hard-blocked patterns, prompt for ask-patterns, run bypassable patterns through allowlist checks; the read-side hook additionally enforces `zeroAccessPaths` on content reads.
+1. **Damage control hooks** (always on if `agentwire hooks install` was run): `pre_tool_call` hooks on `terminal`/`write_file`/`patch`/`read_file`/`search_files` match commands and paths against `agentwire/hooks/damage-control/rules/*.yaml`. Block hard-blocked patterns, escalate ask-patterns to the approval gate, run bypassable patterns through allowlist checks; the read-side hook additionally enforces `zeroAccessPaths` on content reads.
 2. **Per-project allowlists** (`allowed_paths` in the protected `.damagecontrol.yml` at the repo root): override the global rules for paths inside this project (e.g., `dist/*` allow-all, `.env.development` allow read/write/edit). The allowlist is host-owned — an agent can't edit `.damagecontrol.yml` to widen its own freedom (#466/#467).
-3. **Classifier-mode auto sessions** (`posture: auto`): a Sonnet 4.6 classifier reviews each tool call before execution. Safe ops auto-approve at zero cost; dangerous ops are blocked. Layered on top of the hook-level checks.
+3. **Hermes safety posture** (`posture: auto`/`bypass` → `--yolo`): Hermes's HARDLINE blocklist plus the damage-control hooks enforce safety at the tool layer, with `--checkpoints` available for rollback before destructive file ops. There is no classifier — see [Hermes safety posture](sessions/hermes-safety-posture.md).
 
-→ [Damage control](internals/damage-control.md), [auto](sessions/claude-code-auto-mode.md).
+→ [Damage control](internals/damage-control.md), [safety posture](sessions/hermes-safety-posture.md).
 
 ---
 

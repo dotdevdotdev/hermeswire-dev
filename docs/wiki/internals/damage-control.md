@@ -6,7 +6,7 @@
 
 ## Overview
 
-Damage Control is a security firewall system that protects AgentWire from dangerous operations during parallel agent execution. It intercepts tool calls (Bash, Edit, Write, Read, Grep, Glob) via PreToolUse hooks and blocks operations matching security patterns.
+Damage Control is a security firewall system that protects AgentWire from dangerous operations during parallel agent execution. It intercepts tool calls (`terminal`, `write_file`, `patch`, `read_file`, `search_files`, outbound MCP) via `pre_tool_call` hooks and blocks operations matching security patterns.
 
 **Why Critical for AgentWire**: Parallel remote agent execution multiplies risk. A single `rm -rf /` in a remote session is unrecoverable. Multi-agent execution amplifies the chance of catastrophic mistakes.
 
@@ -14,10 +14,10 @@ Damage Control is a security firewall system that protects AgentWire from danger
 
 | Layer | Coverage |
 |-------|----------|
-| **Bash Tool** | Commands: `rm -rf`, `git push --force`, `systemctl stop`, database drops |
-| **Edit Tool** | File protections: SSH keys, credentials, `.env` files, system configs |
-| **Write Tool** | Same as Edit tool (creation protection) |
-| **Read/Grep/Glob** | `zeroAccessPaths` enforcement on content reads — blocks reads of secrets even without writing to them |
+| **`terminal` tool** | Commands: `rm -rf`, `git push --force`, `systemctl stop`, database drops |
+| **`patch` tool** | File protections: SSH keys, credentials, `.env` files, system configs |
+| **`write_file` tool** | Same as `patch` (creation protection) |
+| **`read_file` / `search_files`** | `zeroAccessPaths` enforcement on content reads — blocks reads of secrets even without writing to them |
 | **Audit Logging** | All security decisions logged for analysis and debugging |
 
 ---
@@ -25,33 +25,29 @@ Damage Control is a security firewall system that protects AgentWire from danger
 ## Architecture
 
 ```
-AgentWire Session
+Hermes Agent session (AgentWire-managed)
     ↓
-Tool Call (Bash/Edit/Write)
+pre_tool_call hook (matcher: terminal | write_file | patch | read_file | search_files | mcp__agentwire__*)
     ↓
-PreToolUse Hook
+Damage Control hook script (PEP 723 Python)
     ↓
-Damage Control Hook Script (Python/UV)
+rules/*.yaml → check_command / check_path
     ↓
-rules/*.yaml → Check command/path
+Decision: block {"action":"block",...} | approve {"action":"approve",...,"rule_key":...} | allow (no-op)
     ↓
-Decision: Block (exit 2) | Allow (exit 0) | Ask (JSON response)
-    ↓
-[If blocked] Error message to agent
-[If allowed] Command executes
-[If ask] User prompt for confirmation
+[block] message returned to model   [approve] Hermes approval gate   [allow] tool runs
 ```
 
 ### File Structure
 
-Hooks ship inside the `agentwire` package — Claude Code's `settings.json` invokes them directly via `uv run`:
+Hooks ship inside the `agentwire` package — Hermes Agent's `~/.hermes/config.yaml` registers them under `hooks:` and invokes them via `shlex.split(command)` (no `settings.json`):
 
 ```
 agentwire/hooks/damage-control/       # Bundled in package
-├── bash-tool-damage-control.py       # Bash tool hook
-├── edit-tool-damage-control.py       # Edit tool hook
-├── write-tool-damage-control.py      # Write tool hook
-├── read-tool-damage-control.py       # Read/Grep/Glob hook (zeroAccessPaths enforcement)
+├── bash-tool-damage-control.py       # terminal tool hook
+├── edit-tool-damage-control.py       # write_file/patch tool hook
+├── write-tool-damage-control.py      # write_file tool hook
+├── read-tool-damage-control.py       # read_file/search_files hook (zeroAccessPaths enforcement)
 ├── mcp-tool-damage-control.py        # Outbound MCP tool hook (email_send/quo_send)
 ├── audit_logger.py                   # Audit logging framework
 └── rules/                            # Pattern files (categorized)
@@ -117,8 +113,8 @@ Any write / edit / delete / move / chmod targeting one of these paths is
 `enabled: false` kill switch **do NOT override it**:
 
 - `~/.agentwire/damagecontrol.yml`, any `.damagecontrol.yml`
-- `~/.claude/settings.json` (the PreToolUse hook registration)
-- `~/.agentwire/hooks/damage-control/*.py` (the hook scripts), `~/.claude/hooks/*`
+- `~/.hermes/config.yaml` (the `hooks:` block registration)
+- `~/.agentwire/hooks/damage-control/*.py` (the hook scripts), `~/.hermes/hooks/*`
 - `~/.agentwire/damage-control/*.yaml` (the rule files)
 - `~/.agentwire/scheduler.yaml`, `~/.agentwire/config.yaml` (gate/healthcheck commands run via the same `shell=True` confused-deputy path)
 - any `.agentwire.tasks.yml` (per-project task-execution config — see [Task-execution config split](#task-execution-config-split-agentwiretasksyml-720) below; **not** `.agentwire.yml`, which is pure declarative session config and is agent-writable)
@@ -162,7 +158,7 @@ because task defs ARE executable code):
    live file.
 
 Both commands are deliberately **CLI-only, never MCP**: an MCP tool that
-shelled out to `promote` would bypass the Bash-tool hook entirely (see
+shelled out to `promote` would bypass the terminal-tool hook entirely (see
 [Outbound MCP tool gating](#outbound-mcp-tool-gating-457) — everything not on
 that explicit gated list is open by default).
 
@@ -187,8 +183,8 @@ Bash-pattern-only block; all three are closed):
      exploit: an unattended task writes malicious `shell:` strings to the
      proposed file, then self-promotes so the scheduler executes them
      unguarded on the next tick.
-   - Otherwise requires a genuine host signal: a real interactive tty (Claude
-     Code's Bash tool never attaches one, attended or not), or the explicit
+   - Otherwise requires a genuine host signal: a real interactive tty (Hermes
+     Agent's terminal tool never attaches one, attended or not), or the explicit
      `AGENTWIRE_ALLOW_TASKS_PROMOTE=1` opt-in for a human's own
      non-interactive script. **`--yes` only skips the confirmation prompt —
      it never substitutes for this gate.**
@@ -445,7 +441,7 @@ allowed_paths:
 
 The allowlist is the one knob that overrides the protected-control-plane check, so it lives behind that same protection — an agent can't edit `.damagecontrol.yml` to widen its own freedom.
 
-**The override cuts both ways (#938).** Because `allowedPaths` outranks control-plane protection, a *broad* entry silently turns that protection off for whatever it covers — `{path: "*/.agentwire/*", allow: all}` makes the kill switch (`~/.agentwire/damagecontrol.yml`), the rule files, and the hook scripts agent-writable, and `{path: "~/.claude/*"}` takes hook registration (`settings.json`) with it. The control plane is protected *unless your allowlist covers it*. `agentwire doctor` flags any entry whose glob overlaps a protected control-plane path, using the enforcement matcher itself, and names both sides.
+**The override cuts both ways (#938).** Because `allowedPaths` outranks control-plane protection, a *broad* entry silently turns that protection off for whatever it covers — `{path: "*/.agentwire/*", allow: all}` makes the kill switch (`~/.agentwire/damagecontrol.yml`), the rule files, and the hook scripts agent-writable, and `{path: "~/.hermes/*"}` takes hook registration (`config.yaml`) with it. The control plane is protected *unless your allowlist covers it*. `agentwire doctor` flags any entry whose glob overlaps a protected control-plane path, using the enforcement matcher itself, and names both sides.
 
 Per-project paths are relative to the project root and resolved to absolute paths before matching.
 
@@ -501,7 +497,7 @@ stopped at the parent could not fix a delegating task **at all** — and that ga
 applies to every task that delegates. What makes the inheritance safe is that
 the grant carries its **path scope** with it, so what a child inherits is
 "commit under `<store>`", not "commit". A child cannot widen it: the hook reads
-the var from the Claude Code process environment, not from the shell the agent
+the var from the Hermes Agent process environment, not from the shell the agent
 runs commands in, and the files that define grants are protected control plane.
 
 **What's unaffected.** Hard `block` rules (`rm -rf`, `git push --force`, DB
@@ -556,7 +552,7 @@ unattended_allow:
   - outbound.agentwire-email                  # bare — unchanged, still works
   - id: git.commit
     paths:
-      - ~/.claude/projects/*/memory/          # scoped — only under here
+      - ~/.hermes/memory/                      # scoped — only under here
 ```
 
 A scoped grant applies only when **every** directory the matching command would
@@ -597,8 +593,8 @@ is a bypass rather than an inaccuracy (verified against git 2.50.1):
   absolute value resets the chain. Resolving each `-C` against the cwd instead
   collapses `git -C <in-scope> -C ../..` onto the in-scope directory, so the
   check sees one in-scope target and grants while git walks out of it — into
-  the enclosing repo, which is exactly where `~/.claude/projects/*/memory/`
-  sits relative to `~/.claude`.
+  the enclosing repo, which is exactly where `~/.hermes/memory/`
+  sits relative to `~/.hermes`.
 - **`--git-dir` / `--work-tree` are last-one-wins**, and a relative value
   resolves against the directory the `-C` chain produced, not the cwd.
 
@@ -610,8 +606,8 @@ from the working directory, so the directory a command runs in is not
 necessarily the repo it writes to. A scope naming `<repo>/subdir` would
 otherwise grant over all of `<repo>`. This is checked at decision time rather
 than by refusing non-root scopes at lint time: a lint sees only the scope as
-written, and `~/.claude/projects/*/memory/` is perfectly safe right up until
-someone runs `git init ~/.claude`.
+written, and `~/.hermes/memory/` is perfectly safe right up until
+someone runs `git init ~/.hermes`.
 
 **Symlinks.** Both sides are resolved before comparing: the candidate directory
 must be in scope in **both** its lexical and its `realpath` form, and the
@@ -653,7 +649,7 @@ owner-address-only exemption was considered and rejected — the owner explicitl
 accepted the exfil tradeoff in favor of the simpler blanket allow. `agentwire
 quo` (SMS) is unaffected and still fails closed unattended; widen it per-task
 via `unattended_allow` (`outbound.agentwire-quo`) same as any other verb. This
-applies identically to the Bash shell-out and the `email_send` MCP tool (both
+applies identically to the terminal shell-out and the `email_send` MCP tool (both
 resolve through the same `resolve_unattended_grants`).
 
 ```yaml
@@ -715,7 +711,7 @@ already on `DEFAULT_UNATTENDED_ALLOW`.
 **Residual gaps (intentional / known):**
 
 - **MCP send paths bypass the hook.** Agents in agentwire sessions usually send
-  via MCP tools (`email_send`, `quo_send`), which are *not* Bash/Edit/Write and
+  via MCP tools (`email_send`, `quo_send`), which are *not* terminal/write_file/patch and
   so never reach this hook. The `outbound.*` rules only catch a shell-out to the
   CLI. Closing the MCP path needs a guard at the MCP layer, not a rule — out of
   scope here.
@@ -736,8 +732,8 @@ already on `DEFAULT_UNATTENDED_ALLOW`.
 ## Outbound MCP tool gating (#457)
 
 Agents inside agentwire sessions reach external comms through **MCP tools**, not
-the Bash tool — `email_send` (external email via Resend) and `quo_send`
-(external SMS via Quo/OpenPhone). PreToolUse fires for MCP tools too, so a fourth
+the terminal tool — `email_send` (external email via Resend) and `quo_send`
+(external SMS via Quo/OpenPhone). `pre_tool_call` fires for MCP tools too, so a fourth
 hook gates them:
 
 - **`mcp-tool-damage-control.py`** registered with matcher
@@ -746,7 +742,7 @@ hook gates them:
   hood (`email_send` → `agentwire email --to … --subject …`; `quo_send` →
   `agentwire quo --to …`; the message body is omitted from the synthesized,
   audit-logged command) and runs it through the **identical** decision ladder
-  (`check_command` + `is_unattended` + `resolve_unattended_allow`) as the Bash
+  (`check_command` + `is_unattended` + `resolve_unattended_allow`) as the terminal
   hook. That reuses `outbound.agentwire-email` / `outbound.agentwire-quo`
   verbatim — same rule IDs, same `unattended_allow`, same
   `agentwire safety notify-unattended-block` owner-alert on an unattended block.
@@ -771,7 +767,7 @@ be un-done) warrant gating, matching the `outbound.*` scope. The rest of the
 | `say`, `notify_user`, `notify_parent`, `notify_event`, `msg_send`, `session_send` | Open | Internal to the agentwire network / local desktop; not external, reversible. |
 | `session_create`/`recreate`/`fork`/`kill`, `pane_*` | Open | Local tmux lifecycle; reversible, no external reach. |
 | `machine_add`/`machine_remove` | Open | Local registry edit; reversible. |
-| `scheduler_run`, `scheduler_enable`/`disable` | Open | Triggers local task runs (themselves gated by this hook + the Bash hook). |
+| `scheduler_run`, `scheduler_enable`/`disable` | Open | Triggers local task runs (themselves gated by this hook + the terminal hook). |
 | `council_start`/`stop` | Open | Local orchestration sessions. |
 | `desktop_*`, `worktree_*`, `handoff_*`, `history_*` | Open | Local UI / git-backed / filesystem; reversible. |
 
@@ -863,7 +859,7 @@ unguarded run.
 ### Tool-channel parity (#923)
 
 Damage control is registered per tool matcher, and a guard that asks "did this
-arrive as Bash" misses the same operation arriving as a tool call. Coverage
+arrive as terminal" misses the same operation arriving as a tool call. Coverage
 now: `NotebookEdit` routes through the edit hook (`notebook_path` is a file
 write), and **every** `mcp__*` tool call has its path-valued arguments
 screened — zero-access secrets block on mention for any tool; protected
@@ -917,7 +913,7 @@ agentwire safety logs --pattern "rm -rf"
   "timestamp": "2026-04-30T13:45:22Z",
   "session_id": "agentwire-dev/damage-control",
   "agent_id": "wave-2-task-1",
-  "tool": "Bash",
+  "tool": "terminal",
   "command": "rm -rf /tmp/test",
   "decision": "blocked",
   "blocked_by": "bashToolPattern: rm with recursive flags",
@@ -968,7 +964,7 @@ readOnlyPaths:
 #   reason: git push --force
 ```
 
-**Option 2**: Remove the hook entry from Claude Code's `~/.claude/settings.json` (the file Claude Code reads, not `~/.agentwire/settings.json`).
+**Option 2**: Remove the hook entry from the `hooks:` block in Hermes Agent's `~/.hermes/config.yaml` (the config Hermes Agent reads, not `~/.agentwire/settings.json`).
 
 **Warning**: Disabling protection removes safety nets. Re-enable as soon as the risky operation is complete.
 
@@ -1130,7 +1126,7 @@ agentwire hooks status
 
 **Verify hook is registered**:
 ```bash
-cat ~/.claude/settings.json | grep damage-control
+cat ~/.hermes/config.yaml | grep damage-control
 ```
 
 ### False Positive (Safe Command Blocked)

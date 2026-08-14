@@ -110,7 +110,7 @@ agentwire list
 | Storage | 10GB | 20GB+ |
 | CPU | 1 vCPU | 2+ vCPU |
 
-**Note:** The LLM runs on Anthropic's servers - remote machines only need resources for Node.js and file operations. No GPU required for Claude Code sessions (GPU only needed for TTS with Chatterbox).
+**Note:** The LLM runs on your API provider's servers - remote machines only need resources for Python and file operations. No GPU required for Hermes Agent sessions (GPU only needed for TTS with Chatterbox).
 
 ---
 
@@ -276,21 +276,21 @@ Machine configuration is stored in `~/.agentwire/machines.json`, keyed under a
 
 ### The `~/.agentwire/machine/` Pattern
 
-Each machine should have a `~/.agentwire/machine/CLAUDE.md` — a living document describing that machine's role, services, venvs, paths, and any platform-specific gotchas.
+Each machine should have a `~/.agentwire/machine/.hermes.md` — a living document describing that machine's role, services, venvs, paths, and any platform-specific gotchas.
 
-When an AI agent needs to do ops work on a remote machine (manage services, install packages, debug the box itself), spawn a Claude Code session in `~/.agentwire/machine/` rather than SSHing and running ad-hoc commands. The agent picks up both `~/.claude/CLAUDE.md` (user preferences) and `~/.agentwire/machine/CLAUDE.md` (machine context) automatically, giving it full situational awareness without needing to rediscover everything.
+When an AI agent needs to do ops work on a remote machine (manage services, install packages, debug the box itself), spawn a Hermes Agent session in `~/.agentwire/machine/` rather than SSHing and running ad-hoc commands. The agent picks up both the user's global Hermes context (`.hermes.md` / `AGENTS.md`) and `~/.agentwire/machine/.hermes.md` (machine context) automatically, giving it full situational awareness without needing to rediscover everything.
 
 ```bash
 # Spawn an ops session on a remote machine (replace `my-server` with your hostname)
 ssh my-server
 cd ~/.agentwire/machine
-claude  # gets both global prefs and machine context
+hermes chat --cli  # gets both global prefs and machine context
 
 # Or spawn via agentwire from the Mac (remote target is the @machine suffix)
 agentwire new -s my-server-ops@my-server -p ~/.agentwire/machine
 ```
 
-### What to Put in `~/.agentwire/machine/CLAUDE.md`
+### What to Put in `~/.agentwire/machine/.hermes.md`
 
 - **Machine identity** — OS, hardware specs (CPU, GPU, RAM), role in the fleet
 - **Services** — what runs here, how to start/stop/check them, service file locations
@@ -311,7 +311,7 @@ agentwire new -s my-server-ops@my-server -p ~/.agentwire/machine
 │   ├── tts-start        # Quick start
 │   └── wsl-startup      # Boot hook (WSL example)
 └── machine/
-    └── CLAUDE.md        # Machine context for AI agents ← THIS
+    └── .hermes.md      # Machine context for AI agents ← THIS
 ```
 
 ### Scripts in `~/.agentwire/scripts/`

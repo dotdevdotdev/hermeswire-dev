@@ -24,7 +24,6 @@ class TestBuildAgentCommand:
     def test_bare_empty_command(self):
         cmd = self._build("bare")
         assert cmd.command == ""
-        assert cmd.role_prompt_path is None
         assert cmd.conversation_id is None
         assert cmd.posture == "bare"
 
@@ -80,19 +79,18 @@ class TestBuildAgentCommand:
         assert "Read" in cmd.command
 
     def test_with_roles_instructions(self):
-        # Hermes has no --append-system-prompt (issue #15): the durable file is
-        # still written for the record, but the flag is no longer injected.
+        # Hermes has no --append-system-prompt (issue #15); role instructions
+        # ride -s skills.
         roles = [RoleConfig(name="test", instructions="Be helpful")]
         cmd = self._build("bypass", roles=roles)
         assert "--append-system-prompt" not in cmd.command
-        assert cmd.role_prompt_path is not None
-        assert Path(cmd.role_prompt_path).read_text() == "Be helpful"
+        assert "-s agentwire-test" in cmd.command
 
     def test_roles_apply_on_every_posture(self):
         roles = [RoleConfig(name="test", tools=["Read"], instructions="Hello")]
         for posture in ("bypass", "prompted", "auto"):
             cmd = self._build(posture, roles=roles)
-            assert cmd.role_prompt_path is not None
+            assert "-s agentwire-test" in cmd.command
             assert "-t Read" in cmd.command
 
 
@@ -100,11 +98,6 @@ class TestConversationIdentity:
     """Hermes mints its own session id (issue #4); build_agent_command no
     longer mints a UUID. The Hermes id is captured post-launch for a fresh
     launch, and a resume launch simply carries the id it resumes."""
-
-    @pytest.fixture(autouse=True)
-    def _prompts_dir(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("agentwire.core.CONFIG_DIR", tmp_path)
-        self.prompts_dir = tmp_path / "role-prompts"
 
     def _build(self, posture="bypass", roles=None, resume_session_id=None):
         from agentwire.__main__ import build_agent_command
@@ -146,127 +139,12 @@ class TestConversationIdentity:
         assert cmd.posture == "auto"
         assert cmd.roles == ["worker", "soul"]
 
-    def test_role_prompt_is_durable_and_keyed_by_local_record_key(self):
-        roles = [RoleConfig(name="test", instructions="Be a worker")]
-        cmd = self._build(roles=roles)
-        path = Path(cmd.role_prompt_path)
-        assert path.parent == self.prompts_dir
-        assert path.name == f"{cmd.record_key}.txt"
-        assert path.read_text() == "Be a worker"
-
-    def test_role_prompt_is_owner_only(self):
-        roles = [RoleConfig(name="test", instructions="secret-ish context")]
-        cmd = self._build(roles=roles)
-        path = Path(cmd.role_prompt_path)
-        assert stat.S_IMODE(path.stat().st_mode) == 0o600
-        assert stat.S_IMODE(self.prompts_dir.stat().st_mode) == 0o700
-
-    def test_permissive_umask_cannot_widen_the_mode(self):
-        old = os.umask(0o000)
-        try:
-            roles = [RoleConfig(name="test", instructions="x")]
-            cmd = self._build(roles=roles)
-        finally:
-            os.umask(old)
-        assert stat.S_IMODE(Path(cmd.role_prompt_path).stat().st_mode) == 0o600
-        assert stat.S_IMODE(self.prompts_dir.stat().st_mode) == 0o700
-
-    def test_pre_existing_world_readable_paths_heal_on_write(self):
-        self.prompts_dir.mkdir(parents=True, exist_ok=True)
-        os.chmod(self.prompts_dir, 0o755)
-        stale = self.prompts_dir / "stale.txt"
-        stale.write_text("old")
-        os.chmod(stale, 0o644)
-
-        from agentwire.core import write_role_prompt
-        healed = write_role_prompt("stale", "new")
-
-        assert healed == stale
-        assert stale.read_text() == "new"
-        assert stat.S_IMODE(stale.stat().st_mode) == 0o600
-        assert stat.S_IMODE(self.prompts_dir.stat().st_mode) == 0o700
-
-    def test_append_system_prompt_is_not_emitted(self):
-        # Hermes has no --append-system-prompt; injection is issue #15.
+    def test_role_instructions_ride_s_skills(self):
+        # Hermes has no --append-system-prompt; role instructions ride -s skills (#15).
         roles = [RoleConfig(name="test", tools=["Read"], instructions="line1\nline2")]
         cmd = self._build(roles=roles)
         assert "--append-system-prompt" not in cmd.command
-        assert cmd.role_prompt_path is not None
-
-
-class TestMirrorRolePromptRemote:
-    """The remote half of the same store — same durability, same posture."""
-
-    @pytest.fixture(autouse=True)
-    def _wire(self, tmp_path, monkeypatch):
-        from agentwire import core
-
-        monkeypatch.setattr(core, "CONFIG_DIR", tmp_path)
-        self.sent = []
-
-        def fake_run_remote(machine_id, command):
-            self.sent.append(command)
-            import subprocess
-            return subprocess.CompletedProcess([], 0, "", "")
-
-        monkeypatch.setattr(core, "_run_remote", fake_run_remote)
-
-    def _agent(self, instructions="Be a worker"):
-        from agentwire.core import build_agent_command
-        from agentwire.roles import RoleConfig
-        return build_agent_command("bypass", [RoleConfig(name="r", instructions=instructions)])
-
-    def test_repoints_launch_line_and_record_at_the_remote_copy(self):
-        from agentwire.core import mirror_role_prompt_remote
-
-        agent = self._agent()
-        local = agent.role_prompt_path
-        rewritten = mirror_role_prompt_remote(agent, "box", agent.command)
-
-        remote = f"$HOME/.agentwire/role-prompts/{agent.record_key}.txt"
-        assert local not in rewritten
-        # The RECORD must name where the prompt actually lives for that session.
-        assert agent.role_prompt_path == remote
-        # Issue #15: the launch line no longer embeds the prompt path
-        # (--append-system-prompt is gone), so the command itself is unchanged.
-        assert rewritten == agent.command
-
-    def test_remote_write_is_owner_only(self):
-        """`cat > file` on the far side inherits the remote's umask and leaves
-        an existing file's mode alone — both have to be stated explicitly."""
-        from agentwire.core import mirror_role_prompt_remote
-
-        agent = self._agent()
-        mirror_role_prompt_remote(agent, "box", agent.command)
-
-        cmd = self.sent[0]
-        assert "umask 077" in cmd
-        assert 'chmod 700 "$HOME/.agentwire/role-prompts"' in cmd
-        assert f'chmod 600 "{agent.role_prompt_path}"' in cmd
-        # /tmp was the old destination and is not durable.
-        assert "/tmp" not in cmd
-
-    def test_content_survives_the_heredoc(self):
-        from agentwire.core import mirror_role_prompt_remote
-
-        agent = self._agent(instructions="line1\nline2 'quoted' $VAR")
-        mirror_role_prompt_remote(agent, "box", agent.command)
-        body = self.sent[0].split("<< 'AGENTWIRE_EOF'\n", 1)[1].split("\nAGENTWIRE_EOF")[0]
-        # Quoted delimiter => no expansion; $VAR must arrive literally.
-        assert body == "line1\nline2 'quoted' $VAR"
-
-    def test_failed_write_leaves_the_command_and_record_untouched(self, monkeypatch):
-        import subprocess
-
-        from agentwire import core
-
-        monkeypatch.setattr(
-            core, "_run_remote",
-            lambda m, c: subprocess.CompletedProcess([], 1, "", "boom"))
-        agent = self._agent()
-        original = agent.command
-        assert core.mirror_role_prompt_remote(agent, "box", original) == original
-        assert agent.role_prompt_path.startswith(str(core.role_prompts_dir()))
+        assert "-s agentwire-test" in cmd.command
 
 
 class TestExtractHermesSessionId:
@@ -302,20 +180,6 @@ class TestExtractHermesSessionId:
     def test_returns_none_when_absent(self):
         from agentwire.core import extract_hermes_session_id
         assert extract_hermes_session_id("no id here\njust text\n") is None
-
-
-@pytest.mark.real_agentwire_home
-def test_default_prompt_dir_is_under_agentwire_config():
-    """The whole point of #871's prompt move. Deliberately module-level: the
-    classes above redirect CONFIG_DIR to a tmp dir that pytest itself happens
-    to put under /var/folders, which would make this vacuous.
-
-    Same reason it opts out of the #893 home redirect, which relocates the
-    config dir into precisely such a directory: this test asserts on the REAL
-    deployment path, and reads only."""
-    from agentwire.core import CONFIG_DIR, role_prompts_dir
-    assert role_prompts_dir().parent == CONFIG_DIR
-    assert "/var/folders" not in str(role_prompts_dir())
 
 
 class TestSessionEnvInjection:

@@ -2,7 +2,7 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in AgentWire, please report it privately.
+If you discover a security vulnerability in HermesWire, please report it privately.
 
 **Do NOT open a public GitHub issue for security vulnerabilities.**
 
@@ -25,9 +25,9 @@ Include:
 ### Scope
 
 This security policy applies to:
-- The AgentWire CLI (`agentwire` command)
-- The AgentWire portal (web interface)
-- Official AgentWire packages on PyPI
+- The HermesWire CLI (`agentwire` command)
+- The HermesWire portal (web interface)
+- Official HermesWire packages on PyPI
 
 ### Out of Scope
 
@@ -37,27 +37,19 @@ This security policy applies to:
 
 ## Security Features
 
-AgentWire includes built-in security features:
+HermesWire includes built-in security features, layered on top of Hermes Agent's own safety model:
 
-- **Damage Control Hooks:** Block 300+ dangerous command patterns. Commands are
-  matched after shell-aware normalization (quote/escape stripping, simple `$VAR`
-  resolution); constructs that can't be statically verified (command
-  substitution, `eval`, `base64 -d | sh`) fail closed.
-- **Path Protection:** Prevent access to sensitive files (`.env`, SSH keys,
-  credentials) across shell, file edits/writes, **and native content reads**
-  (Read/Grep/Glob). Committed env templates (`.env.example`, `.sample`,
-  `.template`, `.dist`) are treated as secret-free and remain readable.
+- **Damage Control Hooks:** Block 300+ dangerous command patterns via `pre_tool_call` hooks registered in `~/.hermes/config.yaml` (installed with `agentwire hooks install`). Commands are matched after shell-aware normalization (quote/escape stripping, simple `$VAR` resolution); constructs that can't be statically verified (command substitution, `eval`, `base64 -d | sh`) fail closed.
+- **Path Protection:** Prevent access to sensitive files (`.env`, SSH keys, credentials) across shell, file edits/writes, **and native content reads** (`read_file`/`search_files`). Committed env templates (`.env.example`, `.sample`, `.template`, `.dist`) are treated as secret-free and remain readable.
+- **Hermes approval gate + HARDLINE floor:** Hermes Agent's own dangerous-command approval gate (`tools/approval.py`, configured via `approvals.mode` / a permanent allowlist) plus its HARDLINE blocklist (`rm -rf /`, `mkfs`, block-device writes, shutdown) fire regardless of `--yolo`.
+- **Checkpoints:** `--checkpoints` records a rollback point before destructive file operations.
 - **Audit Logging:** All blocked operations are logged
 
-See `docs/wiki/internals/damage-control.md` for details, and
-`docs/wiki/security/damage-control-hardening.md` for the 2026-06 matcher
-hardening (control-plane path coverage, tilde/`$HOME` canonicalization, `.env`
-whole-component matching, shell-aware fail-closed matching, read-surface
-policing) and the new fail-closed-when-unattended behavior.
+See `docs/wiki/internals/damage-control.md` for details, `docs/wiki/security/damage-control-hardening.md` for the 2026-06 matcher hardening (control-plane path coverage, tilde/`$HOME` canonicalization, `.env` whole-component matching, shell-aware fail-closed matching, read-surface policing) and the new fail-closed-when-unattended behavior, and `docs/wiki/sessions/hermes-safety-posture.md` for the full safety posture.
 
-### Redundant Permissions Bypass (`--dangerously-skip-permissions`)
+### Dangerous-command approval bypass (`--yolo`)
 
-By default, AgentWire initializes Claude Code with the `--dangerously-skip-permissions` flag. This is safe because AgentWire implements its own **Damage Control Hooks** at the system shell level (installed via `agentwire hooks install`). Rather than relying on fragile, prompt-based AI dialogs for command approval, AgentWire intercepts and enforces safety rules directly in the shell. Bypassing Claude's built-in prompts prevents unnecessary interruptions and speeds up agent execution while keeping AgentWire's compensating shell-level controls in force.
+By default, HermesWire launches Hermes Agent with `--yolo --accept-hooks`. This is safe because the damage-control hooks (installed via `agentwire hooks install`, registered as `pre_tool_call` in `~/.hermes/config.yaml`) and Hermes's own HARDLINE blocklist enforce safety at the tool layer. `--yolo` bypasses the interactive dangerous-command prompts; it never bypasses the HARDLINE floor (`rm -rf /`, `mkfs`, block-device writes, shutdown) or the damage-control hard blocks. Add `--checkpoints` on top for rollback.
 
 ## Trust Model
 

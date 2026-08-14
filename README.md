@@ -1,9 +1,11 @@
+# HermesWire
+
 <p align="center">
-  <img src="https://agentwire.dev/images/echo-banner.png" alt="AgentWire" width="600">
+  <img src="https://agentwire.dev/images/echo-banner.png" alt="HermesWire" width="600">
 </p>
 
 <p align="center">
-  <strong>A self-hosted, keyboard-driven cockpit for running a whole <em>fleet</em> of Claude Code agents at once.</strong>
+  <strong>A self-hosted, keyboard-driven cockpit for running a whole <em>fleet</em> of Hermes Agent agents at once.</strong>
 </p>
 
 <p align="center">
@@ -20,12 +22,12 @@
 
 ---
 
-## Why AgentWire
+## Why HermesWire
 
-Running several Claude Code agents by hand means a wall of tmux panes: constant
+Running several Hermes Agent agents by hand means a wall of tmux panes: constant
 context-switching, copy-pasting between sessions, tracking which branch each agent
 sits on, babysitting every one. It doesn't scale past one or two before **your
-attention** — not the model — becomes the bottleneck. AgentWire turns that wall into
+attention** — not the model — becomes the bottleneck. HermesWire turns that wall into
 one cockpit, and its capabilities **compound**:
 
 - **It compounds.** Worktrees + command palette + quick-action keys + tab-switching
@@ -34,7 +36,7 @@ one cockpit, and its capabilities **compound**:
 - **Orchestrate _many_ agents, not watch one.** Every session is a window; **F3**
   fans them into a Mission-Control collage; **Tab** cycles between them; **Cmd/Ctrl+K**
   runs any action. Council deliberates, briefing mode fans out, worktree sessions
-  isolate parallel work — tmux- and Claude-Code-native from the ground up.
+  isolate parallel work — tmux- and Hermes-Agent-native from the ground up.
 - **Autonomous and unattended.** A scheduler runs recurring jobs (research, test runs,
   cleanup, doc-drift); gates verify *real work happened*; repo tasks open *draft PRs,
   not commits to main*; reliability plumbing (verified delivery, dead-letter,
@@ -43,7 +45,7 @@ one cockpit, and its capabilities **compound**:
   by default. No cloud account, no third party in the loop — your code and your API
   keys never leave the machine. 300+ damage-control blocks make running unattended sane.
 
-> **Use the official app to watch one session; use AgentWire to command a whole
+> **Use Hermes Agent to watch one session; use HermesWire to command a whole
 > fleet — on your own hardware, by keyboard, with voice layered on top.**
 
 ---
@@ -54,7 +56,7 @@ A self-hosted, desktop-style portal where **every agent session is a window** �
 reachable from any device on your LAN, running on your own hardware with your own keys.
 
 ```
-You → AgentWire Portal → tmux sessions → a fleet of Claude Code agents
+You → HermesWire Portal → tmux sessions → a fleet of Hermes Agent agents
  ⌨️🎤      (WebSocket)         📺                    🤖🤖🤖
 ```
 
@@ -89,7 +91,7 @@ agentwire new -s hello -p ~/projects/hello
 
 > **Optional:** clone this repo (`git clone https://github.com/dotdevdotdev/agentwire-dev ~/projects/agentwire-dev`) and `agentwire dev` opens a guided helper session inside it — setup walkthrough, project wiring, issue filing, forking. It requires the source checkout; everything above works without one.
 
-**Requirements:** Python 3.10+, tmux, Claude Code. Optional: ffmpeg (only for host-mic push-to-talk capture — browser voice input works without it).
+**Requirements:** Python 3.10+, tmux, Hermes Agent (`hermes --version`). Optional: ffmpeg (only for host-mic push-to-talk capture — browser voice input works without it).
 
 **Honest setup time:** under a minute to a working voice portal with a genuinely good voice — Kokoro-82M runs on CPU out of the box (one-time ~200 MB model download in the background; the browser voice covers the wait). ~15 minutes for the full experience: cloned voices via a self-hosted TTS shim, Whisper-grade transcription, phone-from-anywhere (certs + token).
 
@@ -179,7 +181,7 @@ Hold the mic to speak (in instant mode the transcript appears for a quick glance
 
 ## Multi-Agent Orchestration
 
-AgentWire supports orchestrator/worker patterns for complex tasks:
+HermesWire supports orchestrator/worker patterns for complex tasks:
 
 ```yaml
 # .agentwire.yml in your project (keep it gitignored — it's personal config,
@@ -202,7 +204,7 @@ Workers execute tasks autonomously while the orchestrator coordinates.
 
 ## Safety
 
-AgentWire blocks dangerous operations before they execute:
+HermesWire blocks dangerous operations before they execute:
 
 - `rm -rf /`, `git push --force`, `git reset --hard`
 - Cloud CLI destructive ops (AWS, GCP, Firebase, Vercel)
@@ -311,7 +313,7 @@ agentwire tunnels up              # SSH tunnels for services
 ```bash
 agentwire doctor                  # Auto-diagnose issues
 agentwire safety status           # Check protection status
-agentwire hooks install           # Install Claude Code hooks
+agentwire hooks install           # Install Hermes Agent hooks
 agentwire network status          # Service health check
 ```
 
@@ -341,7 +343,7 @@ Quick links:
 
 ## License
 
-AgentWire is **free and open source under the [Apache License 2.0](LICENSE)** — your machine, your keys, no telemetry.
+HermesWire is **free and open source under the [Apache License 2.0](LICENSE)** — your machine, your keys, no telemetry.
 
 > **Free-forever pledge:** the tool is free forever. No paid tier, no open-core, no feature paywall. Commercial training &amp; enablement for teams is offered separately by [dotdev](https://dotdev.dev) — the tool itself is never gated.
 
@@ -350,7 +352,7 @@ Contributions are accepted under the [Developer Certificate of Origin](CONTRIBUT
 ---
 
 <p align="center">
-  <strong>AgentWire: For people who have better things to do.</strong>
+  <strong>HermesWire: For people who have better things to do.</strong>
 </p>
 
 ---

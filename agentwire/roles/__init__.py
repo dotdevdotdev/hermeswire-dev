@@ -176,28 +176,33 @@ def merge_roles(roles: list[RoleConfig]) -> MergedRole:
 HEADLESS_ROLES = {"worker", "reviewer", "task-runner", "notifications"}
 
 
+def role_skill_name(name: str) -> str:
+    """The Hermes skill name for a role: ``agentwire-<name>`` (collision-free).
+
+    Hermes has no ``--append-system-prompt``; role instructions ride ``-s``
+    skills. Prefixing ``agentwire-`` avoids shadowing Hermes built-in skills
+    (/handoff, /memory, /skills, ...) the same way #14 does (#15).
+    """
+    return f"agentwire-{name}"
+
+
 def inject_soul(role_names: list[str], config: dict | None = None, no_soul: bool = False) -> list[str]:
-    """Append the bundled soul role to a session's role list.
+    """Ensure the soul identity exists as ``~/.hermes/SOUL.md`` (#15).
 
-    Soul is the always-present default personality (tone, restraint,
-    ask-vs-proceed). It rides last so it gets recency weight in the merged
-    prompt, while a deliberately-appended stricter role can still override it.
+    Under Claude, ``soul`` was a role whose text was appended to the system
+    prompt. Hermes always injects ``~/.hermes/SOUL.md`` as the identity slot
+    (independent of project context), so instead of appending ``soul`` to the
+    role list we ensure SOUL.md exists (installing it from the bundled soul
+    role if missing) and return the role list unchanged.
 
-    Skipped when:
+    Skipped (no SOUL.md install) when:
     - no_soul is True (per-session --no-soul flag)
     - config disables it globally (session.inject_soul: false)
     - any role is headless (HEADLESS_ROLES — executors stay voiceless)
-    - a soul role is already present (soul itself, or a soul-* lens variant)
-    - a council-* role is present (council sessions carry their own lens or
-      synthesis voice — the standard soul would blur the decomposition)
-
-    Args:
-        role_names: Resolved role names for the session
-        config: Main config dict (from load_config()), or None to skip the check
-        no_soul: Per-session opt-out
+    - a soul/council role is already present (same rationale as before)
 
     Returns:
-        role_names with "soul" appended last, or unchanged if excluded
+        role_names unchanged (identity is a context file, not a role)
     """
     if no_soul:
         return role_names
@@ -207,7 +212,23 @@ def inject_soul(role_names: list[str], config: dict | None = None, no_soul: bool
         return role_names
     if any(r == "soul" or r.startswith("soul-") or r.startswith("council-") for r in role_names):
         return role_names
-    return [*role_names, "soul"]
+    _ensure_soul_md()
+    return role_names
+
+
+def _ensure_soul_md() -> None:
+    """Write ``~/.hermes/SOUL.md`` from the bundled soul role's body, if absent."""
+    target = Path.home() / ".hermes" / "SOUL.md"
+    if target.exists():
+        return
+    soul_path = discover_role("soul")
+    if soul_path is None:
+        return
+    role = parse_role_file(soul_path)
+    if role is None or not role.instructions:
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(role.instructions, encoding="utf-8")
 
 
 # ROLE ∈ {orchestrator, worker, reviewer} is authority + etiquette — what the
