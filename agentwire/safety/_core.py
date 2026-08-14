@@ -1779,14 +1779,16 @@ def load_safety_config(
 PROTECTED_CONTROL_PLANE_PATHS = [
     "~/.agentwire/damagecontrol.yml",   # global kill switch + rule knobs
     "*.damagecontrol.yml",              # project kill switch + rule knobs (any dir)
-    "~/.claude/settings.json",          # PreToolUse hook registration
+    "~/.hermes/config.yaml",            # Hermes hooks + approvals config
+    "~/.hermes/hooks/*",                # Hermes shell hooks
+    "~/.hermes/skills/*",               # Hermes skills (role instructions)
+    "~/.hermes/SOUL.md",                # identity slot (always injected)
     "~/.agentwire/hooks/damage-control/*.py",  # the hook scripts themselves
-    "~/.claude/hooks/*",                # agentwire-owned Claude Code hooks
     "~/.agentwire/damage-control/*.yaml",      # the damage-control rule files
     # Execution-plane configs: agentwire runs strings from these files through
     # its OWN ``subprocess.run(..., shell=True)`` calls (scheduler gate commands
     # in scheduler.py, service healthchecks in services.py) — those subprocesses
-    # do NOT traverse the Claude Code hook, so a policed agent that can write a
+    # do NOT traverse the Hermes hook, so a policed agent that can write a
     # gate/healthcheck gets unguarded code execution on the next tick (a
     # confused-deputy escape). Treat them as control plane (#466 lockdown).
     "~/.agentwire/scheduler.yaml",      # scheduler gate commands run via shell

@@ -309,8 +309,8 @@ class TestControlPlaneAllowlistOverlap:
         assert "~/.agentwire/damage-control/*.yaml" in flagged  # the rule files
 
     def test_claude_glob_takes_hook_registration(self, bash_hook):
-        overlaps = self._overlaps(bash_hook, [{"path": "~/.claude/*", "allow": "all"}])
-        assert any(prot == "~/.claude/settings.json" for _, prot in overlaps)
+        overlaps = self._overlaps(bash_hook, [{"path": "~/.hermes/*", "allow": "all"}])
+        assert any(prot == "~/.hermes/config.yaml" for _, prot in overlaps)
 
     def test_home_glob_is_flagged(self, bash_hook):
         assert self._overlaps(bash_hook, [{"path": "~/*", "allow": "all"}])
@@ -381,7 +381,7 @@ class TestNotebookEditCoverage:
 
     def test_patch_to_control_plane_blocks(self, tmp_path):
         """An operation refused via Edit must be refused via patch."""
-        target = HERMETIC_HOME + "/.claude/settings.json"
+        target = HERMETIC_HOME + "/.hermes/config.yaml"
         proc = self._run({"tool_name": "patch", "tool_input": {"path": target}}, tmp_path)
         assert proc.returncode == 0, proc.stderr
         assert json.loads(proc.stdout)["action"] == "block"
@@ -430,7 +430,7 @@ class TestMcpPathScreening:
     def test_writeish_tool_naming_control_plane_blocks(self, tmp_path):
         proc = self._run(
             "mcp__filesystem__write_file",
-            {"path": HERMETIC_HOME + "/.claude/settings.json", "content": "x"},
+            {"path": HERMETIC_HOME + "/.hermes/config.yaml", "content": "x"},
             tmp_path,
         )
         assert proc.returncode == 0, proc.stderr
@@ -440,7 +440,7 @@ class TestMcpPathScreening:
         """The control plane is readable by design; only writes are gated."""
         proc = self._run(
             "mcp__filesystem__read_file",
-            {"path": HERMETIC_HOME + "/.claude/settings.json"},
+            {"path": HERMETIC_HOME + "/.hermes/config.yaml"},
             tmp_path,
         )
         assert proc.returncode == 0, proc.stderr

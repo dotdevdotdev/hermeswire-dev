@@ -35,7 +35,7 @@ except ImportError:
 
 
 # === BEGIN AGENTWIRE HOOK STAMP (generated — do not edit) ===
-AGENTWIRE_HOOK_STAMP = {"core_sha256": "ed36d64d7cea91450987aa38dbe19729e6f8687b4d11b5ca4216d954a346c416", "generated_at": "2026-08-13T20:38:12Z"}
+AGENTWIRE_HOOK_STAMP = {"core_sha256": "e5ddd9c2aa39a7611ff7d725e42a901022daa9468181ec56c5f738e63926b206", "generated_at": "2026-08-14T05:25:43Z"}
 # === END AGENTWIRE HOOK STAMP ===
 # === BEGIN GENERATED FROM agentwire/safety/_core.py ===
 """
@@ -1819,14 +1819,16 @@ def load_safety_config(
 PROTECTED_CONTROL_PLANE_PATHS = [
     "~/.agentwire/damagecontrol.yml",   # global kill switch + rule knobs
     "*.damagecontrol.yml",              # project kill switch + rule knobs (any dir)
-    "~/.claude/settings.json",          # PreToolUse hook registration
+    "~/.hermes/config.yaml",            # Hermes hooks + approvals config
+    "~/.hermes/hooks/*",                # Hermes shell hooks
+    "~/.hermes/skills/*",               # Hermes skills (role instructions)
+    "~/.hermes/SOUL.md",                # identity slot (always injected)
     "~/.agentwire/hooks/damage-control/*.py",  # the hook scripts themselves
-    "~/.claude/hooks/*",                # agentwire-owned Claude Code hooks
     "~/.agentwire/damage-control/*.yaml",      # the damage-control rule files
     # Execution-plane configs: agentwire runs strings from these files through
     # its OWN ``subprocess.run(..., shell=True)`` calls (scheduler gate commands
     # in scheduler.py, service healthchecks in services.py) — those subprocesses
-    # do NOT traverse the Claude Code hook, so a policed agent that can write a
+    # do NOT traverse the Hermes hook, so a policed agent that can write a
     # gate/healthcheck gets unguarded code execution on the next tick (a
     # confused-deputy escape). Treat them as control plane (#466 lockdown).
     "~/.agentwire/scheduler.yaml",      # scheduler gate commands run via shell
