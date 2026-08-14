@@ -8,7 +8,7 @@ requires-python = ">=3.10"
 authors = [
     { name = "dotdev", email = "dev@dotdev.dev" }
 ]
-keywords = ["ai", "voice", "agent", "claude", "tmux", "tts", "stt"]
+keywords = ["ai", "voice", "agent", "hermes", "hermes-agent", "tmux", "tts", "stt"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Web Environment",
@@ -169,13 +169,13 @@ exclude = [
 ]
 
 # Ship the agentwire-owned GLOBAL skill into the package so get_skills_source()
-# resolves it and `hooks install` can symlink ~/.claude/skills/wiki at it. SSOT:
-# the source lives at .claude/skills/wiki (also the project-scoped copy); this
+# resolves it and `hooks install` can symlink ~/.hermes/skills/wiki at it. SSOT:
+# the source lives at .hermes/skills/wiki (also the project-scoped copy); this
 # maps it to agentwire/skills/wiki in the wheel, so it is auto-current on every
 # rebuild — the same posture as hooks/roles/prompts bundled inside the package.
 [tool.hatch.build.targets.wheel.force-include]
-".claude/skills/wiki" = "agentwire/skills/wiki"
-".claude/commands/handoff.md" = "agentwire/commands/handoff.md"
+".hermes/skills/wiki" = "agentwire/skills/wiki"
+".hermes/skills/handoff-bundle" = "agentwire/skills/handoff-bundle"
 
 [tool.hatch.version]
 path = "agentwire/__init__.py"
@@ -188,10 +188,10 @@ exclude = [
     # Virtual environments
     ".venv*/",
     # Dev/local config files
-    ".claude/",
+    ".hermes/",
     ".agentwire.yml",
     "uv.lock",
-    "CLAUDE.md",
+    ".hermes.md",
     # Build artifacts
     "dist/",
     # Dev docs
@@ -217,13 +217,13 @@ exclude = [
     "agentwire/static/agentwire-splash-logo-layers--transparent.png",
 ]
 
-# The sdist excludes .claude/, but the wheel force-includes .claude/skills/wiki
+# The sdist excludes .hermes/, but the wheel force-includes .hermes/skills/wiki
 # (-> agentwire/skills/wiki). Carry it into the sdist too, otherwise building the
 # wheel *from* the sdist (`uv build`, or `pip install` from the sdist) can't
 # resolve the wheel's force-include and fails.
 [tool.hatch.build.targets.sdist.force-include]
-".claude/skills/wiki" = ".claude/skills/wiki"
-".claude/commands/handoff.md" = ".claude/commands/handoff.md"
+".hermes/skills/wiki" = ".hermes/skills/wiki"
+".hermes/skills/handoff-bundle" = ".hermes/skills/handoff-bundle"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -250,7 +250,7 @@ asyncio_mode = "auto"
 # suppressed here (with justification) instead of via scattered `# nosec`:
 #
 #   B101 assert_used                  — asserts in non-test helpers are sanity checks.
-#   B404 import subprocess            — driving subprocesses (tmux, git, claude) IS the product.
+#   B404 import subprocess            — driving subprocesses (tmux, git, hermes) IS the product.
 #   B602/B603/B607 subprocess/shell   — scheduler gates, service healthchecks and task
 #                                       pre-commands run user-authored shell commands by
 #                                       design; the threat model is the user's own machine,
