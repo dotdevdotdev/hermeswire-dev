@@ -347,17 +347,23 @@ def safe_deliver(target_session: str, target_pane: int, text: str) -> "tuple[boo
     Refusals (returned as (False, reason), retried by the next tick):
       target_gone       session no longer exists
       target_not_agent  pane runs a shell/daemon — pasted text could EXECUTE
+      target_parked     session is parked on a usage limit — pasting would
+                        corrupt the resume
 
-    There is no parked / live-dialog refusal anymore: Hermes has no
-    screen-scrapable menu to answer, and usage-limit parking is usage_limit's
-    concern (#8). Delivery itself is ``session_ready.send_verified``, keyed on
-    the FULL whitespace-normalized message (#667) so a silent tmux paste failure
-    reports as not-delivered instead of being assumed sent.
+    Hermes has no screen-scrapable live-dialog to refuse; parking is
+    usage_limit's concern (#8). Delivery itself is ``session_ready.send_verified``,
+    keyed on the FULL whitespace-normalized message (#667) so a silent tmux paste
+    failure reports as not-delivered instead of being assumed sent.
     """
     if not _session_exists(target_session):
         return False, "target_gone"
     if not is_agent_pane(target_session, target_pane):
         return False, "target_not_agent"
+
+    from .usage_limit import is_parked
+
+    if is_parked(target_session):
+        return False, "target_parked"
 
     from .session_ready import send_verified
 

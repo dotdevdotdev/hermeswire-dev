@@ -610,11 +610,6 @@ class TestEscalation:
         assert inbox.list_messages("s")[0].attempts == 11
 
 
-@pytest.mark.xfail(
-    reason="usage-limit parking is not yet ported to Hermes (issue #8); "
-           "safe_deliver no longer refuses parked targets until then",
-    strict=False,
-)
 class TestParkedDefer:
     """#872: a usage-limit parked recipient defers WITHOUT penalty.
 
