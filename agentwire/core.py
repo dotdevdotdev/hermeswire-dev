@@ -410,7 +410,7 @@ def build_agent_command(
     merged = merge_roles(roles) if roles else None
     role_names = [r.name for r in roles] if roles else []
 
-    parts = ["hermes", "chat", "--cli", "--source", "tool"]
+    parts = ["hermes", "chat", "--cli", "--source", "tool", "--accept-hooks"]
 
     # Permission-mode: both bypass and auto rely on damage-control hooks for
     # safety, so both bypass Hermes approvals with --yolo (issue #3).
