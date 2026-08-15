@@ -22,6 +22,7 @@ from .core import (
     _portal_auth_headers,
     _start_portal_local,
     build_agent_command,
+    capture_session_id,
     check_pip_environment,
     check_python_version,
     find_source_checkout,
@@ -123,6 +124,15 @@ def cmd_dev(args) -> int:
         ])
 
     record_session_launch(session_name, agent, project_dir, created_via="dev")
+
+    # Capture the Hermes session id post-launch (#4, #22). The dev session is
+    # interactive — the user attaches and types — so the session row may not
+    # exist yet. Poll briefly; None is the normal pre-first-turn result.
+    if agent_cmd and not agent.conversation_id:
+        captured_id = capture_session_id(project_dir, timeout=5)
+        if captured_id:
+            agent.conversation_id = captured_id
+            record_session_launch(session_name, agent, project_dir, created_via="dev")
 
     print("Attaching... (Ctrl+B D to detach)")
     subprocess.run(["tmux", "attach-session", "-t", session_name])

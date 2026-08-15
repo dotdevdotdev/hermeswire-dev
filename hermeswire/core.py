@@ -476,10 +476,9 @@ def extract_hermes_session_id(output: str) -> str | None:
     first match, so a caller can hand it either stream. Returns ``None`` when
     no id is present.
 
-    This is the capture half of issue #4. It is a pure function on purpose: the
-    interactive ``--cli`` REPL launched in tmux has no stderr we can read, so
-    wiring it into the launch path (a subprocess wrapper for headless ``-q``
-    runs, or a post-launch read of ``~/.hermes/state.db``) is a follow-up.
+    This is the capture half of issue #4. The interactive ``--cli`` REPL
+    launched in tmux has no stderr we can read, so the launch path polls
+    ``~/.hermes/state.db`` instead — see :func:`capture_session_id`.
     """
     for line in output.splitlines():
         stripped = line.strip()
@@ -497,6 +496,92 @@ def extract_hermes_session_id(output: str) -> str | None:
         if value:
             return value
     return None
+
+
+def capture_session_id(
+    cwd, *,
+    timeout: float = 30.0,
+    poll_interval: float = 1.0,
+    source: str | None = "tool",
+    started_after: float | None = None,
+) -> str | None:
+    """Poll ``~/.hermes/state.db`` for the Hermes session id a fresh launch
+    minted (#4, #22).
+
+    The interactive ``--cli`` REPL launched in tmux has no stderr to parse, so
+    :func:`extract_hermes_session_id` has nothing to read. Hermes writes the
+    session row to its SQLite store lazily — on the first turn, not at launch —
+    so this polls until a new session appears whose ``cwd`` matches *cwd*, then
+    returns its id.
+
+    *source* filters by session source tag (``"tool"`` for REPL sessions
+    launched via ``build_agent_command``; ``None`` to query all sources, used
+    by the headless ``hermes -z`` path whose sessions default to ``"cli"``).
+
+    *started_after* (epoch seconds) restricts to sessions started after the
+    given timestamp, so a headless dispatch doesn't pick up a stale session
+    from the same directory.
+
+    Returns ``None`` on timeout or when the store is unavailable (e.g. the
+    HermesWire interpreter is not the one Hermes is installed into). Best-effort:
+    a ``None`` here means ``record_session_launch`` records ``conversation_id:
+    None``, exactly as it did before this wiring — the session is still live and
+    the id is recoverable later from the Hermes session list.
+    """
+    import time
+
+    # If the Hermes session store is unavailable (the HermesWire interpreter
+    # is not the one Hermes is installed into), don't poll — return None now.
+    db = _hermes_session_db()
+    if db is None:
+        return None
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            kwargs = dict(
+                cwd_prefix=str(cwd),
+                limit=1,
+                order_by_last_active=True,
+            )
+            if source is not None:
+                kwargs["source"] = source
+            rows = db.list_sessions_rich(**kwargs)
+        except Exception:
+            rows = []
+        if rows:
+            row = rows[0]
+            if started_after is not None:
+                started = row.get("started_at") or 0
+                if started <= started_after:
+                    # Not new enough — keep polling.
+                    time.sleep(poll_interval)
+                    continue
+            sid = row.get("id")
+            if sid:
+                return sid
+        time.sleep(poll_interval)
+    return None
+
+
+_hermes_db_instance = None
+
+
+def _hermes_session_db():
+    """Open the Hermes session store once, or return ``None`` if unavailable.
+
+    Mirrors :func:`history._db`: ``hermes_state`` is imported lazily (heavy, and
+    the wheel must not depend on a specific Hermes version). Callers that get
+    ``None`` degrade to empty results.
+    """
+    global _hermes_db_instance
+    if _hermes_db_instance is None:
+        try:
+            from hermes_state import DEFAULT_DB_PATH, SessionDB
+        except ImportError:
+            return None
+        _hermes_db_instance = SessionDB(DEFAULT_DB_PATH)
+    return _hermes_db_instance
 
 
 def check_python_version() -> bool:

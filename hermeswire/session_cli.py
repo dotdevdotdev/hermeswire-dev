@@ -701,6 +701,23 @@ def cmd_new(args) -> int:
                     file=sys.stderr,
                 )
 
+    # Capture the Hermes session id post-launch (#4, #22). The interactive
+    # REPL has no stderr to parse, so poll ~/.hermes/state.db for the session
+    # row Hermes writes on its first turn. If the agent was never prompted
+    # (no first_message and the user hasn't typed yet), the row may not exist
+    # yet — capture returns None and the record stays as before; the id is
+    # recoverable later from `hermes sessions list`. Only re-record if we
+    # actually captured an id (record_session_launch is merge-preserving).
+    if agent_cmd and not getattr(agent, "conversation_id", None):
+        from .core import capture_session_id
+        captured_id = capture_session_id(session_path, timeout=10)
+        if captured_id:
+            agent.conversation_id = captured_id
+            record_session_launch(
+                session_name, agent, session_path,
+                created_by=created_by, created_via="new", role=kind,
+            )
+
     if json_mode:
         result = {
             "success": True,
