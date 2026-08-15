@@ -1,6 +1,8 @@
 # Hermes integration strategy (AgentWire → HermesWire)
 
-Status: decided. Phase 1 (runtime swap) landed on `hermes-conversion`.
+Status: decided. The conversion landed (PR #21, epic #20). This page describes
+the **final state**; for features that were dropped or replaced, see
+[hermes-removals.md](hermes-removals.md).
 
 ## Decision: hybrid
 
@@ -30,10 +32,12 @@ cockpit keeps the REPL so a human can watch the agent work in tmux.
 - **`hermes chat -q "prompt"`** — prints answer + exit summary
   (`Session: {id}` / `Resume this session with: hermes --resume {id}`).
 - **`hermes chat -Q`** — answer on stdout, `session_id: {id}` on **stderr**; exit 0/1.
-- **Session ids** are `{YYYYMMDD_HHMMSS}_{6 hex}` (minted in cli.py); store is
-  SQLite `~/.hermes/state.db` (`sessions` table: id, source, title, cwd,
-  parent_session_id). `--source tool` tags + hides automation sessions.
-- **Approvals**: `approvals.mode` ∈ `manual | smart | off` (no "auto").
+- **Session ids** are `{YYYYMMDD_HHMMSS}_{6 hex}` (minted by Hermes in `cli.py`);
+  the store is SQLite `~/.hermes/state.db` (`sessions` table: id, source, title,
+  cwd, parent_session_id). `--source tool` tags + hides automation sessions.
+  AgentWire no longer mints a UUID or passes `--session-id`; a fresh launch
+  captures the Hermes-minted id post-launch (#4).
+- **Approvals**: `approvals.mode` ∈ `manual | smart | off` (no `auto` classifier).
   `--yolo` = `HERMES_YOLO_MODE=1` (import-frozen). `-t TOOLSETS` selects
   coarse toolsets, NOT tool-name globs (no `--allowedTools` equivalent).
 - **Hooks** (`VALID_HOOKS`): `on_session_start`, `on_session_end` (from
@@ -57,21 +61,47 @@ recorded launch metadata. Do NOT add `python` to the pane-command regex —
 that misclassifies daemons (see `test_daemon_skipped_gracefully`,
 `TestIsAgentPane::test_command_classification`).
 
-## Flag mapping (landed in Phase 1)
+## Flag mapping (final state)
 
 | Claude Code | Hermes Agent |
 |---|---|
 | `claude` | `hermes chat --cli` |
 | `--dangerously-skip-permissions` / `--enable-auto-mode --permission-mode auto` | `--yolo` |
 | `--model <m>` | `-m <m>` |
-| `--session-id` / `--fork-session` / `--resume` | (removed) / `--resume <id>` |
-| `--allowedTools` / `--tools` / `--disallowedTools` | `-t TOOLSETS` / `approvals.deny` (fidelity loss) |
-| `--append-system-prompt "$(<file)"` | context files / `-s SKILLS` (issue #15) |
+| `--session-id` / `--fork-session` / `--resume` | (removed) / (removed) / `--resume <id>` |
+| `--allowedTools` / `--tools` / `--disallowedTools` | `-t TOOLSETS` / damage-control hooks + `approvals.deny` (fidelity loss) |
+| `--append-system-prompt "$(<file)"` | context files (`.hermes.md`, `AGENTS.md`) + `-s SKILLS` (role instructions ride `agentwire-<role>` skills) |
 
-## Known gaps (deferred to later phases)
+All entries in this table are **landed** (PR #21 / epic #20). The
+`--session-id` / `--fork-session` columns are marked removed rather than mapped:
+Hermes mints its own id and `--resume` continues the same session (no fork). See
+[hermes-removals.md](hermes-removals.md) for the rationale on each dropped
+feature and its replacement.
 
-- Role-instruction injection (`--append-system-prompt`) — issue #15.
-- `--allowedTools` core allowlist has no equivalent — replaced by
-  damage-control hooks + `approvals.deny` (issues #3/#11).
-- `conversation_id` is still a locally-minted UUID, not a Hermes session id —
-  issue #4.
+## Conversation identity (final state)
+
+`conversation_id` is **no longer a locally-minted UUID**. Under Hermes it is the
+session id Hermes itself minted (`{YYYYMMDD_HHMMSS}_{6hex}`), captured
+post-launch by `core.extract_hermes_session_id()` and recorded by the one writer,
+`core.record_session_launch()` (#4). `--resume <id>` continues the SAME session
+(no new id is minted), so a resumed session's `conversation_id` IS
+`resume_session_id`. A fresh launch records nothing at launch time and captures
+the id post-launch.
+
+Resumability is binary under Hermes: `present` in `~/.hermes/state.db`
+(resumable) or `absent` (gone) — there is no orphan state, because cwd is a data
+column, not part of the storage key (#9). `agentwire restart` walks the
+`conversation_ids` chain newest-first and, when nothing resolves, starts FRESH
+with the role intact — and says so. See
+[Conversation identity](../sessions/conversation-identity.md) for the full
+record/restart story.
+
+## Open follow-ups
+
+The conversion landed; these issues track refinements to the mappings above
+(not blockers on the conversion itself):
+
+- #22 — wire `extract_hermes_session_id` into the live launch path.
+- #23 — install role skills so `-s agentwire-<role>` resolves.
+- #24 — map role `disallowed_tools` to a Hermes denial mechanism.
+- #25 — re-examine the `auto` -> `--yolo` posture mapping.

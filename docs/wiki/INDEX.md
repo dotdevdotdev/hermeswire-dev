@@ -94,6 +94,8 @@ and `custom` (any model behind a small HTTP shim).
 
 Implementation reference for contributors and advanced users.
 
+- **[Hermes integration](internals/hermes-integration.md)** — the AgentWire → HermesWire conversion strategy (hybrid REPL/headless paths), verified Hermes v0.19.0 facts, the agent-vs-daemon detection problem, final flag mapping, and conversation-identity story
+- **[Hermes removals](internals/hermes-removals.md)** — Claude Code features with no direct Hermes equivalent (per-tool allow/deny, `auto` classifier, restricted/readonly postures, slash commands, `--fork-session`, the `[Pasted text]` chip) and their replacements or removal
 - **[Portal](internals/portal.md)** — modes, REST API, WebSocket events
 - **[Session topology](internals/session-topology.md)** — parent→child visualization: born-from-parent ghost placement, the shared `TopologyView` renderer + its Session Workspace window and phantom-overlay mounts, lineage-tinted/hierarchy-grouped collage, live `session_created` appearance, and the shared design tokens behind all of it
 - **[Large parallel refactors](internals/parallel-refactor.md)** — splitting a huge file across parallel worktrees: positional-interleaving conflicts, regenerate-against-fresh-base + sequential merges, foundation-first, verification discipline
