@@ -102,6 +102,49 @@ class TestIsAgentPane:
         assert prompt_router.is_agent_pane("s", 0) is False
 
 
+class TestPaneRunsHermes:
+    def _cmdlines(self, by_pid):
+        return lambda pid: by_pid.get(pid, "")
+
+    def test_agent_admitted_despite_skill_flags(self, monkeypatch):
+        # The agent's own -s hermeswire-<role> flags contain "hermeswire"; a
+        # substring discriminator would wrongly reject a live agent. The
+        # word-boundary match on the hermes BINARY admits it.
+        monkeypatch.setattr(prompt_router, "_pane_pid", lambda s, p: "100")
+        monkeypatch.setattr(prompt_router, "_pane_child_pids", lambda pid: ["200"])
+        monkeypatch.setattr(
+            prompt_router,
+            "_cmdline_of",
+            self._cmdlines(
+                {
+                    "100": "-zsh",
+                    "200": "python /Users/dotdev/.local/bin/hermes chat --cli "
+                    "--source tool --accept-hooks --yolo "
+                    "-s hermeswire-worker-worktree,hermeswire-contributor",
+                }
+            ),
+        )
+        assert prompt_router._pane_runs_hermes("s", 0) is True
+
+    def test_daemon_rejected(self, monkeypatch):
+        monkeypatch.setattr(prompt_router, "_pane_pid", lambda s, p: "100")
+        monkeypatch.setattr(prompt_router, "_pane_child_pids", lambda pid: [])
+        monkeypatch.setattr(
+            prompt_router,
+            "_cmdline_of",
+            self._cmdlines(
+                {"100": "python /Users/dotdev/.local/bin/hermeswire portal start"}
+            ),
+        )
+        assert prompt_router._pane_runs_hermes("s", 0) is False
+
+    def test_shell_rejected(self, monkeypatch):
+        monkeypatch.setattr(prompt_router, "_pane_pid", lambda s, p: "100")
+        monkeypatch.setattr(prompt_router, "_pane_child_pids", lambda pid: [])
+        monkeypatch.setattr(prompt_router, "_cmdline_of", self._cmdlines({"100": "-zsh"}))
+        assert prompt_router._pane_runs_hermes("s", 0) is False
+
+
 class TestInputBoxContent:
     def test_draft_after_glyph(self):
         assert prompt_router.input_box_content("❯ build the app") == "build the app"
