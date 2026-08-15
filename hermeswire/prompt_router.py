@@ -177,11 +177,8 @@ def _pane_pid(session: str, pane_index: int) -> str:
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
-def _pane_cmdline(session: str, pane_index: int) -> str:
-    """The pane's foreground-process command line ('' on any error)."""
-    pid = _pane_pid(session, pane_index)
-    if not pid or not pid.isdigit():
-        return ""
+def _cmdline_of(pid: str) -> str:
+    """``ps`` command line for a pid ('' on any error)."""
     try:
         out = subprocess.run(
             ["ps", "-p", pid, "-o", "command="],
@@ -189,7 +186,27 @@ def _pane_cmdline(session: str, pane_index: int) -> str:
         )
     except (subprocess.TimeoutExpired, OSError):
         return ""
-    return out.stdout.strip()
+    return out.stdout.strip() if out.returncode == 0 else ""
+
+
+def _pane_cmdline(session: str, pane_index: int) -> str:
+    """The pane's foreground-process command line ('' on any error)."""
+    pid = _pane_pid(session, pane_index)
+    if not pid or not pid.isdigit():
+        return ""
+    return _cmdline_of(pid)
+
+
+def _pane_child_pids(pid: str) -> list:
+    """Direct child pids of ``pid`` ([] on any error)."""
+    try:
+        out = subprocess.run(
+            ["pgrep", "-P", pid],
+            capture_output=True, text=True, timeout=5,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return []
+    return out.stdout.split() if out.returncode == 0 else []
 
 
 def _pane_runs_hermes(session: str, pane_index: int) -> bool:
@@ -200,11 +217,19 @@ def _pane_runs_hermes(session: str, pane_index: int) -> bool:
     cannot tell them apart. The process argv is the only reliable discriminator:
     a Hermes REPL's argv mentions ``hermes`` (console script or ``python -m
     hermes``), while a daemon's mentions ``hermeswire``.
+
+    The launch line is ``eval "${HERMESWIRE_LAUNCH_CMD}"`` typed into the pane's
+    shell, so the pane's foreground PID is the SHELL and hermes runs as a direct
+    child — inspect the shell's own argv AND its children's argv.
     """
-    cmd = _pane_cmdline(session, pane_index).lower()
-    if not cmd:
+    pid = _pane_pid(session, pane_index)
+    if not pid or not pid.isdigit():
         return False
-    return "hermes" in cmd and "hermeswire" not in cmd
+    for candidate in [pid, *_pane_child_pids(pid)]:
+        cmd = _cmdline_of(candidate).lower()
+        if "hermes" in cmd and "hermeswire" not in cmd:
+            return True
+    return False
 
 
 def is_agent_pane(session: str, pane_index: int) -> bool:
