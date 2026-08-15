@@ -100,6 +100,7 @@ Implementation reference for contributors and advanced users.
 - **[Window collage](internals/window-collage.md)** — Mission Control overlay: preview-tile architecture + why mutating real WinBox windows can never work
 - **[Shell escaping](internals/shell-escaping.md)** — how complex strings cross tmux boundaries (incl. the 1024-byte cap on anything typed into a fresh pane)
 - **[Damage control](internals/damage-control.md)** — safety hooks: rules, patterns, audit log
+- **[Removed features](internals/hermes-removals.md)** — Claude features with no Hermes equivalent: `disallowedTools` (issue #24), `auto`→`--yolo` decision (issue #25), `restricted`/`readonly` postures, slash commands, `--fork-session`, `[Pasted text]` chip
 - **[Troubleshooting](internals/troubleshooting.md)** — common issues and fixes
 
 ## Skills
