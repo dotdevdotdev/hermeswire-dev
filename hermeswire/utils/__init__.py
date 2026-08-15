@@ -9,8 +9,8 @@ Provides shared functionality across the codebase:
 
 from hermeswire.utils.file_io import load_json, load_yaml, save_json, save_yaml
 from hermeswire.utils.paths import (
-    hermeswire_dir,
     config_path,
+    hermeswire_dir,
     logs_dir,
     machines_path,
     uploads_dir,
