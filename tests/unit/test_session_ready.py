@@ -1,8 +1,8 @@
-"""Tests for agentwire.session_ready — readiness detection + verified delivery."""
+"""Tests for hermeswire.session_ready — readiness detection + verified delivery."""
 
 import pytest
 
-from agentwire import session_ready
+from hermeswire import session_ready
 
 RULE = "─" * 20
 
@@ -29,7 +29,7 @@ def _scripted_capture(monkeypatch, frames):
             raise frame
         return frame
 
-    from agentwire import pane_manager
+    from hermeswire import pane_manager
     monkeypatch.setattr(pane_manager, "capture_pane", fake_capture)
 
 
@@ -67,7 +67,7 @@ class TestWaitForSessionReady:
                 raise frame
             return frame
 
-        from agentwire import pane_manager
+        from hermeswire import pane_manager
         monkeypatch.setattr(pane_manager, "capture_pane", fake_capture)
 
     def _fake_time(self, monkeypatch, step=0.1):
@@ -133,19 +133,19 @@ class TestBoxShowsMessage:
         # shares a >32-char prefix. A pile of OTHER sessions' notifications
         # sitting in the box must NOT read as ours landing.
         pile = (
-            "❯ [NOTIFY from agentwire-dev-issue-655-foo] is idle and done working\n"
-            "[NOTIFY from agentwire-dev-issue-659-shift-tab] is idle and done working"
+            "❯ [NOTIFY from hermeswire-dev-issue-655-foo] is idle and done working\n"
+            "[NOTIFY from hermeswire-dev-issue-659-shift-tab] is idle and done working"
         )
-        ours = "[NOTIFY from agentwire-dev-issue-661-bar] is idle and done working"
+        ours = "[NOTIFY from hermeswire-dev-issue-661-bar] is idle and done working"
         assert not session_ready.box_shows_message(pile, ours)
         # ...while the actual message in the pile still matches.
-        theirs = "[NOTIFY from agentwire-dev-issue-655-foo] is idle and done working"
+        theirs = "[NOTIFY from hermeswire-dev-issue-655-foo] is idle and done working"
         assert session_ready.box_shows_message(pile, theirs)
 
     def test_full_message_keying_not_prefix(self):
         # Two messages identical for well past 32 chars, differing in the tail.
-        a = "[NOTIFY from agentwire-dev-issue-100] finished task alpha"
-        b = "[NOTIFY from agentwire-dev-issue-100] finished task bravo"
+        a = "[NOTIFY from hermeswire-dev-issue-100] finished task alpha"
+        b = "[NOTIFY from hermeswire-dev-issue-100] finished task bravo"
         assert not session_ready.box_shows_message(f"❯ {a}", b)
 
 
@@ -165,7 +165,7 @@ class TestTallDraftWindow:
         "memories you confirm, delete the ones the code now contradicts, and "
         "merge duplicates into a single file. Report back with a one-paragraph "
         "summary naming any systemic pattern you noticed (vs a one-off), via "
-        "agentwire msg send --to memory-manager --kind done."
+        "hermeswire msg send --to memory-manager --kind done."
     )
 
     def _tail(self, chars: int) -> str:
@@ -288,7 +288,7 @@ def _env(monkeypatch, frame):
     # second opinion before refusing (dim ghost text is not a draft). These
     # frames carry no SGR, so mirror the plain parse -- and, crucially, keep
     # the guard from shelling out to the developer's LIVE tmux server.
-    from agentwire import prompt_router
+    from hermeswire import prompt_router
 
     def is_empty(session, pane_index=0):
         return session_ready.input_box(frame(actions)) == ""
@@ -439,7 +439,7 @@ class TestNoDoublePaste:
 
     def test_retry_skips_paste_when_copy_already_in_box(self, monkeypatch):
         _fake_clock(monkeypatch)
-        msg = "[NOTIFY from agentwire-dev-issue-659-shift-tab] is idle and done working"
+        msg = "[NOTIFY from hermeswire-dev-issue-659-shift-tab] is idle and done working"
         # After the first paste the box permanently holds our text and Enter
         # never registers: the retry sees the landed copy and does NOT paste
         # again.
@@ -466,10 +466,10 @@ class TestNoDoublePaste:
     def test_pile_of_other_notifications_is_not_our_landing(self, monkeypatch):
         _fake_clock(monkeypatch)
         pile = (
-            "[NOTIFY from agentwire-dev-issue-655-foo] is idle and done working "
-            "[NOTIFY from agentwire-dev-issue-663-tab] is idle and done working"
+            "[NOTIFY from hermeswire-dev-issue-655-foo] is idle and done working "
+            "[NOTIFY from hermeswire-dev-issue-663-tab] is idle and done working"
         )
-        ours = "[NOTIFY from agentwire-dev-issue-661-bar] is idle and done working"
+        ours = "[NOTIFY from hermeswire-dev-issue-661-bar] is idle and done working"
         # Box shows only OTHER sessions' same-prefix notifications, ours never
         # renders: no false landing, and Enter must never be pressed into the
         # pile (the old 32-char fragment matched instantly and then hammered
@@ -590,7 +590,7 @@ class TestCouncilDelegation:
     """council.cli.send_verified / wait_ready now delegate here."""
 
     def test_council_send_verified_delegates(self, monkeypatch):
-        from agentwire.council import cli
+        from hermeswire.council import cli
         calls = {}
 
         def fake(session, message, marker=None, retries=1, settle=2.0):
@@ -766,7 +766,7 @@ class TestClearInputBox:
               erased_after: int | None = None):
         """prompt_is_empty flips True after N Escapes (or, when *erased_after*
         is given, after that many backspaces); returns the key log."""
-        from agentwire import pane_manager, prompt_router
+        from hermeswire import pane_manager, prompt_router
         state = {"escapes": 0, "bspaces": 0}
 
         def is_empty(s, p=0):
@@ -808,7 +808,7 @@ class TestClearInputBox:
 
     def test_capture_failure_returns_false(self, monkeypatch):
         _fake_clock(monkeypatch)
-        from agentwire import pane_manager, prompt_router
+        from hermeswire import pane_manager, prompt_router
 
         def boom(*a, **k):
             raise RuntimeError("gone")
@@ -819,7 +819,7 @@ class TestClearInputBox:
 
     def test_live_menu_refuses_to_press_escape(self, monkeypatch):
         """#835 review: reused against an already-running, independently-busy
-        session (agentwire send --verify's fallback), 'box not empty' can
+        session (hermeswire send --verify's fallback), 'box not empty' can
         mean a permission dialog or AskUserQuestion menu belonging to the
         recipient's own unrelated work. Escape is the conventional
         cancel/decline key for those -- must never press it blind."""
@@ -871,7 +871,7 @@ class TestRecoverFailedSeed:
     which fallback fired."""
 
     def test_clears_box_then_queues_request(self, monkeypatch):
-        from agentwire import inbox
+        from hermeswire import inbox
         calls = {}
         monkeypatch.setattr(
             session_ready, "clear_input_box",
@@ -888,20 +888,20 @@ class TestRecoverFailedSeed:
         assert calls["enqueue"] == ("sess", "the seed prompt", "request", "orch")
 
     def test_default_sender(self, monkeypatch):
-        from agentwire import inbox
+        from hermeswire import inbox
         seen = {}
         monkeypatch.setattr(session_ready, "clear_input_box", lambda s, pane_index=0: True)
         monkeypatch.setattr(
             inbox, "enqueue",
             lambda to, text, kind="note", sender=None, ref="": seen.update(sender=sender) or [])
         assert session_ready.recover_failed_seed("sess", "x") == "inbox"
-        assert seen["sender"] == "agentwire"
+        assert seen["sender"] == "hermeswire"
 
     def test_clear_failure_still_queues(self, monkeypatch):
         """#843: clear_input_box raising must not be reported as full
         recovery -- the box's actual state was never confirmed, so the
         original stale draft may still be sitting there."""
-        from agentwire import inbox
+        from hermeswire import inbox
 
         def boom(*a, **k):
             raise RuntimeError("no pane")
@@ -920,7 +920,7 @@ class TestRecoverFailedSeed:
         honest signal that the box wasn't confirmed cleared, since the
         original draft could otherwise get flushed later by an unrelated
         Enter looking like a fresh, legitimate instruction."""
-        from agentwire import inbox
+        from hermeswire import inbox
 
         monkeypatch.setattr(session_ready, "clear_input_box", lambda s, pane_index=0: False)
         enqueued = {}
@@ -935,7 +935,7 @@ class TestRecoverFailedSeed:
         assert enqueued["called"]  # durable copy still queued -- better than nothing
 
     def test_enqueue_failure_returns_none_never_raises(self, monkeypatch):
-        from agentwire import inbox
+        from hermeswire import inbox
         monkeypatch.setattr(session_ready, "clear_input_box", lambda s, pane_index=0: True)
 
         def boom(*a, **k):
@@ -1104,7 +1104,7 @@ class TestForeignDraftGuard:
 
         actions = _env(monkeypatch, frame)
         # prompt_is_empty is the authority and it sees dim text as empty.
-        from agentwire import prompt_router
+        from hermeswire import prompt_router
         monkeypatch.setattr(prompt_router, "prompt_is_empty", lambda s, p=0: True)
         assert session_ready.send_verified("s", "ours")
         assert actions["pastes"] == 1
@@ -1134,7 +1134,7 @@ class TestForeignDraftGuard:
         assert session_ready.box_holds_foreign_draft("s", "ours") is False
 
     def test_predicate_accepts_a_supplied_capture(self, monkeypatch):
-        from agentwire import prompt_router
+        from hermeswire import prompt_router
 
         monkeypatch.setattr(prompt_router, "prompt_is_empty", lambda s, p=0: False)
         monkeypatch.setattr(
@@ -1154,7 +1154,7 @@ class TestRecoverFailedSeedNoClear:
     room for a message we already declined to paste."""
 
     def _no_clear(self, monkeypatch):
-        from agentwire import inbox
+        from hermeswire import inbox
         seen = {"cleared": False, "enqueued": None}
 
         def clear(s, pane_index=0):
@@ -1182,7 +1182,7 @@ class TestRecoverFailedSeedNoClear:
         assert seen["cleared"] is True
 
     def test_enqueue_failure_still_returns_none(self, monkeypatch):
-        from agentwire import inbox
+        from hermeswire import inbox
 
         def boom(*a, **k):
             raise OSError("inbox unwritable")

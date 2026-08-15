@@ -1,15 +1,15 @@
-"""Tests for agentwire/chrome_tabs.py + agentwire/tabs_cli.py (#717).
+"""Tests for hermeswire/chrome_tabs.py + hermeswire/tabs_cli.py (#717).
 
 Pure bookkeeping for claude-in-chrome tab ids a session opened, so a crashed
 session's orphaned verification tabs can still be surfaced during worktree
-teardown. agentwire never calls `tabs_close_mcp` itself.
+teardown. hermeswire never calls `tabs_close_mcp` itself.
 """
 
 from argparse import Namespace
 
 import pytest
 
-from agentwire import chrome_tabs, tabs_cli
+from hermeswire import chrome_tabs, tabs_cli
 
 
 @pytest.fixture(autouse=True)

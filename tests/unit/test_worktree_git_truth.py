@@ -11,9 +11,9 @@ from pathlib import Path
 
 import pytest
 
-from agentwire import pane_manager
-from agentwire import worktree_registry as reg
-from agentwire.worktree import (
+from hermeswire import pane_manager
+from hermeswire import worktree_registry as reg
+from hermeswire.worktree import (
     create_and_register_worktree,
     find_git_worktree,
     linked_git_worktrees,
@@ -188,7 +188,7 @@ class TestCreateAndRegisterWorktree:
         assert reg.entries(not_a_repo) == []
 
 
-# --- pane_manager: `agentwire spawn --branch` is no longer invisible (#837) ---
+# --- pane_manager: `hermeswire spawn --branch` is no longer invisible (#837) ---
 
 class TestWorkerPaneWorktreeRegistration:
     def test_spawn_branch_worktree_is_registered_as_pane_topology(self, repo):
@@ -225,7 +225,7 @@ class TestPaneTopologyTeardownGuard:
                                                                monkeypatch, capsys):
         """A pane entry's session is the ORCHESTRATOR's. Killing it on teardown
         of a worker branch would take down the wrong thing entirely (#837)."""
-        from agentwire import session_cli as m
+        from hermeswire import session_cli as m
 
         monkeypatch.setattr(m.chrome_tabs, "REGISTRY_FILE", tmp_path / "tabs.json")
         monkeypatch.setattr(m.shutil, "which", lambda *_: None)
@@ -265,7 +265,7 @@ class TestProjectResolvesToMainCheckout:
 
     def test_list_from_inside_a_worktree_sees_the_registry(self, repo, tmp_path,
                                                            monkeypatch, capsys):
-        from agentwire import session_cli as m
+        from hermeswire import session_cli as m
 
         register_worktree(repo, branch="other", session="myapp-other",
                           base="main", worktree_path=tmp_path / "other-wt")
@@ -282,7 +282,7 @@ class TestProjectResolvesToMainCheckout:
 
     def test_prune_from_inside_a_worktree_prunes_the_stale_entry(self, repo, tmp_path,
                                                                  monkeypatch, capsys):
-        from agentwire import session_cli as m
+        from hermeswire import session_cli as m
 
         # A registered path that never exists on disk = the stale-entry shape
         # --prune exists to drop.
@@ -309,7 +309,7 @@ class TestTeardownOccupancyGuard:
 
     def test_refuses_when_a_live_unresolved_session_occupies_the_worktree(
             self, repo, tmp_path, monkeypatch):
-        from agentwire import session_cli as m
+        from hermeswire import session_cli as m
 
         wt = tmp_path / "wt-occupied"
         _git(repo, "worktree", "add", "-q", "-b", "occupied", str(wt))
@@ -324,7 +324,7 @@ class TestTeardownOccupancyGuard:
         assert wt.exists()
 
     def test_matching_occupant_does_not_trip_the_guard(self, repo, tmp_path, monkeypatch):
-        from agentwire import session_cli as m
+        from hermeswire import session_cli as m
 
         wt = tmp_path / "wt-mine"
         _git(repo, "worktree", "add", "-q", "-b", "mine", str(wt))
@@ -352,7 +352,7 @@ class TestDurabilityGuard:
 
     @pytest.fixture
     def clean_env(self, tmp_path, monkeypatch):
-        from agentwire import session_cli as m
+        from hermeswire import session_cli as m
 
         monkeypatch.setattr(m.chrome_tabs, "REGISTRY_FILE", tmp_path / "tabs.json")
         monkeypatch.setattr(m.shutil, "which", lambda *_: None)
@@ -407,7 +407,7 @@ class TestFindOrphanedWorktrees:
                  "worktree_path": str(path), **kw}]
 
     def test_on_disk_worktree_with_a_dead_session_is_an_orphan(self, tmp_path, monkeypatch):
-        from agentwire import doctor_cli
+        from hermeswire import doctor_cli
 
         monkeypatch.setattr(doctor_cli, "tmux_session_exists", lambda *_: False)
         wt = tmp_path / "left-behind"
@@ -415,7 +415,7 @@ class TestFindOrphanedWorktrees:
         assert len(doctor_cli.find_orphaned_worktrees(self._rows(wt, "dead"))) == 1
 
     def test_live_session_is_not_an_orphan(self, tmp_path, monkeypatch):
-        from agentwire import doctor_cli
+        from hermeswire import doctor_cli
 
         monkeypatch.setattr(doctor_cli, "tmux_session_exists", lambda *_: True)
         wt = tmp_path / "working"
@@ -423,14 +423,14 @@ class TestFindOrphanedWorktrees:
         assert doctor_cli.find_orphaned_worktrees(self._rows(wt, "live")) == []
 
     def test_stale_entry_with_no_directory_is_prunes_job_not_ours(self, tmp_path, monkeypatch):
-        from agentwire import doctor_cli
+        from hermeswire import doctor_cli
 
         monkeypatch.setattr(doctor_cli, "tmux_session_exists", lambda *_: False)
         gone = tmp_path / "never-existed"
         assert doctor_cli.find_orphaned_worktrees(self._rows(gone, "dead")) == []
 
     def test_pane_entry_orphans_only_once_its_owner_session_is_gone(self, tmp_path, monkeypatch):
-        from agentwire import doctor_cli
+        from hermeswire import doctor_cli
 
         wt = tmp_path / "pane-wt"
         wt.mkdir()
@@ -448,7 +448,7 @@ class TestFindOrphanedWorktrees:
 def test_dangling_scan_skips_pane_topology(monkeypatch):
     """A worker pane's parent IS pane 0 of the session on its entry, so the
     liveness gate already proves the parent is live — it can't be dangling."""
-    from agentwire import session_cli as m
+    from hermeswire import session_cli as m
 
     monkeypatch.setattr(m.shutil, "which", lambda *_: "/usr/bin/gh")
     monkeypatch.setattr(m, "tmux_session_exists", lambda *_: True)

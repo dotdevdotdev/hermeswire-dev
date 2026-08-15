@@ -1,4 +1,4 @@
-"""Tests for agentwire/core.py — same-project detection for default created_by (#715).
+"""Tests for hermeswire/core.py — same-project detection for default created_by (#715).
 
 Spawning a worktree/session in a genuinely separate project should default to
 a standalone root; spawning within the caller's own project should still
@@ -7,7 +7,7 @@ inherit the caller as parent. See resolve_default_created_by / _same_project.
 
 import subprocess
 
-from agentwire import core
+from hermeswire import core
 
 
 def _make_repo(tmp_path, name="repo"):
@@ -106,7 +106,7 @@ class TestResolveDefaultCreatedBy:
 
     def test_dead_caller_session_does_not_fall_back_to_name_guessing(self, monkeypatch, tmp_path):
         # Regression: a worktree caller ("myproject-fix-bug", the hyphenated
-        # flat naming `agentwire worktree` uses) that's no longer a live tmux
+        # flat naming `hermeswire worktree` uses) that's no longer a live tmux
         # session must NOT resolve via _get_session_project_path's
         # session-name-parsing fallback (which only understands "/"-separated
         # project/branch names and would derive the wrong, nonexistent
@@ -119,10 +119,10 @@ class TestResolveDefaultCreatedBy:
     def test_service_session_caller_returns_none(self, monkeypatch, tmp_path):
         # Regression (2026-07-19): a session created via the portal web UI
         # inherits the portal server subprocess's TMUX_PANE, so `caller`
-        # resolves to the "agentwire-portal" service session. Parenting to it
+        # resolves to the "hermeswire-portal" service session. Parenting to it
         # is a bug even when same_project would otherwise match — a service
         # session never drains its msg inbox, so anything parented to it
         # dead-letters forever (147-message escalation-email storm).
         repo = _make_repo(tmp_path)
         monkeypatch.setattr(core, "_live_session_cwd", lambda s: repo)
-        assert core.resolve_default_created_by("agentwire-portal", repo) is None
+        assert core.resolve_default_created_by("hermeswire-portal", repo) is None

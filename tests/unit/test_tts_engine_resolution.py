@@ -6,7 +6,7 @@ lives in tts.options.backend (issue #261).
 
 from argparse import Namespace
 
-from agentwire.tts_cli import _get_tts_engine, _get_venv_for_backend
+from hermeswire.tts_cli import _get_tts_engine, _get_venv_for_backend
 
 
 class TestGetTtsEngine:

@@ -28,13 +28,13 @@ What actually happens.
 
 - **OS:** (e.g., macOS 14.2, Ubuntu 22.04)
 - **Python:** (e.g., 3.11.5)
-- **AgentWire version:** (run `agentwire --version`)
+- **HermesWire version:** (run `hermeswire --version`)
 - **Agent:** (Claude Code)
 
 ## Logs
 
 ```
-Paste relevant logs here (check ~/.agentwire/logs/)
+Paste relevant logs here (check ~/.hermeswire/logs/)
 ```
 
 ## Additional Context

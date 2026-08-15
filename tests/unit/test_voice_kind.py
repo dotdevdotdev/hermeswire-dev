@@ -27,8 +27,8 @@ Three things are asserted here and nowhere else:
 
 import pytest
 
-from agentwire import cohort, doctor_cli, inbox, session_cli
-from agentwire.voice_layer import confirm, write_tools
+from hermeswire import cohort, doctor_cli, inbox, session_cli
+from hermeswire.voice_layer import confirm, write_tools
 
 
 @pytest.fixture
@@ -87,7 +87,7 @@ class TestTheRuling:
         assert 'm.kind == "escalation"' in promotion
         assert '"voice"' not in promotion
 
-        from agentwire.voice_layer import client
+        from hermeswire.voice_layer import client
 
         urgent = [
             line for line in inspect.getsource(client).splitlines()
@@ -185,7 +185,7 @@ class TestLoadBearingIsDerivedOnce:
         """Nit 3, generalised: a fourth copy in a channel the model READS.
 
         The consolidation deleted the code literals and left the prose ones —
-        ``agentwire/roles/agentwire.md`` and two ``SKILL.md`` files each spell
+        ``hermeswire/roles/hermeswire.md`` and two ``SKILL.md`` files each spell
         out ``note|done|request|escalation``. That copy had already gone stale
         on ``ingest`` before ``voice`` existed, which is the same defect step 3
         exists to prevent, in the surface an agent actually consults.
@@ -214,7 +214,7 @@ class TestLoadBearingIsDerivedOnce:
         import re
         from pathlib import Path
 
-        from agentwire.beta import apply_beta_blocks, flag_names
+        from hermeswire.beta import apply_beta_blocks, flag_names
 
         root = Path(__file__).resolve().parents[2]
         kinds = set(inbox.KINDS)
@@ -237,7 +237,7 @@ class TestLoadBearingIsDerivedOnce:
                     f"{sorted(kinds - named)}: {run}"
                 )
 
-        for path in (root / "agentwire" / "roles").glob("*.md"):
+        for path in (root / "hermeswire" / "roles").glob("*.md"):
             found = _named(apply_beta_blocks(path.read_text(), set(flag_names())))
             if not found:
                 continue
@@ -405,7 +405,7 @@ class TestAttributionLeftTheBody:
 
         out = subprocess.run(
             [sys.executable, "-O", "-c",
-             "from agentwire.voice_layer import confirm;"
+             "from hermeswire.voice_layer import confirm;"
              # THREE groups: two are absorbed by render_body's two _lead_safe
              # applications regardless of whether the function itself is total.
              "print(confirm.render_body('- - - force a restart', '', 'a1b2c3'))"],
@@ -461,7 +461,7 @@ class TestRoleTextStaysTrue:
     def test_no_role_prompt_still_teaches_the_body_prefix(self):
         from pathlib import Path
 
-        roles = Path(__file__).resolve().parents[2] / "agentwire" / "roles"
+        roles = Path(__file__).resolve().parents[2] / "hermeswire" / "roles"
         for name in ("worker.md", "worker-worktree.md", "orchestrator.md"):
             text = (roles / name).read_text()
             assert "<voice>" not in text, name

@@ -2,21 +2,21 @@
 
 > Living document. Update this, don't create new versions.
 
-The bundled TTS server is the **reference implementation of the [shim contract](shim-contract.md)** — multiple engines, each with different capabilities and hardware requirements, all behind one server (`agentwire tts start`) with runtime hot-swap.
+The bundled TTS server is the **reference implementation of the [shim contract](shim-contract.md)** — multiple engines, each with different capabilities and hardware requirements, all behind one server (`hermeswire tts start`) with runtime hot-swap.
 
-> **You don't need this page for a good voice.** `tts.backend: default` already speaks via **Kokoro-82M** — bundled with the base install, CPU-only, auto-downloaded (~200 MB) on first portal start (`agentwire tts warm` pre-downloads it). Since #398 the default tier runs Kokoro in a **portal-managed shim subprocess** (tmux `agentwire-kokoro`, `:8102`) rather than in-process — process isolation keeps the GIL-holding ONNX warm-up off the portal event loop, mirroring the STT shim (`:8101`). The portal auto-spawns it on startup; `agentwire kokoro start|stop|status` manage it by hand, and browser speechSynthesis covers speech until its `/health` reports `ok`. This page is the `custom` tier: voice cloning, GPU engines, emotion control, or any other model behind the shim contract.
+> **You don't need this page for a good voice.** `tts.backend: default` already speaks via **Kokoro-82M** — bundled with the base install, CPU-only, auto-downloaded (~200 MB) on first portal start (`hermeswire tts warm` pre-downloads it). Since #398 the default tier runs Kokoro in a **portal-managed shim subprocess** (tmux `hermeswire-kokoro`, `:8102`) rather than in-process — process isolation keeps the GIL-holding ONNX warm-up off the portal event loop, mirroring the STT shim (`:8101`). The portal auto-spawns it on startup; `hermeswire kokoro start|stop|status` manage it by hand, and browser speechSynthesis covers speech until its `/health` reports `ok`. This page is the `custom` tier: voice cloning, GPU engines, emotion control, or any other model behind the shim contract.
 
 ## Quick Start
 
 ```bash
 # Start with default backend (chatterbox)
-agentwire tts start
+hermeswire tts start
 
 # Start with a specific backend
-agentwire tts start --backend zonos-transformer
+hermeswire tts start --backend zonos-transformer
 
 # Test it
-agentwire say "Hello, this is a test"
+hermeswire say "Hello, this is a test"
 
 # Hot-swap backend at runtime (no restart needed)
 curl -X POST http://localhost:8100/engines/zonos-transformer/load
@@ -34,7 +34,7 @@ curl -X POST http://localhost:8100/engines/zonos-transformer/load
 
 ### Choosing a Backend
 
-- **No GPU / CPU only** → you likely don't need this server at all: the `default` tier already runs kokoro in its own portal-managed shim (`agentwire-kokoro`, `:8102`). Run `kokoro` behind *this* multi-engine shim only when serving TTS to other machines or hot-swapping engines.
+- **No GPU / CPU only** → you likely don't need this server at all: the `default` tier already runs kokoro in its own portal-managed shim (`hermeswire-kokoro`, `:8102`). Run `kokoro` behind *this* multi-engine shim only when serving TTS to other machines or hot-swapping engines.
 - **Best voice quality + emotion control** → `zonos-transformer`
 - **Mid-sentence sounds** (laugh, sigh, cough) → `chatterbox` or `chatterbox-streaming`
 - **Multilingual** (5 languages) → `zonos-transformer` or `zonos-hybrid`
@@ -50,18 +50,18 @@ Each backend family runs in its own Python venv to avoid dependency conflicts.
 | `.venv-chatterbox` | `chatterbox`, `chatterbox-streaming` |
 | `.venv-zonos` | `zonos-transformer`, `zonos-hybrid` |
 
-`agentwire tts start` automatically selects the correct venv for the requested backend. If the venv doesn't exist, it will error with instructions.
+`hermeswire tts start` automatically selects the correct venv for the requested backend. If the venv doesn't exist, it will error with instructions.
 
 ### Creating the Kokoro venv
 
 CPU-only, torch-free (the engine is pure ONNX). The model (~170 MB) is auto-downloaded on first use to `~/.cache/kokoro_onnx/`.
 
 ```bash
-cd ~/projects/agentwire-dev
+cd ~/projects/hermeswire-dev
 uv venv .venv-kokoro
 source .venv-kokoro/bin/activate
 pip install kokoro-onnx fastapi uvicorn faster-whisper pydantic python-multipart
-pip install -e /path/to/agentwire-dev  # installs agentwire + remaining deps
+pip install -e /path/to/hermeswire-dev  # installs hermeswire + remaining deps
 ```
 
 ### Creating the Chatterbox venv
@@ -69,7 +69,7 @@ pip install -e /path/to/agentwire-dev  # installs agentwire + remaining deps
 **Requires Python 3.13+** — chatterbox-tts pins `numpy<2` on older Pythons, which conflicts with the base install's kokoro-onnx (`numpy>=2`).
 
 ```bash
-cd ~/projects/agentwire-dev
+cd ~/projects/hermeswire-dev
 uv venv .venv-chatterbox --python 3.13
 source .venv-chatterbox/bin/activate
 pip install chatterbox-tts torch torchaudio fastapi uvicorn faster-whisper pydantic
@@ -83,7 +83,7 @@ Zonos must be installed in **editable mode** from a local clone due to a packagi
 # System dep (required for phonemization)
 sudo apt-get install -y espeak-ng
 
-cd ~/projects/agentwire-dev
+cd ~/projects/hermeswire-dev
 uv venv .venv-zonos
 .venv-zonos/bin/python -m ensurepip
 .venv-zonos/bin/python -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124
@@ -150,9 +150,9 @@ curl -X POST http://localhost:8100/tts \
 Chatterbox Turbo supports inline sound tags:
 
 ```bash
-agentwire say "[laugh] That actually worked!"
-agentwire say "[sigh] Alright, let me try a different approach"
-agentwire say "[gasp] I had no idea"
+hermeswire say "[laugh] That actually worked!"
+hermeswire say "[sigh] Alright, let me try a different approach"
+hermeswire say "[gasp] I had no idea"
 ```
 
 | Tag | Effect |
@@ -176,10 +176,10 @@ curl -X POST http://localhost:8100/voices/myvoice -F "file=@sample.wav"
 curl -X DELETE http://localhost:8100/voices/myvoice
 
 # Use a voice
-agentwire say --voice myvoice "Hello"
+hermeswire say --voice myvoice "Hello"
 ```
 
-Voice files live in `~/.agentwire/voices/`. The `default` voice is used when no `--voice` flag is provided.
+Voice files live in `~/.hermeswire/voices/`. The `default` voice is used when no `--voice` flag is provided.
 
 ## Hot-Swap Backends
 
@@ -201,22 +201,22 @@ Only one engine is loaded at a time. Switching unloads the previous one and clea
 ## CLI Commands
 
 ```bash
-agentwire tts start                           # Start with default backend
-agentwire tts start --backend zonos-transformer  # Start with specific backend
-agentwire tts stop                            # Stop the server
-agentwire tts status                          # Check status and current engine
-agentwire tts restart                         # Restart (picks up config changes)
+hermeswire tts start                           # Start with default backend
+hermeswire tts start --backend zonos-transformer  # Start with specific backend
+hermeswire tts stop                            # Stop the server
+hermeswire tts status                          # Check status and current engine
+hermeswire tts restart                         # Restart (picks up config changes)
 ```
 
 ## Smart Audio Routing
 
-`agentwire say` automatically routes audio:
+`hermeswire say` automatically routes audio:
 
 1. **Browser connected** → streams to browser (tablet/phone/laptop)
 2. **No browser** → plays on local speakers
 
 ```bash
-agentwire say "Task complete"                 # auto-routes
-agentwire say --voice shoe "How does this sound?"
-agentwire say -s myproject "Message for that session"
+hermeswire say "Task complete"                 # auto-routes
+hermeswire say --voice shoe "How does this sound?"
+hermeswire say -s myproject "Message for that session"
 ```

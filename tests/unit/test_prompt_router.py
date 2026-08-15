@@ -11,8 +11,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from agentwire import prompt_router
-from agentwire.prompt_router import PromptInfo, parse_ask_options
+from hermeswire import prompt_router
+from hermeswire.prompt_router import PromptInfo, parse_ask_options
 
 # =============================================================================
 # Fixtures
@@ -50,7 +50,7 @@ class TestParseAskOptions:
 class TestResolveParent:
     @pytest.fixture(autouse=True)
     def _isolate(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("agentwire.core.CONFIG_DIR", tmp_path)
+        monkeypatch.setattr("hermeswire.core.CONFIG_DIR", tmp_path)
         monkeypatch.setattr(prompt_router, "_session_exists", lambda s: True)
         monkeypatch.setattr(prompt_router, "_parent_from_config", lambda p: None)
         self.tmp_path = tmp_path
@@ -134,7 +134,7 @@ class TestSafeDeliver:
         monkeypatch.setattr(prompt_router, "_session_exists", lambda s: True)
         monkeypatch.setattr(prompt_router, "is_agent_pane", lambda s, p: True)
         self.sent = []
-        import agentwire.session_ready as session_ready
+        import hermeswire.session_ready as session_ready
 
         monkeypatch.setattr(
             session_ready, "send_verified",
@@ -155,7 +155,7 @@ class TestSafeDeliver:
         assert prompt_router.safe_deliver("orch", 0, "x") == (False, "target_not_agent")
 
     def test_unverified_send_reported(self, monkeypatch):
-        import agentwire.session_ready as session_ready
+        import hermeswire.session_ready as session_ready
 
         monkeypatch.setattr(session_ready, "send_verified", lambda *a, **kw: False)
         assert prompt_router.safe_deliver("orch", 0, "x") == (False, "delivery_unverified")
@@ -193,7 +193,7 @@ class TestBuildMessage:
                           options=[{"number": 1, "label": "Yes"}])
         message = prompt_router.build_message("child", 0, info)
         assert f"--expect {info.content_hash()}" in message
-        assert "agentwire prompts answer -s 'child' --pane 0" in message
+        assert "hermeswire prompts answer -s 'child' --pane 0" in message
         assert "1=Yes" in message
 
 
@@ -387,13 +387,13 @@ class TestBlockedPanes:
 
 class TestRecordSessionCreator:
     def _agent(self):
-        from agentwire.core import AgentCommand
+        from hermeswire.core import AgentCommand
         return AgentCommand(command="hermes chat --cli", posture="bypass")
 
     def test_records_and_merges(self, tmp_path, monkeypatch):
-        import agentwire.__main__ as cli
+        import hermeswire.__main__ as cli
 
-        monkeypatch.setattr("agentwire.core.CONFIG_DIR", tmp_path)
+        monkeypatch.setattr("hermeswire.core.CONFIG_DIR", tmp_path)
         cli.store_session_metadata("child", {"existing": "kept"})
         cli.record_session_launch("child", self._agent(), tmp_path,
                                   created_by="orch", created_via="new")

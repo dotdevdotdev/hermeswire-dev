@@ -2,7 +2,7 @@
 
 Distill a live agent conversation into a portable bundle a teammate can pick up async.
 
-> **Why:** GitHub issue [#157](https://github.com/dotdevdotdev/agentwire-dev/issues/157) — the Slack bot's "shared session" model forces everyone into one live thread. Handoffs let work continue across teammates without that.
+> **Why:** GitHub issue [#157](https://github.com/dotdevdotdev/hermeswire-dev/issues/157) — the Slack bot's "shared session" model forces everyone into one live thread. Handoffs let work continue across teammates without that.
 
 ## What you get
 
@@ -15,20 +15,20 @@ Two artifacts in one bundle dir:
 
 The HTML also embeds the source `ai-handoff.md` in a `<template>` block, so dropping the HTML into an LLM works too.
 
-Bundles land in `~/.agentwire/artifacts/handoff-<timestamp>-<slug>/`.
+Bundles land in `~/.hermeswire/artifacts/handoff-<timestamp>-<slug>/`.
 
 ## Architecture
 
 ```
 in-conversation agent
         │
-        │ /handoff slash command  OR  mcp__agentwire__handoff_init
+        │ /handoff slash command  OR  mcp__hermeswire__handoff_init
         ▼
 agent fills ai-handoff.md (it has full context — no fresh LLM call needed)
 agent picks a vibe-matched <theme> JSON block
         │
         ▼
-agent calls: mcp__agentwire__handoff_render  OR  agentwire handoff render
+agent calls: mcp__hermeswire__handoff_render  OR  hermeswire handoff render
         │
         ▼
 CLI parses ai-handoff.md → renders show-the-story.html via Jinja2
@@ -45,32 +45,32 @@ Key idea: the agent in the running conversation is the only thing with full cont
 ```
 
 The slash command (`.claude/commands/handoff.md`) walks the agent through:
-1. `mcp__agentwire__handoff_init` — creates the bundle dir and pre-fills `ai-handoff.md` with metadata, the full CLAUDE.md / rules / memory chain, and current git state
+1. `mcp__hermeswire__handoff_init` — creates the bundle dir and pre-fills `ai-handoff.md` with metadata, the full CLAUDE.md / rules / memory chain, and current git state
 2. Agent edits the template to fill goal, decisions, dead ends, journey beats, theme, etc.
-3. `mcp__agentwire__handoff_render` — produces `show-the-story.html`
+3. `mcp__hermeswire__handoff_render` — produces `show-the-story.html`
 
 ### Manual CLI
 
 ```bash
 # Initialize bundle (run inside the project of interest)
-agentwire handoff init --title "fixing-auth-flow"
+hermeswire handoff init --title "fixing-auth-flow"
 
 # Edit the printed ai-handoff.md path. Replace every {{ ... }} placeholder.
 
 # Render the human presentation
-agentwire handoff render <bundle-dir>
+hermeswire handoff render <bundle-dir>
 
 # List past bundles
-agentwire handoff list
+hermeswire handoff list
 ```
 
 ### From an agent via MCP
 
 ```
-mcp__agentwire__handoff_init(title="short-slug")        → bundle_dir, ai_handoff_path
+mcp__hermeswire__handoff_init(title="short-slug")        → bundle_dir, ai_handoff_path
 # (agent edits ai_handoff_path with Write tool)
-mcp__agentwire__handoff_render(bundle_dir=..., story=true)
-mcp__agentwire__handoff_list()
+mcp__hermeswire__handoff_render(bundle_dir=..., story=true)
+mcp__hermeswire__handoff_list()
 ```
 
 ## Bundle structure
@@ -137,15 +137,15 @@ The agent picks a theme JSON block based on the session's emotional tone. The re
 
 ## Implementation reference
 
-- Module: `agentwire/handoff/`
+- Module: `hermeswire/handoff/`
   - `schema.py` — dataclasses (Bundle, Theme, Decision, JourneyBeat, Instruction, …)
   - `git_state.py` — `git status` / `diff` / `log` / `branch` / `commit` capture
   - `instructions.py` — enumerates `~/.claude/CLAUDE.md`, `~/.claude/rules/*.md`, project chain (walks up to `~`), `~/.claude/projects/<encoded>/memory/MEMORY.md` + linked files
   - `parser.py` — line-anchored regex extraction (so diff-quoted tags like `+<theme>` don't confuse extraction)
   - `renderer.py` — Jinja2 → single-file HTML
-- Templates: `agentwire/templates/handoff/{show-the-story.html.j2, theme.css.j2}`
-- CLI: `agentwire handoff {init,render,list}` in `agentwire/handoff_cli.py` (registered via `_REGISTRARS` in `agentwire/__main__.py`)
-- MCP: `handoff_init`, `handoff_render`, `handoff_list` in `agentwire/mcp_handoff.py`
+- Templates: `hermeswire/templates/handoff/{show-the-story.html.j2, theme.css.j2}`
+- CLI: `hermeswire handoff {init,render,list}` in `hermeswire/handoff_cli.py` (registered via `_REGISTRARS` in `hermeswire/__main__.py`)
+- MCP: `handoff_init`, `handoff_render`, `handoff_list` in `hermeswire/mcp_handoff.py`
 - Slash command: `.claude/commands/handoff.md`
 
 ## Out of scope (today)

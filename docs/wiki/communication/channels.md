@@ -2,13 +2,13 @@
 
 # Channels — Developer Guide
 
-AgentWire channels are **outbound-only notification integrations**. They let a session push a notification out (email, SMS) without exposing any inbound surface. Three channels ship: **email** (Resend), **quo** (OpenPhone SMS), and **push** (Web Push/VAPID) — push differs from the other two in that nothing calls it directly; the portal auto-mirrors every toast (`notify_user`, etc.) to subscribed devices through it.
+HermesWire channels are **outbound-only notification integrations**. They let a session push a notification out (email, SMS) without exposing any inbound surface. Three channels ship: **email** (Resend), **quo** (OpenPhone SMS), and **push** (Web Push/VAPID) — push differs from the other two in that nothing calls it directly; the portal auto-mirrors every toast (`notify_user`, etc.) to subscribed devices through it.
 
 > Inbound bridges (Telegram, Discord, Slack) were removed to keep the wire surface outbound-only. The portal remains the primary push-to-talk surface for inbound user input.
 
 ## How a channel works
 
-A channel is a `SendOnlyChannel` subclass registered with `ChannelRegistry`. It owns its config dataclass, exposes a `send()` coroutine, and a thin CLI handler in `agentwire/__main__.py`.
+A channel is a `SendOnlyChannel` subclass registered with `ChannelRegistry`. It owns its config dataclass, exposes a `send()` coroutine, and a thin CLI handler in `hermeswire/__main__.py`.
 
 ```python
 @ChannelRegistry.register("my_channel")
@@ -24,7 +24,7 @@ class MyChannel(SendOnlyChannel):
 
 ## Config
 
-Each channel defines its own dataclass and reads from `channels.{config_key}:` in `~/.agentwire/config.yaml`. **Secrets are env-only** — the key comes from an env var (one line in `~/.agentwire/.env`, see [Secrets & API keys](../security/secrets.md)), never from config.yaml. Declare it as a non-init field so yaml can't supply it:
+Each channel defines its own dataclass and reads from `channels.{config_key}:` in `~/.hermeswire/config.yaml`. **Secrets are env-only** — the key comes from an env var (one line in `~/.hermeswire/.env`, see [Secrets & API keys](../security/secrets.md)), never from config.yaml. Declare it as a non-init field so yaml can't supply it:
 
 ```python
 @dataclass
@@ -37,14 +37,14 @@ class MyConfig:
 ```
 
 ```yaml
-# ~/.agentwire/config.yaml
+# ~/.hermeswire/config.yaml
 channels:
   my_channel:
     default_to: "user@example.com"
 ```
 
 ```bash
-# ~/.agentwire/.env
+# ~/.hermeswire/.env
 MY_API_KEY=your-key
 ```
 
@@ -53,8 +53,8 @@ The channel registry resolves config from YAML automatically — no `config.py` 
 ## CLI integration
 
 ```python
-# in agentwire/__main__.py
-from agentwire.channels.my_channel import cmd_my_channel
+# in hermeswire/__main__.py
+from hermeswire.channels.my_channel import cmd_my_channel
 my_parser = subparsers.add_parser("my_channel", help="...")
 my_parser.add_argument("--body", "-b", type=str, help="Message body")
 my_parser.add_argument("--to", type=str, help="Recipient (overrides default_to)")
@@ -69,7 +69,7 @@ my_parser.set_defaults(func=cmd_my_channel)
 ```python
 @mcp.tool()
 def my_channel_send(text: str, to: str | None = None) -> str:
-    data = run_agentwire_cmd(["my_channel", "--body", text])
+    data = run_hermeswire_cmd(["my_channel", "--body", text])
     if data.get("success"):
         return "Sent."
     return f"Error: {data.get('error')}"
@@ -85,12 +85,12 @@ def my_channel_send(text: str, to: str | None = None) -> str:
 
 ## Testing checklist
 
-- [ ] `agentwire channels list` shows your channel
+- [ ] `hermeswire channels list` shows your channel
 - [ ] Config loads correctly from YAML
-- [ ] Key is read from its env var (`~/.agentwire/.env`)
+- [ ] Key is read from its env var (`~/.hermeswire/.env`)
 - [ ] `send()` returns success with valid config
 - [ ] `send()` returns a clear error with missing/invalid config
-- [ ] CLI command works (`agentwire my_channel --body "test"`)
+- [ ] CLI command works (`hermeswire my_channel --body "test"`)
 - [ ] MCP tool works (if added)
 
 ## Optional dependencies
@@ -108,6 +108,6 @@ except ImportError:
 
 ## Security
 
-- API keys live in `~/.agentwire/.env` only ([Secrets & API keys](../security/secrets.md)) — `RESEND_API_KEY` for email, `QUO_API_KEY` for quo, `VAPID_PRIVATE_KEY`/`VAPID_PUBLIC_KEY` for push (generate via `agentwire push keygen`). Config never holds a key, so the portal's config editor never round-trips one.
+- API keys live in `~/.hermeswire/.env` only ([Secrets & API keys](../security/secrets.md)) — `RESEND_API_KEY` for email, `QUO_API_KEY` for quo, `VAPID_PRIVATE_KEY`/`VAPID_PUBLIC_KEY` for push (generate via `hermeswire push keygen`). Config never holds a key, so the portal's config editor never round-trips one.
 - Each channel only reads from its own `channels.{config_key}:` slot — no cross-channel config peeking.
 - Outbound-only means there's no public webhook endpoint on the portal for a channel to attack. The portal's `/ws/{session}` is the only WS surface; channels never expose HTTP.

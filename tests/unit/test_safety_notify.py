@@ -1,7 +1,7 @@
 """Unattended blocks are spooled, throttled and digested, never streamed (#925).
 
 The corpus below is not invented. Every rule id, session name and command
-sample is taken verbatim from ``~/.agentwire/logs/damage-control/`` over the 14
+sample is taken verbatim from ``~/.hermeswire/logs/damage-control/`` over the 14
 days to 2026-08-06 — the same 111 unattended blocks that produced 111 emails
 and got the guard put up for removal. That matters for the same reason
 ``test_auth_expired``'s fixtures are verbatim: a test written against a tidy
@@ -34,9 +34,9 @@ from unittest.mock import patch
 
 import pytest
 
-from agentwire import safety_notify
+from hermeswire import safety_notify
 
-HOOKS_DIR = Path(__file__).resolve().parent.parent.parent / "agentwire" / "hooks" / "damage-control"
+HOOKS_DIR = Path(__file__).resolve().parent.parent.parent / "hermeswire" / "hooks" / "damage-control"
 
 # --------------------------------------------------------------------------
 # Verbatim from the audit log, 2026-07-24 .. 2026-08-06
@@ -45,7 +45,7 @@ HOOKS_DIR = Path(__file__).resolve().parent.parent.parent / "agentwire" / "hooks
 # The 53-block plurality: a loop over the per-project memory stores. Benign,
 # blocked purely for containing `$(...)`.
 AMBIGUOUS_CMD = (
-    'for s in -Users-dotdev-projects-agentwire-dev '
+    'for s in -Users-dotdev-projects-hermeswire-dev '
     '-Users-dotdev-projects-documentscribe; do d="$HOME/.claude/projects/$s/memory"; '
     'printf "%-45s AUDIT.md:%s\\n" "$s" "$([ -f "$d/AUDIT.md" ] && echo yes)"; done'
 )
@@ -74,19 +74,19 @@ class Sent:
 def env(tmp_path, monkeypatch):
     """Isolate CONFIG_DIR into tmp_path.
 
-    Patched on the MODULE (``agentwire.core.CONFIG_DIR``), which is the whole
+    Patched on the MODULE (``hermeswire.core.CONFIG_DIR``), which is the whole
     reason ``safety_notify._config_dir`` is a function — an import-time
     ``from .core import CONFIG_DIR`` would ignore this and scribble a real
     spool onto the operator's machine (#902).
     """
-    monkeypatch.setattr("agentwire.core.CONFIG_DIR", tmp_path / "agentwire")
+    monkeypatch.setattr("hermeswire.core.CONFIG_DIR", tmp_path / "hermeswire")
     return tmp_path
 
 
 @pytest.fixture
 def mail():
     """Patch the shared Resend wiring and hand back the mock."""
-    with patch("agentwire.channels.email.send_email", return_value=Sent()) as m:
+    with patch("hermeswire.channels.email.send_email", return_value=Sent()) as m:
         yield m
 
 
@@ -185,7 +185,7 @@ class TestDigest:
 
     def test_the_digest_points_at_the_unthrottled_record(self, env, mail):
         block()
-        assert "agentwire safety logs" in bodies(mail)[0]
+        assert "hermeswire safety logs" in bodies(mail)[0]
 
     def test_the_digest_names_how_to_permit_the_rule(self, env, mail):
         block()
@@ -339,11 +339,11 @@ class TestTick:
 
 class TestNeverCrashes:
     def test_a_send_failure_does_not_raise(self, env):
-        with patch("agentwire.channels.email.send_email", return_value=Sent(False)):
+        with patch("hermeswire.channels.email.send_email", return_value=Sent(False)):
             assert block()["spooled"] is True
 
     def test_an_exploding_sender_does_not_raise(self, env):
-        with patch("agentwire.channels.email.send_email",
+        with patch("hermeswire.channels.email.send_email",
                    side_effect=RuntimeError("resend down")):
             assert block()["spooled"] is True
 
@@ -353,11 +353,11 @@ class TestNeverCrashes:
         A failed send that counted as delivered would lose the report; the
         trade is a retry on the next block, which stops the moment one lands.
         """
-        with patch("agentwire.channels.email.send_email", return_value=Sent(False)):
+        with patch("hermeswire.channels.email.send_email", return_value=Sent(False)):
             block()
         assert safety_notify.read_state()["pending"], "spool cleared on a failed send"
 
-        with patch("agentwire.channels.email.send_email", return_value=Sent()) as m:
+        with patch("hermeswire.channels.email.send_email", return_value=Sent()) as m:
             block()
         assert m.call_count == 1
         assert "**2 ×**" in m.call_args.kwargs["body"]

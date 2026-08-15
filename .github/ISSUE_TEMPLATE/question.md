@@ -1,6 +1,6 @@
 ---
 name: Question
-about: Ask a question about using AgentWire
+about: Ask a question about using HermesWire
 title: '[Question] '
 labels: question
 assignees: ''
@@ -19,4 +19,4 @@ What would you like to know?
 ## Environment (if relevant)
 
 - **OS:**
-- **AgentWire version:**
+- **HermesWire version:**

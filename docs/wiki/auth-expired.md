@@ -5,7 +5,7 @@
 When Claude Code's credentials expire, it answers every prompt with a
 **synthetic** turn and goes idle. The session is alive, the agent process is
 running, the pane looks healthy, and no completion signal will ever arrive.
-Before #906 nothing in agentwire could see that state.
+Before #906 nothing in hermeswire could see that state.
 
 Sibling of [usage-limit recovery](usage-limit-recovery.md), and the same
 zero-LLM shape — but the opposite trade on where the signal comes from, for a
@@ -14,7 +14,7 @@ reason spelled out below.
 ## The failure it exists for
 
 Measured, from #867's transcript
-(`~/.claude/projects/-Users-dotdev-projects-agentwire-dev/4f90262b-….jsonl`):
+(`~/.claude/projects/-Users-dotdev-projects-hermeswire-dev/4f90262b-….jsonl`):
 
 | Time (UTC) | |
 |---|---|
@@ -107,7 +107,7 @@ forever.
 
 Two routes, both evidence rather than a guess:
 
-1. **Recorded** — `~/.agentwire/sessions/<name>/metadata.json` carries
+1. **Recorded** — `~/.hermeswire/sessions/<name>/metadata.json` carries
    `conversation_ids` + `cwd_at_launch` since #871, so the exact file is
    addressable.
 2. **Touched** — files in the project's history dir written **since this
@@ -132,7 +132,7 @@ test for the two anchors differing.
 
 An expired login is not one task's problem — every subsequent dispatch hits
 it. So one detection records a single outage at
-`~/.agentwire/auth-expired/state.json`:
+`~/.hermeswire/auth-expired/state.json`:
 
 ```json
 {"detected_at": "…", "last_seen": "…", "sessions": ["memory-manager"],
@@ -167,10 +167,10 @@ it. So one detection records a single outage at
 | Surface | Behavior |
 |---|---|
 | `completion.wait_for_completion_signal` | returns `status=auth_expired` with a named reason instead of polling |
-| `agentwire ensure` | exits **8** (`ENSURE_EXIT_AUTH_EXPIRED`); **never retries** — every retry refuses identically |
+| `hermeswire ensure` | exits **8** (`ENSURE_EXIT_AUTH_EXPIRED`); **never retries** — every retry refuses identically |
 | scheduler dispatch | skips above the worktree/in-place fork; `last_status=auth_expired`, `last_run` **not** consumed, so the task is eligible the moment `/login` runs |
 | worktree finalize | no PR — the worktree is untouched because nothing ran |
-| `agentwire doctor` | reports a fresh outage with its evidence and the fix |
+| `hermeswire doctor` | reports a fresh outage with its evidence and the fix |
 
 ## Why there is no credential pre-flight
 
@@ -193,9 +193,9 @@ milliseconds.
 ## Diagnosing
 
 ```bash
-agentwire doctor                                   # reports a fresh outage
-cat ~/.agentwire/auth-expired/state.json           # the record
-cat ~/.agentwire/auth-expired-events.jsonl         # detections + escalations
+hermeswire doctor                                   # reports a fresh outage
+cat ~/.hermeswire/auth-expired/state.json           # the record
+cat ~/.hermeswire/auth-expired-events.jsonl         # detections + escalations
 ```
 
 Fix: run `/login` in any Claude Code session. Nothing else is needed — the

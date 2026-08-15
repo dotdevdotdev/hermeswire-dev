@@ -4,7 +4,7 @@
 
 The full-width pulse-strip activity visualization (item 2 below) shipped in
 #809, replacing the sparkline exactly as proposed (`.topology-pulse-*` in
-`agentwire/static/js/topology-render.js`/`desktop.css`). The git dirty/clean/
+`hermeswire/static/js/topology-render.js`/`desktop.css`). The git dirty/clean/
 ahead-behind glyphs (part of item 3) shipped in #805
 (`sidebar-git-badge`/`git-dirty`/`git-ahead`/`git-behind` etc.). The
 context-remaining hairline and the header mic/inbox badge cluster are still
@@ -25,7 +25,7 @@ guidance this session stopped rather than continuing to hammer it.
 
 **What did happen:**
 - A Claude Design project was created and is live at:
-  `https://claude.ai/design/p/716f1cf9-7bab-4f78-9812-2ab07f983f85` ("AgentWire
+  `https://claude.ai/design/p/716f1cf9-7bab-4f78-9812-2ab07f983f85` ("HermesWire
   Session Cards"). It had a file `Session Topology HUD.dc.html` mid-generation
   (Opus 4.8, medium effort) when the connection dropped. Claude Design persists
   project state server-side, so this project is still there — worth opening
@@ -50,7 +50,7 @@ guidance this session stopped rather than continuing to hammer it.
   the brief). `current-master.png` is a **Tasks panel** (a scheduler task list
   with pause/run buttons), unrelated to session cards. Only the cropped file
   was used as the current-state reference; the mislabeled one should probably
-  be replaced or removed from `~/.agentwire/uploads/hud-design/`.
+  be replaced or removed from `~/.hermeswire/uploads/hud-design/`.
 
 Given the external pass didn't finish, the rest of this doc is this session's
 own synthesis — grounded in the current screenshot, the field catalogue, and
@@ -171,7 +171,7 @@ output against this draft rather than starting blind.
 The full text brief (current-design description, design goals, full field
 catalogue, and the ask) that was pasted into the `claude.ai/design` session
 is preserved as a "Pasted text (50 lines)" attachment on the
-`AgentWire Session Cards` project linked above — reopen that project to see
+`HermesWire Session Cards` project linked above — reopen that project to see
 it verbatim rather than duplicating it here.
 
 </details>

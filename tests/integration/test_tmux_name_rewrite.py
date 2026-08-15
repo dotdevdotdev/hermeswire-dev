@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pytest
 
-from agentwire.worktree import tmux_safe_name
+from hermeswire.worktree import tmux_safe_name
 
 # Two guards, and both are needed. ``skipif`` covers a machine with no tmux at
 # all; ``requires_tmux`` is what the hermetic CI job deselects on

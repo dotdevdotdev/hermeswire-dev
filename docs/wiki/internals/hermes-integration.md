@@ -1,4 +1,4 @@
-# Hermes integration strategy (AgentWire → HermesWire)
+# Hermes integration strategy (HermesWire → HermesWire)
 
 Status: decided. The conversion landed (PR #21, epic #20). This page describes
 the **final state**; for features that were dropped or replaced, see
@@ -6,10 +6,10 @@ the **final state**; for features that were dropped or replaced, see
 
 ## Decision: hybrid
 
-AgentWire drives the coding agent two different ways, and Hermes offers a
+HermesWire drives the coding agent two different ways, and Hermes offers a
 different surface for each. We use **both**, by path:
 
-| AgentWire path | Strategy | Hermes invocation |
+| HermesWire path | Strategy | Hermes invocation |
 |---|---|---|
 | `new` / `spawn` (human-watched cockpit pane) | interactive REPL | `hermes chat --cli` |
 | `ensure` / scheduler dispatch | headless one-shot | `hermes -z "$PROMPT"` or `hermes chat -q "$PROMPT" -Q` |
@@ -52,7 +52,7 @@ cockpit keeps the REPL so a human can watch the agent work in tmux.
 ## The hard problem: agent-vs-daemon detection
 
 `pane_current_command` for a running `hermes` is a **python process**
-(`python3.13`) — the same as AgentWire's own daemons (portal/tts/scheduler).
+(`python3.13`) — the same as HermesWire's own daemons (portal/tts/scheduler).
 Claude's was `node`/`claude`/a version string, trivially distinguishable.
 Every place that classifies a pane as "agent" vs "daemon" (prompt_router,
 session_context, completion) must switch to a stronger signal: `#{pane_pid}` +

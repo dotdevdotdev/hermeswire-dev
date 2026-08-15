@@ -1,12 +1,12 @@
 """Process ("command") custom services, and doctor's reporting leg (#983).
 
-A custom service used to be one thing: an agentwire agent session. The voice
+A custom service used to be one thing: an hermeswire agent session. The voice
 buddy's bridge is not that — it is a plain long-running process — and until it
 had somewhere to live it was hand-launched, which means it survived no reboot
 and appeared in no diagnostic.
 
 These pin the generic half of that: what a `command:` entry parses to, that it
-is supervised by tmux rather than by `agentwire new`, that its output lands on
+is supervised by tmux rather than by `hermeswire new`, that its output lands on
 no world-readable surface, and that doctor reports it beside the agent
 services. Nothing here knows what the process is — the buddy is one caller of a
 mechanism that has no idea it exists.
@@ -17,8 +17,8 @@ import json
 
 import pytest
 
-from agentwire import doctor_cli, services
-from agentwire.config import (
+from hermeswire import doctor_cli, services
+from hermeswire.config import (
     Config,
     CustomServiceConfig,
     HealthcheckConfig,
@@ -38,11 +38,11 @@ class TestCommandServiceParsing:
     def test_command_entry_parses(self):
         cfg = _dict_to_config({"services": {"custom": [{
             "name": "buddy",
-            "command": "agentwire buddy serve buddy --port 8788",
+            "command": "hermeswire buddy serve buddy --port 8788",
             "autostart": False,
         }]}})
         svc = cfg.services.custom[0]
-        assert svc.command == "agentwire buddy serve buddy --port 8788"
+        assert svc.command == "hermeswire buddy serve buddy --port 8788"
         assert svc.autostart is False
         assert services.service_kind(svc) == "command"
 
@@ -95,10 +95,10 @@ class TestCommandServiceSupervision:
 
     def _svc(self, **kw):
         kw.setdefault("name", "buddy")
-        kw.setdefault("command", "agentwire buddy serve buddy --port 8788")
+        kw.setdefault("command", "hermeswire buddy serve buddy --port 8788")
         return CustomServiceConfig(**kw)
 
-    def test_start_runs_the_command_under_tmux_not_agentwire_new(self, monkeypatch):
+    def test_start_runs_the_command_under_tmux_not_hermeswire_new(self, monkeypatch):
         calls = []
         monkeypatch.setattr(services, "_tmux_session_exists", lambda n: False)
         monkeypatch.setattr(services, "_tmux_pane_dead", lambda n: False)
@@ -113,10 +113,10 @@ class TestCommandServiceSupervision:
              "sh -c 'while :; do sleep 3600; done'"],
             ["tmux", "set-option", "-w", "-t", "=buddy:", "remain-on-exit", "on"],
             ["tmux", "respawn-pane", "-k", "-c", svc.project, "-t", "=buddy:.0",
-             "agentwire buddy serve buddy --port 8788"],
+             "hermeswire buddy serve buddy --port 8788"],
         ]
-        # not `agentwire new` — the agent path is a different mechanism
-        assert not any("new-session" in c and "agentwire" in c for c in calls)
+        # not `hermeswire new` — the agent path is a different mechanism
+        assert not any("new-session" in c and "hermeswire" in c for c in calls)
 
     def test_start_redirects_nothing_to_a_file(self, monkeypatch):
         """The whole secret-handling argument. tmux captures stdout/stderr into
@@ -131,7 +131,7 @@ class TestCommandServiceSupervision:
         monkeypatch.setattr(services.subprocess, "run",
                             lambda cmd, **kw: calls.append(cmd) or _ok())
         services.start_service(self._svc())
-        # The service's OWN command is the operator's business; agentwire must
+        # The service's OWN command is the operator's business; hermeswire must
         # not add redirection around it, in ANY of the spawn's steps.
         wrapper = " ".join(
             part for call in calls for part in call if part != self._svc().command
@@ -175,7 +175,7 @@ class TestCommandServiceSupervision:
         assert ok is False and "no server running" in msg
 
     def test_stop_kills_the_session_without_sending_exit(self, monkeypatch):
-        """`agentwire kill`'s graceful leg types `/exit` at an agent. There is
+        """`hermeswire kill`'s graceful leg types `/exit` at an agent. There is
         no agent in a process service — those two characters would go to the
         process's stdin."""
         calls = []
@@ -185,13 +185,13 @@ class TestCommandServiceSupervision:
         assert services.stop_service(self._svc()) == (True, "stopped")
         assert calls == [["tmux", "kill-session", "-t", "=buddy"]]
 
-    def test_stop_of_an_agent_service_still_goes_through_agentwire_kill(self, monkeypatch):
+    def test_stop_of_an_agent_service_still_goes_through_hermeswire_kill(self, monkeypatch):
         calls = []
         monkeypatch.setattr(services, "_tmux_session_exists", lambda n: True)
         monkeypatch.setattr(services.subprocess, "run",
                             lambda cmd, **kw: calls.append(cmd) or _ok())
         services.stop_service(CustomServiceConfig(name="tracker"))
-        assert calls[0][1:] == ["-m", "agentwire", "kill", "-s", "tracker", "--json"]
+        assert calls[0][1:] == ["-m", "hermeswire", "kill", "-s", "tracker", "--json"]
 
     def test_status_carries_the_kind(self, state_file, monkeypatch):
         monkeypatch.setattr(services, "_tmux_session_exists", lambda n: True)
@@ -217,7 +217,7 @@ class TestADyingProcessIsNotASuccessfulStart:
     the process's own stderr died with the pane and existed nowhere. Screenless,
     that is a fix-loop behind a misleading all-clear — the exact failure this
     branch exists to remove. And it was specific to the command kind: the agent
-    kind runs `agentwire new` in the FOREGROUND, so a failure there is already
+    kind runs `hermeswire new` in the FOREGROUND, so a failure there is already
     an exit code.
 
     Two halves, and the second is not decoration: a refusal that cannot say WHY
@@ -225,7 +225,7 @@ class TestADyingProcessIsNotASuccessfulStart:
     """
 
     def _svc(self):
-        return CustomServiceConfig(name="buddy", command="agentwire buddy serve nope")
+        return CustomServiceConfig(name="buddy", command="hermeswire buddy serve nope")
 
     @pytest.fixture(autouse=True)
     def _no_real_sleep(self, monkeypatch):
@@ -276,7 +276,7 @@ class TestADyingProcessIsNotASuccessfulStart:
         opt = next(i for i, j in enumerate(joined) if "remain-on-exit" in j)
         real = next(i for i, j in enumerate(joined) if "respawn-pane" in j)
         assert opt < real, joined
-        assert "agentwire buddy serve nope" not in joined[opt]
+        assert "hermeswire buddy serve nope" not in joined[opt]
 
     def test_a_dead_pane_is_cleared_on_respawn_not_called_already_running(
         self, monkeypatch,
@@ -478,7 +478,7 @@ class TestThePlaceholderMustNeverOutliveTheSpawn:
         monkeypatch.setattr(services.subprocess, "run", run)
         seen["reply"] = services._PLACEHOLDER_CMD + "\n"
         assert services._tmux_pane_is_placeholder("x") is True
-        seen["reply"] = "agentwire buddy serve buddy --port 8788\n"
+        seen["reply"] = "hermeswire buddy serve buddy --port 8788\n"
         assert services._tmux_pane_is_placeholder("x") is False
 
 
@@ -493,7 +493,7 @@ class TestNamesGoThroughTheOneMapping:
     """
 
     def test_every_tmux_target_uses_the_sanitized_name(self, monkeypatch):
-        from agentwire.worktree import tmux_safe_name
+        from hermeswire.worktree import tmux_safe_name
         raw = "rev.dot:2"
         safe = tmux_safe_name(raw)
         assert safe == "rev_dot_2"  # the mapping, stated so a change is visible
@@ -539,7 +539,7 @@ class TestACrashLineIsRedactedBeforeItIsSpoken:
     does not stay on the terminal.
 
     It reaches the portal watchdog's `_notify_service_event`, which TOASTS it
-    and SPEAKS it through `agentwire say`. Owner-facing, so surfacing it at all
+    and SPEAKS it through `hermeswire say`. Owner-facing, so surfacing it at all
     is a deliberate trade — but a process printing `bearer eyJ…` while dying
     would have put that verbatim into a spoken utterance. Redaction happens at
     the single choke point every consumer reads through, and uses the SAME
@@ -727,7 +727,7 @@ class TestARewrittenNameAgainstRealTmux:
     def _cleanup(self):
         import subprocess as sp
 
-        from agentwire.worktree import tmux_safe_name
+        from hermeswire.worktree import tmux_safe_name
         for name in (self.RAW, tmux_safe_name(self.RAW)):
             sp.run(["tmux", "kill-session", "-t", f"={name}"], capture_output=True)
         yield
@@ -751,7 +751,7 @@ class TestARewrittenNameAgainstRealTmux:
     def test_no_orphan_placeholder_is_left_behind(self):
         import subprocess as sp
 
-        from agentwire.worktree import tmux_safe_name
+        from hermeswire.worktree import tmux_safe_name
         services.start_service(self._svc("sleep 30"))
         services.stop_service(self._svc("sleep 30"))
         live = sp.run(["tmux", "list-sessions", "-F", "#{session_name}"],
@@ -783,7 +783,7 @@ class TestInlineSecretsInArgv:
     """The one leak tmux does NOT close: argv is world-readable in `ps`."""
 
     @pytest.mark.parametrize("command,expected", [
-        ("agentwire buddy serve buddy --port 8788", None),
+        ("hermeswire buddy serve buddy --port 8788", None),
         ("some-bridge --token=hunter2", "--token="),
         ("some-bridge --api-key=sk-live", "--api-key="),
         ("env PASSWORD=hunter2 some-bridge", "password="),
@@ -803,11 +803,11 @@ class TestInlineSecretsInArgv:
 
 
 class TestDoctorSection:
-    """`agentwire doctor` reports a process service beside the agent ones."""
+    """`hermeswire doctor` reports a process service beside the agent ones."""
 
     def _patch(self, monkeypatch, custom, *, healthy=True, disabled=()):
         cfg = Config(services=ServicesConfig(custom=custom))
-        monkeypatch.setattr("agentwire.config.load_config", lambda *a, **k: cfg)
+        monkeypatch.setattr("hermeswire.config.load_config", lambda *a, **k: cfg)
         monkeypatch.setattr(services, "notifications_session_name", lambda: "notif")
         monkeypatch.setattr(services, "_source_dir", lambda: "/tmp/src")
         monkeypatch.setattr(services, "load_disabled", lambda: set(disabled))
@@ -817,7 +817,7 @@ class TestDoctorSection:
 
     def test_a_healthy_command_service_is_reported_with_its_kind(self, monkeypatch, capsys):
         self._patch(monkeypatch, [CustomServiceConfig(
-            name="buddy", command="agentwire buddy serve buddy --port 8788")])
+            name="buddy", command="hermeswire buddy serve buddy --port 8788")])
         assert doctor_cli._render_custom_services_section() == 0
         out = capsys.readouterr().out
         assert "[ok] Service buddy (command): session exists" in out
@@ -825,11 +825,11 @@ class TestDoctorSection:
 
     def test_a_dead_command_service_is_an_issue_with_a_fix(self, monkeypatch, capsys):
         self._patch(monkeypatch, [CustomServiceConfig(
-            name="buddy", command="agentwire buddy serve buddy")], healthy=False)
+            name="buddy", command="hermeswire buddy serve buddy")], healthy=False)
         found = doctor_cli._render_custom_services_section()
         out = capsys.readouterr().out
         assert "[!!] Service buddy (command): unhealthy" in out
-        assert "Run: agentwire services up buddy" in out
+        assert "Run: hermeswire services up buddy" in out
         assert found == 2  # the buddy and the built-in notifications bridge
 
     def test_a_downed_service_is_not_scored(self, monkeypatch, capsys):
@@ -854,7 +854,7 @@ class TestDoctorSection:
         found = doctor_cli._render_custom_services_section()
         out = capsys.readouterr().out
         assert "world-readable in the process table" in out
-        assert "~/.agentwire/.env" in out
+        assert "~/.hermeswire/.env" in out
         assert found == 1
 
     def test_a_broken_healthcheck_does_not_hide_the_other_services(
@@ -877,7 +877,7 @@ class TestDoctorSection:
     def test_unloadable_config_degrades_to_a_note(self, monkeypatch, capsys):
         def boom(*a, **k):
             raise RuntimeError("bad yaml")
-        monkeypatch.setattr("agentwire.config.load_config", boom)
+        monkeypatch.setattr("hermeswire.config.load_config", boom)
         assert doctor_cli._render_custom_services_section() == 0
         assert "Could not check custom services: bad yaml" in capsys.readouterr().out
 
@@ -885,14 +885,14 @@ class TestDoctorSection:
 class TestServicesCLIExposesTheKind:
     @pytest.fixture
     def cli(self, state_file, monkeypatch):
-        from agentwire import system_cli as main_mod
+        from hermeswire import system_cli as main_mod
         monkeypatch.setattr(services, "notifications_session_name", lambda: "notif")
         monkeypatch.setattr(services, "_source_dir", lambda: "/tmp/src")
         cfg = Config(services=ServicesConfig(custom=[CustomServiceConfig(
-            name="buddy", command="agentwire buddy serve buddy --port 8788",
+            name="buddy", command="hermeswire buddy serve buddy --port 8788",
             autostart=False, healthcheck=HealthcheckConfig(interval=30),
         )]))
-        monkeypatch.setattr("agentwire.config.load_config", lambda *a, **k: cfg)
+        monkeypatch.setattr("hermeswire.config.load_config", lambda *a, **k: cfg)
         return main_mod
 
     def _args(self, **kw):
@@ -905,7 +905,7 @@ class TestServicesCLIExposesTheKind:
         data = json.loads(capsys.readouterr().out)
         by_name = {s["name"]: s for s in data["services"]}
         assert by_name["buddy"]["kind"] == "command"
-        assert by_name["buddy"]["command"] == "agentwire buddy serve buddy --port 8788"
+        assert by_name["buddy"]["command"] == "hermeswire buddy serve buddy --port 8788"
         assert by_name["notif"]["kind"] == "agent"
         assert by_name["notif"]["command"] is None
 
@@ -916,4 +916,4 @@ class TestServicesCLIExposesTheKind:
         monkeypatch.setattr(services, "stop_service",
                             lambda svc: (seen.append(svc) or True, "stopped"))
         assert cli.cmd_services_down(self._args(name="buddy")) == 0
-        assert seen[0].command == "agentwire buddy serve buddy --port 8788"
+        assert seen[0].command == "hermeswire buddy serve buddy --port 8788"

@@ -1,11 +1,11 @@
-"""Tests for agentwire/handoff/git_state.py."""
+"""Tests for hermeswire/handoff/git_state.py."""
 
 import subprocess
 from pathlib import Path
 
 import pytest
 
-from agentwire.handoff import git_state
+from hermeswire.handoff import git_state
 
 
 def _git(args: list[str], cwd: Path) -> None:

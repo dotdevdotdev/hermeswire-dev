@@ -1,10 +1,10 @@
-"""Tests for agentwire/handoff/instructions.py — the Hermes context chain."""
+"""Tests for hermeswire/handoff/instructions.py — the Hermes context chain."""
 
 from pathlib import Path
 
 import pytest
 
-from agentwire.handoff import instructions
+from hermeswire.handoff import instructions
 
 
 @pytest.fixture

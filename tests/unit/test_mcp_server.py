@@ -1,4 +1,4 @@
-"""Tests for agentwire/mcp_server.py — format functions, run_agentwire_cmd, helpers."""
+"""Tests for hermeswire/mcp_server.py — format functions, run_hermeswire_cmd, helpers."""
 
 import subprocess
 from unittest.mock import MagicMock, patch
@@ -26,14 +26,14 @@ class TestFormatEmpty:
     """All formatters return their empty message for [] and missing-key input."""
 
     def test_empty_list(self, fn_name, list_key, empty_substring):
-        from agentwire import mcp_core as mcp_server
+        from hermeswire import mcp_core as mcp_server
         fn = getattr(mcp_server, fn_name)
         # format_panes also reads "session" key — provide it harmlessly
         result = fn({list_key: [], "session": "test"})
         assert empty_substring in result
 
     def test_missing_key(self, fn_name, list_key, empty_substring):
-        from agentwire import mcp_core as mcp_server
+        from hermeswire import mcp_core as mcp_server
         fn = getattr(mcp_server, fn_name)
         result = fn({"session": "test"})
         assert empty_substring in result
@@ -63,7 +63,7 @@ class TestFormatEmpty:
 )
 def test_format_multiple_produces_header_plus_one_line_per_entry(fn_name, list_key, extra, entries):
     """All listing formatters emit a header line then one line per entry."""
-    from agentwire import mcp_core as mcp_server
+    from hermeswire import mcp_core as mcp_server
     fn = getattr(mcp_server, fn_name)
     result = fn({list_key: entries, **extra})
     lines = result.split("\n")
@@ -83,7 +83,7 @@ def test_format_multiple_produces_header_plus_one_line_per_entry(fn_name, list_k
 )
 def test_format_missing_optional_fields_shows_unknown(fn_name, list_key, extra, entry):
     """Missing optional fields produce 'unknown' rather than crash or empty string."""
-    from agentwire import mcp_core as mcp_server
+    from hermeswire import mcp_core as mcp_server
     fn = getattr(mcp_server, fn_name)
     entries = entry if isinstance(entry, list) else [entry]
     result = fn({list_key: entries, **extra})
@@ -94,7 +94,7 @@ def test_format_missing_optional_fields_shows_unknown(fn_name, list_key, extra, 
 
 class TestFormatSessionsBehavior:
     def test_all_fields_render(self):
-        from agentwire.mcp_core import format_sessions
+        from hermeswire.mcp_core import format_sessions
         result = format_sessions({"sessions": [
             {"name": "my-app", "machine": "gpu-box", "windows": 3, "path": "/p", "posture": "bypass"},
         ]})
@@ -104,26 +104,26 @@ class TestFormatSessionsBehavior:
         assert "posture=bypass" in result
 
     def test_null_machine_shows_local(self):
-        from agentwire.mcp_core import format_sessions
+        from hermeswire.mcp_core import format_sessions
         assert "local" in format_sessions({"sessions": [{"name": "x", "machine": None}]})
 
 
 class TestFormatPanesBehavior:
     def test_pane_0_is_orchestrator_active_marked(self):
-        from agentwire.mcp_core import format_panes
+        from hermeswire.mcp_core import format_panes
         result = format_panes({"panes": [{"index": 0, "command": "claude", "active": True}], "session": "s"})
         assert "[orchestrator]" in result
         assert "(active)" in result
 
     def test_pane_nonzero_is_worker(self):
-        from agentwire.mcp_core import format_panes
+        from hermeswire.mcp_core import format_panes
         result = format_panes({"panes": [{"index": 1, "command": "bash"}], "session": "s"})
         assert "[worker]" in result
 
 
 class TestFormatMachinesBehavior:
     def test_user_at_host_format(self):
-        from agentwire.mcp_core import format_machines
+        from hermeswire.mcp_core import format_machines
         result = format_machines({"machines": [
             {"id": "gpu", "host": "10.0.0.1", "user": "root", "status": "online"}
         ]})
@@ -131,7 +131,7 @@ class TestFormatMachinesBehavior:
         assert "status: online" in result
 
     def test_blank_user_omits_at_sign(self):
-        from agentwire.mcp_core import format_machines
+        from hermeswire.mcp_core import format_machines
         result = format_machines({"machines": [
             {"id": "m1", "host": "h", "user": "", "status": "unknown"}
         ]})
@@ -141,14 +141,14 @@ class TestFormatMachinesBehavior:
 
 class TestFormatProjectsBehavior:
     def test_has_config_marker(self):
-        from agentwire.mcp_core import format_projects
+        from hermeswire.mcp_core import format_projects
         result = format_projects({"projects": [{"name": "app", "path": "/app", "has_config": True}]})
-        assert "(has .agentwire.yml)" in result
+        assert "(has .hermeswire.yml)" in result
 
     def test_no_config_no_marker(self):
-        from agentwire.mcp_core import format_projects
+        from hermeswire.mcp_core import format_projects
         result = format_projects({"projects": [{"name": "app", "path": "/app", "has_config": False}]})
-        assert ".agentwire.yml" not in result
+        assert ".hermeswire.yml" not in result
 
 
 class TestDeliveryResultBehavior:
@@ -156,12 +156,12 @@ class TestDeliveryResultBehavior:
     hand an inert 'check the pane or resend' string back to the caller."""
 
     def test_verified_true(self):
-        from agentwire.mcp_core import _delivery_result
+        from hermeswire.mcp_core import _delivery_result
         result = _delivery_result({"verified": True}, "to session 'proj'")
         assert "verified in pane" in result
 
     def test_unverified_with_inbox_fallback_reports_no_action_needed(self):
-        from agentwire.mcp_core import _delivery_result
+        from hermeswire.mcp_core import _delivery_result
         result = _delivery_result({"verified": False, "fallback": "inbox"}, "to session 'proj'")
         assert "queued to its msg inbox" in result
         assert "No action needed" in result
@@ -170,7 +170,7 @@ class TestDeliveryResultBehavior:
         """#835 second-pass review: the 'already_delivered' branch (the
         confirm read was ambiguous but the message was actually on
         scrollback already) had no direct test pinning its wording."""
-        from agentwire.mcp_core import _delivery_result
+        from hermeswire.mcp_core import _delivery_result
         result = _delivery_result({"verified": False, "fallback": "already_delivered"}, "to session 'proj'")
         assert "already visible on scrollback" in result
         assert "No action needed" in result
@@ -180,42 +180,42 @@ class TestDeliveryResultBehavior:
         not be confirmed cleared from the input box) must read as an honest
         warning, distinct from the calm "No action needed" wording used for
         a fully-recovered "inbox" fallback."""
-        from agentwire.mcp_core import _delivery_result
+        from hermeswire.mcp_core import _delivery_result
         result = _delivery_result({"verified": False, "fallback": "inbox_stuck"}, "to session 'proj'")
         assert "could NOT be confirmed cleared" in result
         assert "Check the pane manually" in result
         assert "No action needed" not in result
 
     def test_unverified_with_no_fallback_still_warns(self):
-        from agentwire.mcp_core import _delivery_result
+        from hermeswire.mcp_core import _delivery_result
         result = _delivery_result({"verified": False, "fallback": None}, "to session 'proj'")
         assert "may be lost" in result
 
     def test_pane_send_has_no_fallback_key_and_must_not_claim_one_failed(self):
-        """pane_send's `agentwire send --pane` branch never attempts the
+        """pane_send's `hermeswire send --pane` branch never attempts the
         inbox fallback (the msg inbox only addresses sessions, not panes) —
         it omits the `fallback` key entirely. This must read as the original
         'may have been dropped' warning, not falsely claim a fallback ran
         and failed."""
-        from agentwire.mcp_core import _delivery_result
+        from hermeswire.mcp_core import _delivery_result
         result = _delivery_result({"verified": False}, "to pane 1")
         assert "may have been dropped" in result
         assert "msg-inbox fallback" not in result
 
     def test_remote_unverifiable(self):
-        from agentwire.mcp_core import _delivery_result
+        from hermeswire.mcp_core import _delivery_result
         result = _delivery_result({"verified": None}, "to session 'proj'")
         assert "can't be verified across SSH" in result
 
     def test_no_verified_key_plain_sent(self):
-        from agentwire.mcp_core import _delivery_result
+        from hermeswire.mcp_core import _delivery_result
         result = _delivery_result({}, "to session 'proj'")
         assert result == "Message sent to session 'proj'."
 
 
 class TestFormatRolesBehavior:
     def test_full_role_format(self):
-        from agentwire.mcp_core import format_roles
+        from hermeswire.mcp_core import format_roles
         result = format_roles({"roles": [{"name": "voice", "description": "Voice comms", "source": "bundled"}]})
         assert "voice: Voice comms (bundled)" in result
 
@@ -227,23 +227,23 @@ class TestFormatVoicesBehavior:
         [{"name": "alice"}, "bob"],
     ])
     def test_dict_string_and_mixed_entries_all_render(self, voices):
-        from agentwire.mcp_core import format_voices
+        from hermeswire.mcp_core import format_voices
         result = format_voices({"voices": voices})
         assert "alice" in result
         assert "bob" in result
 
 
 # ---------------------------------------------------------------------------
-# run_agentwire_cmd
+# run_hermeswire_cmd
 # ---------------------------------------------------------------------------
 
 
-class TestRunAgentwireCmd:
+class TestRunHermeswireCmd:
     def setup_method(self):
-        from agentwire.core import run_agentwire_cmd
-        self.fn = run_agentwire_cmd
+        from hermeswire.core import run_hermeswire_cmd
+        self.fn = run_hermeswire_cmd
 
-    @patch("agentwire.core.subprocess.run")
+    @patch("hermeswire.core.subprocess.run")
     def test_successful_json(self, mock_run):
         mock_run.return_value = MagicMock(
             returncode=0,
@@ -254,9 +254,9 @@ class TestRunAgentwireCmd:
         assert result == {"success": True, "data": 1}
         mock_run.assert_called_once()
         cmd = mock_run.call_args[0][0]
-        assert cmd == ["agentwire", "list", "--json"]
+        assert cmd == ["hermeswire", "list", "--json"]
 
-    @patch("agentwire.core.subprocess.run")
+    @patch("hermeswire.core.subprocess.run")
     def test_json_array_wrapping(self, mock_run):
         mock_run.return_value = MagicMock(
             returncode=0,
@@ -267,7 +267,7 @@ class TestRunAgentwireCmd:
         assert result["success"] is True
         assert result["items"] == [{"id": 1}, {"id": 2}]
 
-    @patch("agentwire.core.subprocess.run")
+    @patch("hermeswire.core.subprocess.run")
     def test_json_without_success_key(self, mock_run):
         mock_run.return_value = MagicMock(
             returncode=0,
@@ -278,7 +278,7 @@ class TestRunAgentwireCmd:
         assert result["success"] is True
         assert result["data"] == "hello"
 
-    @patch("agentwire.core.subprocess.run")
+    @patch("hermeswire.core.subprocess.run")
     def test_json_parse_failure_falls_back(self, mock_run):
         mock_run.return_value = MagicMock(
             returncode=0,
@@ -289,7 +289,7 @@ class TestRunAgentwireCmd:
         assert result["success"] is True
         assert result["output"] == "not json"
 
-    @patch("agentwire.core.subprocess.run")
+    @patch("hermeswire.core.subprocess.run")
     def test_nonzero_returncode(self, mock_run):
         mock_run.return_value = MagicMock(
             returncode=1,
@@ -300,7 +300,7 @@ class TestRunAgentwireCmd:
         assert result["success"] is False
         assert "session not found" in result["error"]
 
-    @patch("agentwire.core.subprocess.run")
+    @patch("hermeswire.core.subprocess.run")
     def test_json_output_false(self, mock_run):
         mock_run.return_value = MagicMock(
             returncode=0,
@@ -313,41 +313,41 @@ class TestRunAgentwireCmd:
         cmd = mock_run.call_args[0][0]
         assert "--json" not in cmd
 
-    @patch("agentwire.core.subprocess.run")
+    @patch("hermeswire.core.subprocess.run")
     def test_timeout_expired(self, mock_run):
-        mock_run.side_effect = subprocess.TimeoutExpired(cmd="agentwire", timeout=30)
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="hermeswire", timeout=30)
         result = self.fn(["long-cmd"])
         assert result["success"] is False
         assert "timed out" in result["error"]
 
-    @patch("agentwire.core.subprocess.run")
+    @patch("hermeswire.core.subprocess.run")
     def test_file_not_found(self, mock_run):
         mock_run.side_effect = FileNotFoundError()
         result = self.fn(["list"])
         assert result["success"] is False
         assert "not found" in result["error"]
 
-    @patch("agentwire.core.subprocess.run")
+    @patch("hermeswire.core.subprocess.run")
     def test_command_construction(self, mock_run):
         mock_run.return_value = MagicMock(returncode=0, stdout="{}", stderr="")
         self.fn(["new", "-s", "test"])
         cmd = mock_run.call_args[0][0]
-        assert cmd == ["agentwire", "new", "-s", "test", "--json"]
+        assert cmd == ["hermeswire", "new", "-s", "test", "--json"]
 
-    @patch("agentwire.core.subprocess.run")
+    @patch("hermeswire.core.subprocess.run")
     def test_custom_timeout(self, mock_run):
         mock_run.return_value = MagicMock(returncode=0, stdout="{}", stderr="")
         self.fn(["spawn"], timeout=120)
         assert mock_run.call_args[1]["timeout"] == 120
 
-    @patch("agentwire.core.subprocess.run")
+    @patch("hermeswire.core.subprocess.run")
     def test_generic_exception(self, mock_run):
         mock_run.side_effect = OSError("permission denied")
         result = self.fn(["list"])
         assert result["success"] is False
         assert "permission denied" in result["error"]
 
-    @patch("agentwire.core.subprocess.run")
+    @patch("hermeswire.core.subprocess.run")
     def test_empty_stdout_nonzero(self, mock_run):
         mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="")
         result = self.fn(["x"])
@@ -361,16 +361,16 @@ class TestRunAgentwireCmd:
 
 class TestGetPortalUrl:
     def setup_method(self):
-        from agentwire.mcp_core import get_portal_url
+        from hermeswire.mcp_core import get_portal_url
         self.fn = get_portal_url
 
     def test_env_var(self, monkeypatch):
-        monkeypatch.setenv("AGENTWIRE_PORTAL_URL", "https://custom:9999")
+        monkeypatch.setenv("HERMESWIRE_PORTAL_URL", "https://custom:9999")
         assert self.fn() == "https://custom:9999"
 
     def test_config_file(self, tmp_path, monkeypatch):
-        monkeypatch.delenv("AGENTWIRE_PORTAL_URL", raising=False)
-        config_dir = tmp_path / ".agentwire"
+        monkeypatch.delenv("HERMESWIRE_PORTAL_URL", raising=False)
+        config_dir = tmp_path / ".hermeswire"
         config_dir.mkdir()
         config_file = config_dir / "config.yaml"
         import yaml
@@ -379,14 +379,14 @@ class TestGetPortalUrl:
         assert self.fn() == "https://from-config:1234"
 
     def test_default_fallback(self, tmp_path, monkeypatch):
-        monkeypatch.delenv("AGENTWIRE_PORTAL_URL", raising=False)
+        monkeypatch.delenv("HERMESWIRE_PORTAL_URL", raising=False)
         monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
         # No SSL certs configured -> http default (instant-mode model)
         assert self.fn() == "http://localhost:8765"
 
     def test_env_var_priority_over_config(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("AGENTWIRE_PORTAL_URL", "https://env:1111")
-        config_dir = tmp_path / ".agentwire"
+        monkeypatch.setenv("HERMESWIRE_PORTAL_URL", "https://env:1111")
+        config_dir = tmp_path / ".hermeswire"
         config_dir.mkdir()
         import yaml
         (config_dir / "config.yaml").write_text(yaml.dump({"portal": {"url": "https://cfg:2222"}}))
@@ -394,8 +394,8 @@ class TestGetPortalUrl:
         assert self.fn() == "https://env:1111"
 
     def test_malformed_yaml(self, tmp_path, monkeypatch):
-        monkeypatch.delenv("AGENTWIRE_PORTAL_URL", raising=False)
-        config_dir = tmp_path / ".agentwire"
+        monkeypatch.delenv("HERMESWIRE_PORTAL_URL", raising=False)
+        config_dir = tmp_path / ".hermeswire"
         config_dir.mkdir()
         (config_dir / "config.yaml").write_text(": : : bad yaml {{{{")
         monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
@@ -410,32 +410,32 @@ class TestGetPortalUrl:
 
 class TestGetCallerSession:
     def setup_method(self):
-        from agentwire.mcp_core import get_caller_session
+        from hermeswire.mcp_core import get_caller_session
         self.fn = get_caller_session
 
     def test_no_tmux_pane(self, monkeypatch):
         monkeypatch.delenv("TMUX_PANE", raising=False)
         assert self.fn() is None
 
-    @patch("agentwire.mcp_core.subprocess.run")
+    @patch("hermeswire.mcp_core.subprocess.run")
     def test_returns_session_name(self, mock_run, monkeypatch):
         monkeypatch.setenv("TMUX_PANE", "%5")
         mock_run.return_value = MagicMock(returncode=0, stdout="my-session\n")
         assert self.fn() == "my-session"
 
-    @patch("agentwire.mcp_core.subprocess.run")
+    @patch("hermeswire.mcp_core.subprocess.run")
     def test_empty_stdout(self, mock_run, monkeypatch):
         monkeypatch.setenv("TMUX_PANE", "%5")
         mock_run.return_value = MagicMock(returncode=0, stdout="")
         assert self.fn() is None
 
-    @patch("agentwire.mcp_core.subprocess.run")
+    @patch("hermeswire.mcp_core.subprocess.run")
     def test_nonzero_returncode(self, mock_run, monkeypatch):
         monkeypatch.setenv("TMUX_PANE", "%5")
         mock_run.return_value = MagicMock(returncode=1, stdout="")
         assert self.fn() is None
 
-    @patch("agentwire.mcp_core.subprocess.run")
+    @patch("hermeswire.mcp_core.subprocess.run")
     def test_timeout_expired(self, mock_run, monkeypatch):
         monkeypatch.setenv("TMUX_PANE", "%5")
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="tmux", timeout=2)
@@ -449,11 +449,11 @@ class TestGetCallerSession:
 
 class TestPortalRequest:
     def setup_method(self):
-        from agentwire.mcp_desktop import _portal_request
+        from hermeswire.mcp_desktop import _portal_request
         self.fn = _portal_request
 
-    @patch("agentwire.security.get_local_portal_token", return_value="tok123")
-    @patch("agentwire.mcp_desktop.get_portal_url", return_value="https://localhost:8765")
+    @patch("hermeswire.security.get_local_portal_token", return_value="tok123")
+    @patch("hermeswire.mcp_desktop.get_portal_url", return_value="https://localhost:8765")
     @patch("requests.request")
     def test_get_request(self, mock_req, mock_url, mock_token):
         mock_resp = MagicMock()
@@ -472,7 +472,7 @@ class TestPortalRequest:
             timeout=10,
         )
 
-    @patch("agentwire.mcp_desktop.get_portal_url", return_value="https://localhost:8765")
+    @patch("hermeswire.mcp_desktop.get_portal_url", return_value="https://localhost:8765")
     @patch("requests.request")
     def test_post_request(self, mock_req, mock_url):
         mock_resp = MagicMock()
@@ -483,7 +483,7 @@ class TestPortalRequest:
         assert result["success"] is True
         mock_req.assert_called_once()
 
-    @patch("agentwire.mcp_desktop.get_portal_url", return_value="https://localhost:8765")
+    @patch("hermeswire.mcp_desktop.get_portal_url", return_value="https://localhost:8765")
     @patch("requests.request")
     def test_non_200_status(self, mock_req, mock_url):
         mock_resp = MagicMock()
@@ -493,7 +493,7 @@ class TestPortalRequest:
         assert result["success"] is False
         assert "500" in result["error"]
 
-    @patch("agentwire.mcp_desktop.get_portal_url", return_value="https://localhost:8765")
+    @patch("hermeswire.mcp_desktop.get_portal_url", return_value="https://localhost:8765")
     @patch("requests.request")
     def test_connection_error(self, mock_req, mock_url):
         import requests
@@ -502,7 +502,7 @@ class TestPortalRequest:
         assert result["success"] is False
         assert "not reachable" in result["error"]
 
-    @patch("agentwire.mcp_desktop.get_portal_url", return_value="https://localhost:8765")
+    @patch("hermeswire.mcp_desktop.get_portal_url", return_value="https://localhost:8765")
     @patch("requests.request")
     def test_generic_exception(self, mock_req, mock_url):
         mock_req.side_effect = Exception("timeout")
@@ -510,7 +510,7 @@ class TestPortalRequest:
         assert result["success"] is False
         assert "timeout" in result["error"]
 
-    @patch("agentwire.mcp_desktop.get_portal_url", return_value="https://localhost:8765")
+    @patch("hermeswire.mcp_desktop.get_portal_url", return_value="https://localhost:8765")
     @patch("requests.request")
     def test_post_default_empty_body(self, mock_req, mock_url):
         mock_resp = MagicMock()
@@ -524,30 +524,30 @@ class TestPortalRequest:
 
 class TestTtsToolPromptFetch:
     def test_default_tier_returns_empty(self, tmp_path, monkeypatch):
-        from agentwire import mcp_voice as mcp_server
-        from agentwire.config import load_config
+        from hermeswire import mcp_voice as mcp_server
+        from hermeswire.config import load_config
         cfg = load_config(tmp_path / "nonexistent.yaml")  # default tier
-        monkeypatch.setattr("agentwire.config.load_config", lambda *a, **k: cfg)
+        monkeypatch.setattr("hermeswire.config.load_config", lambda *a, **k: cfg)
         assert mcp_server._fetch_tts_tool_prompt() == ""
 
     def test_unreachable_shim_fails_soft(self, tmp_path, monkeypatch):
-        from agentwire import mcp_voice as mcp_server
-        from agentwire.config import load_config
+        from hermeswire import mcp_voice as mcp_server
+        from hermeswire.config import load_config
         cfg = load_config(tmp_path / "nonexistent.yaml")
         cfg.tts.backend = "custom"
         cfg.tts.url = "http://localhost:1"  # nothing listens here
-        monkeypatch.setattr("agentwire.config.load_config", lambda *a, **k: cfg)
+        monkeypatch.setattr("hermeswire.config.load_config", lambda *a, **k: cfg)
         assert mcp_server._fetch_tts_tool_prompt() == ""
 
     def test_custom_shim_prompt_returned(self, tmp_path, monkeypatch):
         import io
 
-        from agentwire import mcp_voice as mcp_server
-        from agentwire.config import load_config
+        from hermeswire import mcp_voice as mcp_server
+        from hermeswire.config import load_config
         cfg = load_config(tmp_path / "nonexistent.yaml")
         cfg.tts.backend = "custom"
         cfg.tts.url = "http://localhost:8100"
-        monkeypatch.setattr("agentwire.config.load_config", lambda *a, **k: cfg)
+        monkeypatch.setattr("hermeswire.config.load_config", lambda *a, **k: cfg)
 
         class FakeResp(io.BytesIO):
             def __enter__(self):
@@ -562,7 +562,7 @@ class TestTtsToolPromptFetch:
         assert mcp_server._fetch_tts_tool_prompt() == "Use [laugh] sparingly."
 
     def test_say_description_carries_core_text(self):
-        from agentwire import mcp_voice as mcp_server
+        from hermeswire import mcp_voice as mcp_server
         assert "Speak text via TTS" in mcp_server._SAY_DESCRIPTION
         # With no shim prompt at import time, no capabilities section
         if not mcp_server._TTS_TOOL_PROMPT:

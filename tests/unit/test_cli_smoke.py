@@ -1,4 +1,4 @@
-"""Smoke tests for the CLI SSOT layer (agentwire/__main__.py).
+"""Smoke tests for the CLI SSOT layer (hermeswire/__main__.py).
 
 These guard the NameError/typo/bad-help-string bug class that crashes commands
 without any handler ever running — e.g. the bare ``%`` in an argparse help
@@ -28,7 +28,7 @@ def _iter_subcommand_paths(parser, prefix=()):
 
 def test_build_parser_constructs():
     """The top-level parser builds without raising (catches bad help strings)."""
-    from agentwire.__main__ import build_parser
+    from hermeswire.__main__ import build_parser
 
     parser = build_parser()
     assert isinstance(parser, argparse.ArgumentParser)
@@ -38,7 +38,7 @@ def test_build_parser_constructs():
 
 
 def _all_paths():
-    from agentwire.__main__ import build_parser
+    from hermeswire.__main__ import build_parser
 
     return list(_iter_subcommand_paths(build_parser()))
 
@@ -53,12 +53,12 @@ def test_at_least_one_subcommand_discovered():
     ids=lambda p: " ".join(p),
 )
 def test_subcommand_help_renders(path, capsys):
-    """`agentwire <subcmd...> --help` renders cleanly and exits 0.
+    """`hermeswire <subcmd...> --help` renders cleanly and exits 0.
 
     Help-string formatting (e.g. a stray ``%`` that argparse treats as a
     printf token) raises here at the parser layer, before any handler runs.
     """
-    from agentwire.__main__ import build_parser
+    from hermeswire.__main__ import build_parser
 
     parser = build_parser()
     with pytest.raises(SystemExit) as exc_info:
@@ -78,7 +78,7 @@ def test_subcommand_help_renders(path, capsys):
     ["session-defaults", "--kind", "reviewer"],
 ])
 def test_kind_reviewer_is_accepted(argv):
-    from agentwire.__main__ import build_parser
+    from hermeswire.__main__ import build_parser
 
     parser = build_parser()
     args = parser.parse_args(argv)

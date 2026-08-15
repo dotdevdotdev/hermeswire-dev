@@ -1,4 +1,4 @@
-"""Tests for ``agentwire restart`` — relaunch in place, same conversation (#871).
+"""Tests for ``hermeswire restart`` — relaunch in place, same conversation (#871).
 
 The behaviours worth pinning down are the ones a plausible implementation gets
 wrong: re-evaluating the stored launch line, assuming a recorded id is
@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from agentwire import restart_cli
+from hermeswire import restart_cli
 
 #: The minimum that makes a transcript a CONVERSATION rather than a metadata
 #: stub. A stub is a DEAD id — measured: `claude --resume` answers "No
@@ -35,14 +35,14 @@ def hermes_db(monkeypatch):
         def get_session(sid):
             return {"id": sid} if sid in present else None
 
-    monkeypatch.setattr("agentwire.history._db", lambda: FakeDB())
+    monkeypatch.setattr("hermeswire.history._db", lambda: FakeDB())
     return present
 
 
 @pytest.fixture
 def store(tmp_path, monkeypatch, hermes_db):
-    """Isolated ~/.agentwire + a launch cwd + the fake Hermes session store."""
-    monkeypatch.setattr("agentwire.core.CONFIG_DIR", tmp_path / "agentwire")
+    """Isolated ~/.hermeswire + a launch cwd + the fake Hermes session store."""
+    monkeypatch.setattr("hermeswire.core.CONFIG_DIR", tmp_path / "hermeswire")
     cwd = tmp_path / "worktree"
     cwd.mkdir()
     return types.SimpleNamespace(root=tmp_path, cwd=cwd, db=hermes_db)
@@ -54,7 +54,7 @@ def write_history(store, cwd, conversation_id):
 
 
 def record(session="sess", *, cwd, ids=(), posture="bypass", roles=(), **extra):
-    from agentwire.core import store_session_metadata
+    from hermeswire.core import store_session_metadata
 
     metadata = {
         "cwd_at_launch": str(cwd),
@@ -81,7 +81,7 @@ def launched(monkeypatch):
     monkeypatch.setattr(restart_cli, "_notify_portal_sessions_changed", lambda: None)
     monkeypatch.setattr(restart_cli.pane_manager, "get_current_session", lambda: None)
     monkeypatch.setattr(
-        "agentwire.session_ready.wait_for_session_ready",
+        "hermeswire.session_ready.wait_for_session_ready",
         lambda name, timeout=0: calls.ready,
     )
     return calls
@@ -137,7 +137,7 @@ class TestRestartLaunch:
         assert launched.killed == ["sess"]
 
     def test_no_session_id_flag_is_minted(self, store, launched):
-        """Hermes mints its own session id; agentwire no longer passes one.
+        """Hermes mints its own session id; hermeswire no longer passes one.
 
         The recorded id rides ``--resume`` only (issue #4 makes it a Hermes id).
         """
@@ -170,7 +170,7 @@ class TestRestartLaunch:
         assert "-m haiku" in launched.launch[0][3]
 
     def test_appends_the_new_conversation_to_the_chain(self, store, launched):
-        from agentwire.core import load_session_metadata
+        from hermeswire.core import load_session_metadata
 
         write_history(store, store.cwd, "cid-1")
         record(cwd=store.cwd, ids=["cid-1"], created_by="orch", role="worker")
@@ -202,12 +202,12 @@ class TestRestartLaunch:
 
         run()
         env = launched.launch[0][2]
-        assert env["AGENTWIRE_SESSION_NAME"] == "sess"
-        assert env["AGENTWIRE_CREATED_BY"] == "orch"
+        assert env["HERMESWIRE_SESSION_NAME"] == "sess"
+        assert env["HERMESWIRE_CREATED_BY"] == "orch"
 
     def test_bare_posture_launches_no_agent_and_skips_the_wait(self, store, launched, monkeypatch, capsys):
         monkeypatch.setattr(
-            "agentwire.session_ready.wait_for_session_ready",
+            "hermeswire.session_ready.wait_for_session_ready",
             lambda *a, **k: pytest.fail("bare has no agent to wait for"),
         )
         record(cwd=store.cwd, posture="bare")
@@ -261,7 +261,7 @@ class TestDegradedRestart:
 
     def test_no_wait_skips_verification(self, store, launched, monkeypatch):
         monkeypatch.setattr(
-            "agentwire.session_ready.wait_for_session_ready",
+            "hermeswire.session_ready.wait_for_session_ready",
             lambda *a, **k: pytest.fail("--no-wait must not poll"),
         )
         write_history(store, store.cwd, "cid-1")
@@ -278,19 +278,19 @@ class TestRestartRefusals:
         assert not launched.launch
 
     def test_record_without_a_cwd_is_not_restartable(self, store, launched, capsys):
-        from agentwire.core import store_session_metadata
+        from hermeswire.core import store_session_metadata
 
         store_session_metadata("sess", {"created_by": "orch"})  # pre-#871 shape
         assert run() == 1
         assert not launched.launch
 
     def test_killed_session_is_finished(self, store, launched, capsys):
-        """`agentwire kill` unlinks the record on purpose (stale-parent reuse),
+        """`hermeswire kill` unlinks the record on purpose (stale-parent reuse),
         so a killed session has nothing to regenerate from — say that, rather
         than only blaming a pre-#871 launch."""
         write_history(store, store.cwd, "cid-1")
         record(cwd=store.cwd, ids=["cid-1"])
-        (store.root / "agentwire" / "sessions" / "sess" / "metadata.json").unlink()
+        (store.root / "hermeswire" / "sessions" / "sess" / "metadata.json").unlink()
 
         assert run() == 1
         assert "already killed" in capsys.readouterr().err
@@ -332,7 +332,7 @@ class TestRestartRefusals:
 
 class TestParser:
     def test_registered(self):
-        from agentwire.__main__ import build_parser
+        from hermeswire.__main__ import build_parser
 
         args = build_parser().parse_args(["restart", "-s", "x", "--json"])
         assert args.func is restart_cli.cmd_restart

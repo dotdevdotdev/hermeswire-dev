@@ -1,0 +1,838 @@
+"""Agent readiness detection and verified message delivery.
+
+Consolidates the readiness/verification primitives that grew up separately
+in worktree dispatch (wait_for_session_ready) and council (send_verified): a
+freshly-booted Hermes REPL renders its prompt before its input handler is
+wired, so a paste in that window vanishes silently. Every subsystem that
+injects a first prompt into a new session — council, `hermeswire send
+--wait-ready`, `hermeswire new --first-message` — routes through here.
+
+Hermes readiness differs from Claude Code's in one load-bearing way: its
+prompt_toolkit REPL draws the ``❯`` prompt as part of its readline loop, so
+once the prompt glyph is on screen the input handler IS wired. No keystroke
+probe is needed (that was Claude's fix for its banner-render race), and there
+is no trust-this-folder prompt or ``[Pasted text]`` chip. The verified paste
+keys on the prompt line instead of Claude's horizontal-rule box.
+"""
+
+import time
+import uuid
+
+# How far back into scrollback to look when verifying delivery. A fast agent
+# consumes the paste, submits it, and emits output within the settle window,
+# scrolling the submitted prompt past the visible tail. Verification reads
+# scrollback (not just the visible 60 lines) so a submitted prompt that
+# scrolled up is still found.
+VERIFY_SCROLLBACK_LINES = 200
+
+# Adaptive submit tuning (replaces the old fixed pre-Enter sleep). Delivery is a
+# two-phase poll: wait for the paste to land in the prompt line, then press
+# Enter and wait for the line to clear — re-pressing Enter a bounded number of
+# times if the first keystroke is swallowed under load.
+POLL_INTERVAL = 0.15
+# Max wait for a paste to appear in the prompt line before giving up on this
+# try. Generous because under host load tmux ``capture-pane`` itself lags and a
+# large paste renders slowly — a tight budget here is the #1 cause of "the text
+# landed but delivery reported failure" on a bogged-down machine.
+LAND_TIMEOUT = 8.0
+# Max wait, after a single Enter, for the line to clear (the keystroke to
+# register). Per-press, not the whole submit phase — see SUBMIT_BUDGET.
+SUBMIT_TIMEOUT = 4.0
+# Wall-clock ceiling on the whole press-Enter-and-confirm phase. Re-pressing is
+# driven by this deadline rather than a fixed count so a laggy line is waited
+# out (each idle Enter on an already-submitted/empty prompt is a harmless no-op),
+# but a genuinely wedged session still fails in bounded time instead of hanging.
+SUBMIT_BUDGET = 20.0
+# Floor on re-presses regardless of how fast the budget burns (slow snapshots
+# can eat the wall-clock before we've pressed Enter enough times).
+MIN_ENTER_ATTEMPTS = 4
+
+# Readiness: require the Hermes prompt glyph on screen AND READY_STABLE_SNAPSHOTS
+# consecutive identical 500ms frames. prompt_toolkit redraws aggressively while
+# the model/spinner initializes, so stability signals the REPL has settled —
+# but the prompt glyph rendering is NOT proof the readline loop consumes stdin
+# yet (#695): prompt_toolkit draws the prompt before its input handler wires,
+# so a paste in that window fragments. The keystroke probe below is the
+# positive proof.
+READY_STABLE_SNAPSHOTS = 3  # consecutive identical frames (~1s of stability)
+PROBE_CHAR = "."             # a keystroke whose render proves the handler wired
+PROBE_APPEAR_TIMEOUT = 3.0   # per-send budget for the probe char to appear
+PROBE_ERASE_TIMEOUT = 3.0    # budget to confirm the probe char is erased
+
+# Seed-failure recovery: bounded attempts at clearing a partial paste out of
+# the prompt line (C-u kills the line in prompt_toolkit's emacs bindings), and
+# the per-attempt confirm budget.
+CLEAR_BOX_ATTEMPTS = 3
+CLEAR_BOX_TIMEOUT = 3.0
+# C-u is inert on a draft taller than one wrapped line, so clearing escalates
+# to erasing the draft a character at a time. Backspaces are sent in chunks (one
+# ``send-keys`` call each) and the line is re-checked between chunks, so a short
+# draft costs one round and a tall one is bounded at CHUNK * ROUNDS characters.
+ERASE_CHUNK = 200
+ERASE_ROUNDS = 12
+
+# Minimum prompt-line content length that may be accepted as a *window* of a
+# longer message (#851). A prompt longer than the pane width wraps, and only the
+# first physical line (up to the glyph) is parseable, so full-message identity
+# can never hold for it; the fragment test fills that gap. The floor keeps the
+# false-positive direction closed: a short foreign draft that happens to be a
+# substring of our message ("ok", "yes") must never read as our paste landing.
+MIN_BOX_FRAGMENT = 80
+
+# Substrings that mean "Hermes is actively working" — the agent-running prompt
+# state icon, the status-bar elapsed timer, and the command spinner frames.
+ACTIVITY_MARKERS = (
+    "⚕",  # agent-running prompt state / status-bar model icon
+    "⏱",  # status-bar elapsed timer
+    "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏",  # command spinner frames
+)
+
+
+def paste_no_enter(session: str, message: str, pane_index: int = 0) -> None:
+    """Paste a message into a session's pane WITHOUT pressing Enter.
+
+    Decoupling the paste from the Enter is the whole point of the adaptive
+    submit: it lets us poll the input box and confirm the text actually landed
+    before we commit it. Pressing Enter in the same breath (the old behavior)
+    fires the keystroke on a fixed delay that, under load, lands before the
+    paste does — Enter is swallowed and the message sits unsent.
+    """
+    from hermeswire import pane_manager
+
+    pane_manager.send_to_target(f"{session}.{pane_index}", message, enter=False)
+
+
+def press_enter(session: str, pane_index: int = 0) -> None:
+    """Send a single Enter keystroke to a session's pane."""
+    from hermeswire import pane_manager
+
+    pane_manager.run_command(
+        ["tmux", "send-keys", "-t", f"{session}.{pane_index}", "Enter"], timeout=5
+    )
+
+
+def capture_session(session: str, lines: int = 60, pane_index: int = 0) -> str:
+    from hermeswire import pane_manager
+
+    return pane_manager.capture_pane(session, pane_index, lines=lines)
+
+
+def pane_shows_activity(capture: str) -> bool:
+    """Does the pane show Claude actively working (spinner / tokens / output)?"""
+    lowered = capture.lower()
+    return any(marker.lower() in lowered for marker in ACTIVITY_MARKERS)
+
+
+def input_box(capture: str) -> "str | None":
+    """The input-box content for *capture*, or None if it can't be parsed.
+
+    Thin pass-through to :func:`prompt_router.input_box_content` so the verified
+    submit can reason about exactly one thing: is our pasted text still sitting
+    unsent in the box, or has it cleared?
+    """
+    from hermeswire import prompt_router
+
+    return prompt_router.input_box_content(capture)
+
+
+def text_landed(capture: str, message: str) -> bool:
+    """Has *message* landed in the input box, ready to submit?
+
+    True iff the box is parseable and holds the message — whole, as Claude's
+    ``[Pasted text …]`` placeholder, or as the rendered window of a draft too
+    tall to display at once (see :func:`box_shows_message`).
+    """
+    box = input_box(capture)
+    if box is None:
+        return False
+    return box_shows_message(box, message)
+
+
+def submit_confirmed(capture: str, message: str) -> bool:
+    """Phase-2 confirm: did the (already-landed) paste actually *submit*? (#621)
+
+    By Phase 2 the text has been proven to land in the input box, so the
+    submission signal is: **a parseable box no longer holds our text** — not
+    even as the rendered window of a too-tall draft (#851), or a message
+    bigger than the box would read as submitted the instant it landed. An
+    empty box, or a box now showing a different/next prompt, both count —
+    including the submitted-while-generating case, where the text queues
+    invisibly and never echoes until the turn ends. While a multi-line paste's
+    ``[Pasted text …]`` placeholder (or the expanded text) still occupies the
+    box, it reads as not-yet-submitted, so the caller keeps pressing Enter
+    (dismiss-then-submit).
+
+    An UNPARSEABLE box (mid-redraw frame, tool output / dialog covering it) is
+    never confirmed (#698). The old fallback accepted activity glyphs, a
+    caller marker, or the message visible in the raw capture — all of which a
+    stuck paste satisfies, because activity glyphs sit in every agent pane's
+    scrollback, the marker is part of the pasted text, and the raw capture
+    *includes* the very box we failed to parse. One garbled snapshot during
+    the confirm poll was enough to log ``delivered`` for a message still
+    sitting unsent (the 2026-07-04 12:40 loss, #698). Proving the text is
+    *outside* the box requires the same box parse that just failed, so nothing
+    can be proven: not confirmed. The caller keeps pressing Enter (a no-op on
+    an already-submitted box) until a parseable frame decides, and a genuinely
+    landed-but-scrolled message is consumed by the next drain tick's box-aware
+    dedup instead — a duplicate press is recoverable, a false ``delivered``
+    deletes the message.
+    """
+    box = input_box(capture)
+    if box is None:
+        return False
+    return not box_shows_message(box, message)
+
+
+def _poll(predicate, timeout: float) -> bool:
+    """Poll *predicate* until it returns truthy or *timeout* elapses."""
+    deadline = time.time() + timeout
+    while True:
+        try:
+            if predicate():
+                return True
+        except Exception:
+            pass
+        if time.time() >= deadline:
+            return False
+        time.sleep(POLL_INTERVAL)
+
+
+def _box_is_probe(box: "str | None") -> bool:
+    """Is the input box showing nothing but our probe char(s)?
+
+    Swallowed-then-buffered keystrokes can pile up, so any run of probe chars
+    counts. Ghost/placeholder hint text (a sentence) never matches, and a
+    leftover draft never matches — both correctly read as "probe not proven".
+    """
+    if not box:
+        return False
+    s = "".join(box.split())
+    return bool(s) and set(s) == {PROBE_CHAR}
+
+
+def _probe_input_handler(session: str, pane_index: int, deadline: float) -> bool:
+    """Positive proof the input handler consumes keystrokes (#695).
+
+    Types PROBE_CHAR, polls the input box until the char actually renders,
+    then erases it and confirms the box moved on. A prompt-up-but-unwired
+    session swallows (or buffers) the keystroke, so the probe never confirms
+    and we re-send until *deadline* — failing safe instead of pasting into a
+    session that would fragment the paste and swallow its Enters.
+    """
+    from hermeswire import pane_manager
+
+    target = f"{session}.{pane_index}"
+
+    def box() -> "str | None":
+        return input_box(capture_session(session, pane_index=pane_index))
+
+    while time.time() < deadline:
+        pane_manager.run_command(
+            ["tmux", "send-keys", "-t", target, "-l", PROBE_CHAR], timeout=5
+        )
+        appear_budget = min(
+            PROBE_APPEAR_TIMEOUT, max(deadline - time.time(), POLL_INTERVAL)
+        )
+        if not _poll(lambda: _box_is_probe(box()), appear_budget):
+            continue  # swallowed — handler not wired yet; re-send and re-check
+        # Erase: buffered keystrokes may have piled up ("..."), so backspace
+        # what's visible and confirm the box no longer shows probe chars.
+        while time.time() < deadline:
+            try:
+                visible = box() or ""
+            except Exception:
+                visible = ""
+            for _ in range(len("".join(visible.split())) or 1):
+                pane_manager.run_command(
+                    ["tmux", "send-keys", "-t", target, "BSpace"], timeout=5
+                )
+            if _poll(lambda: not _box_is_probe(box()), PROBE_ERASE_TIMEOUT):
+                return True
+        return False
+    return False
+
+
+def wait_for_session_ready(
+    session_full_name: str, timeout: float = 30.0, pane_index: int = 0
+) -> bool:
+    """Poll a session's pane until a Hermes REPL is ready to accept input.
+
+    Two-phase wait:
+
+    1. Wait for the Hermes prompt glyph (``❯``) to appear. Once it is on
+       screen the prompt_toolkit readline loop is running, so the input handler
+       is wired — no keystroke probe (that was Claude's banner-render fix).
+    2. Wait until the screen is *stable*: READY_STABLE_SNAPSHOTS consecutive
+       500ms snapshots are identical. prompt_toolkit redraws aggressively while
+       the model/spinner initializes, so stability is the signal the REPL has
+       settled. The status bar can be toggled off (/statusbar), so readiness
+       keys on the prompt glyph, never the bar.
+
+    Returns True once the prompt glyph is up and the screen stabilizes. False
+    on timeout.
+    """
+    from hermeswire import pane_manager
+
+    deadline = time.time() + timeout
+    prompt_seen = False
+    last_snapshot: str | None = None
+    stable_count = 0
+
+    while time.time() < deadline:
+        try:
+            out = pane_manager.capture_pane(session_full_name, pane_index, lines=20)
+        except Exception:
+            time.sleep(0.5)
+            last_snapshot = None
+            stable_count = 0
+            continue
+
+        if not prompt_seen:
+            if "❯" in out:
+                prompt_seen = True
+                last_snapshot = out
+                stable_count = 0
+            time.sleep(0.5)
+            continue
+
+        # Prompt is up; require READY_STABLE_SNAPSHOTS identical snapshots.
+        if last_snapshot is not None and out == last_snapshot:
+            stable_count += 1
+        else:
+            stable_count = 0
+        last_snapshot = out
+        if stable_count >= READY_STABLE_SNAPSHOTS - 1:
+            return _probe_input_handler(session_full_name, pane_index, deadline)
+        time.sleep(0.5)
+
+    return False
+
+
+def box_shows_message(box: str, message: str, allow_chip: bool = True) -> bool:
+    """Does the input-box content *box* hold *message*?
+
+    Three ways it can, in descending strength:
+
+    1. **Whole-message identity** — the full whitespace-normalized message is
+       visible in the box. Keyed on the FULL message, never a fixed-length
+       prefix (#667): all worktree idle notifications share a long
+       ``[NOTIFY from hermeswire-dev-issue-…`` prefix, so a 32-char fragment
+       false-matched a *pile* of other sessions' notifications sitting in the
+       box — Phase 1 passed against text that wasn't ours, and Phase 2's
+       "box no longer shows our text" could never come true. tmux
+       ``capture-pane`` wraps long lines at pane width mid-word, so both sides
+       are compared with all whitespace stripped.
+    (Hermes's prompt_toolkit has no ``[Pasted text …]`` placeholder, so the old
+    chip branch and its ``allow_chip`` guard are gone — ``allow_chip`` is kept
+    only for signature stability.)
+    3. **A rendered window of the message** (#851). The input box has a bounded
+       visible height and scrolls: a draft taller than that height renders only
+       part of itself, so (1) is *impossible* for it and a long single-line
+       message — exactly what programmatic ``--first-message`` callers produce
+       — could never pass the landing gate, so Enter was never pressed and the
+       prompt sat unsent. Accepted when the box content is a contiguous
+       fragment of the message (in practice its tail: the cursor sits at the
+       end), is at least ``MIN_BOX_FRAGMENT`` long, and is shorter than the
+       message itself — a box holding MORE than we sent is somebody else's
+       draft, not our window (that is what keeps the #667 pile out).
+    """
+    nb = "".join(box.split())
+    nm = "".join(message.split())
+    if not nm:
+        return False
+    if nb and nm in nb:
+        return True
+    if len(nb) < MIN_BOX_FRAGMENT or len(nb) >= len(nm):
+        return False
+    return nb in nm
+
+
+def strip_input_box(capture: str) -> "str | None":
+    """*capture* with the Hermes prompt line removed, or None if no prompt.
+
+    "On scrollback" must mean *outside the prompt line*: a pasted-but-unsubmitted
+    message renders inside the prompt line, which is part of every pane capture —
+    matching against the raw capture reads a swallowed Enter as a delivered
+    message. Mirrors ``prompt_router.input_box_content``'s parse (the last line
+    containing the ``❯`` glyph); when no prompt line renders we return None so
+    callers stay conservative (can't prove the text is outside it).
+    """
+    from hermeswire import prompt_router
+
+    clean = prompt_router.ANSI_PATTERN.sub("", capture)
+    lines = clean.split("\n")
+    for i in range(len(lines) - 1, -1, -1):
+        if prompt_router.PROMPT_GLYPH in lines[i].strip():
+            return "\n".join(lines[:i])
+    return None
+
+
+def message_on_scrollback(capture: str, rendered: str) -> bool:
+    """Strict per-message scrollback check for idempotent redelivery (#621).
+
+    Matches the message's **full** whitespace-normalized rendered line against
+    the pane scrollback — NOT a fixed-length prefix. A short prefix collides on
+    the shared ``[MSG from <sender> · <kind>] `` header (a worktree sender name
+    alone can fill 32 chars), which would consume a *different* same-sender
+    message that never actually delivered — silent loss of exactly the
+    report-backs #621 protects. The full rendered line is distinct per distinct
+    message. tmux wraps long lines at pane width, so both sides are
+    whitespace-stripped before the substring test.
+
+    The input-box region is EXCLUDED from the match (#689): a message pasted
+    into the box whose Enter was swallowed is landed-but-unsubmitted, and
+    counting it as "on scrollback" is exactly how the drain unlinked messages
+    the recipient never received. When the box can't be parsed at all we return
+    False — can't prove the text is outside it.
+
+    Deliberately does NOT fall back to the generic ``"[Pasted text"`` placeholder
+    (which would mark EVERY queued message visible). A message that scrolled past
+    the window returns False — the safe direction: keep it pending and retry
+    rather than silently drop it.
+    """
+    needle = "".join(rendered.split())
+    if not needle:
+        return False
+    outside = strip_input_box(capture)
+    if outside is None:
+        return False
+    return needle in "".join(outside.split())
+
+
+def new_delivery_marker() -> str:
+    """A ``⟨#send-xxxxxx⟩`` token unique to ONE delivery attempt (#839).
+
+    ``send_verified``'s ``marker`` parameter answers "did this attempt reach
+    the recipient's scrollback?" — but only as precisely as the marker is
+    unique, and until now nothing minted a unique one. Council passes a
+    CONSTANT marker (``[COUNCIL PROMPT #1]``), so a hit may be the previous
+    message; a caller passing no marker falls back to matching the bare
+    message text, which for a short or generic prompt ("yes", "continue",
+    "approved") collides with any coincidental earlier occurrence inside the
+    same ``VERIFY_SCROLLBACK_LINES`` window. Both make "already delivered" an
+    inference. A token minted per attempt and APPENDED to the pasted text
+    (:func:`tag_message`) makes it a fact: the token is on scrollback iff
+    *this* attempt's paste submitted.
+
+    Deliberately mirrors ``inbox.Message.render``'s trailing ``⟨#id⟩``, which
+    exists for exactly this reason (#621) and is already familiar on screen —
+    the recipient sees one short tag, the same shape msg deliveries carry.
+    """
+    return f"⟨#send-{uuid.uuid4().hex[:6]}⟩"
+
+
+def tag_message(message: str, marker: str) -> str:
+    """*message* with *marker* appended, ready to paste (#839).
+
+    Pass the same *marker* as :func:`send_verified`'s ``marker`` argument and
+    to :func:`message_on_scrollback` afterwards. Because the token rides
+    INSIDE the pasted text, every downstream check keys on it for free: the
+    landing gate, the pre-paste identity guard, and the caller's
+    already-delivered fallback all become per-attempt precise rather than
+    text-similarity guesses. Two spaces before the token mirror
+    ``inbox.Message.render`` so the rendered line reads the same way.
+    """
+    return f"{message}  {marker}"
+
+
+def box_holds_foreign_draft(
+    session: str,
+    message: str,
+    pane_index: int = 0,
+    capture: "str | None" = None,
+) -> bool:
+    """Is the input box occupied by unsent content that is NOT *message*? (#845)
+
+    The state the idempotent-paste guard had no name for: a stale draft — a
+    previous sender's message whose Enter was swallowed, a human mid-typing, a
+    half-composed large paste — sitting unsubmitted in the box. Pasting on top
+    of it concatenates the two into one garbled string that the next Enter
+    submits as a single turn, a broader corruption than the "a later bare
+    Enter submits the old draft alone" hole #843/#844 addressed.
+
+    Two-stage on purpose, cheapest and most conservative first:
+
+    1. The plain box parse must show non-empty content that fails
+       :func:`box_shows_message` — including its #851 window test, so a draft
+       too tall to render whole still reads as OURS, not foreign. Chips are
+       excluded (``allow_chip=False``): pre-paste a ``[Pasted text …]``
+       placeholder is either somebody else's draft or an earlier attempt's,
+       and both want the same answer (don't paste on top of it).
+    2. Only then, the SGR-aware gate ``prompt_router.prompt_is_empty`` gets a
+       veto. Claude Code renders ghost/autosuggest text inside the box DIM
+       (#669), and the plain parse can't tell it from a draft — without this
+       second opinion an idle session showing an autosuggestion would refuse
+       every send. It is the same gate the msg drain delivers behind, so
+       "foreign draft" here means exactly "the drain would defer".
+
+    Every ambiguity resolves to False (an unparseable box, a capture that
+    raised): refusing to deliver is not free, so it must be positively
+    justified.
+    """
+    from hermeswire import prompt_router
+
+    try:
+        cap = _snapshot(session, pane_index) if capture is None else capture
+        box = input_box(cap)
+        if box is None or not box.strip():
+            return False
+        if box_shows_message(box, message, allow_chip=False):
+            return False
+        return not prompt_router.prompt_is_empty(session, pane_index)
+    except Exception:
+        return False
+
+
+def scrollback(session: str, pane_index: int = 0) -> str:
+    """Public capture of a pane's verify-window scrollback (#621 dedup)."""
+    return _snapshot(session, pane_index)
+
+
+def _snapshot(session: str, pane_index: int) -> str:
+    return capture_session(
+        session, lines=VERIFY_SCROLLBACK_LINES, pane_index=pane_index
+    )
+
+
+def _deliver_once(
+    session: str, message: str, marker: str | None, pane_index: int
+) -> bool:
+    """One adaptive paste→land→submit attempt. True iff the message submitted."""
+    # Idempotent paste guard (#667): a previous attempt (an earlier whole-send
+    # retry, or a prior tick) may have left this exact message sitting in the
+    # box — landed but unsubmitted. Blindly pasting again doubles the draft
+    # (the observed "issue-659 twice" pile).
+    #
+    # The short-circuit demands POSITIVE identity — our message in the box
+    # (→ landed: skip the paste, retry only the submit) or on scrollback
+    # outside the box (→ already submitted). "In the box" is window-aware
+    # (#851): a draft taller than the box's visible region renders only part of
+    # itself, so a full-message test can't recognize our OWN previous paste
+    # either — which is how the whole-send retry re-pasted and left the child a
+    # 1034-char box holding the 517-char instruction twice. Nothing weaker
+    # counts before we have pasted:
+    # NOT empty-box+activity (real agent panes show ⏺/⎿/spinner glyphs in
+    # scrollback almost always — accepting that as "delivered" makes the msg
+    # drain unlink queued messages that were never sent: silent deletion),
+    # NOT the ``[Pasted text]`` placeholder (pre-paste it can only be someone
+    # ELSE's draft — skipping our paste and pressing Enter would force-submit
+    # a foreign draft; hence ``allow_chip=False``), and NOT the caller marker
+    # (markers like council's are constant across messages, so a hit may be
+    # the PREVIOUS message). When identity is not provable, paste again — the
+    # existing full-line dedup makes duplicates recoverable; deletions aren't.
+    already_landed = False
+    try:
+        cap = _snapshot(session, pane_index)
+        box = input_box(cap)
+        if box is not None:
+            if box_shows_message(box, message, allow_chip=False):
+                already_landed = True
+            elif message_on_scrollback(cap, message):
+                return True
+        if not already_landed:
+            # A live select-menu owns the pane's keystrokes: pasted text (or
+            # the digits in it) could SELECT an option. safe_deliver gates the
+            # first attempt, but the whole-send retry re-enters here after the
+            # target's state may have changed (#698) — refuse, defer to the
+            # next tick.
+            from hermeswire import prompt_router
+
+            if prompt_router.screen_shows_live_menu(cap):
+                return False
+            # A stale, DIFFERENT draft owns the box (#845). The guard above
+            # proves only that the box does not hold OUR message; it said
+            # nothing about what it does hold, so the fall-through pasted on
+            # top of foreign content and let one Enter submit the concatenation
+            # as a single garbled turn. Refuse instead of pasting, and refuse
+            # instead of clearing: this is the delivery primitive, and it
+            # cannot tell a human's half-typed sentence from a wedged paste.
+            # Box surgery belongs to the recovery layer, which knows whether
+            # the draft predates our attempt (see ``send_cli``'s pre-flight
+            # and :func:`recover_failed_seed`). Every caller already handles
+            # False — the msg drain retries next tick behind safe_deliver's
+            # own empty-box gate, `send --verify` falls back to the durable
+            # inbox — so refusing defers delivery without dropping it.
+            if box_holds_foreign_draft(session, message, pane_index, capture=cap):
+                return False
+    except Exception:
+        pass
+
+    if not already_landed:
+        paste_no_enter(session, message, pane_index=pane_index)
+
+    # Phase 1 — wait for the paste to actually land in the input box, or for
+    # positive proof it already submitted: the message (or the caller's
+    # marker) echoed on scrollback OUTSIDE the box. Ambient evidence must
+    # never end this wait (#698): the old check accepted "empty box +
+    # activity glyphs" as already-submitted, which is what every agent pane
+    # looks like in the instants BEFORE a paste renders — Phase 2 then
+    # confirmed against the same still-empty box and reported ``delivered``
+    # with zero Enter presses, seconds before the paste appeared and stuck
+    # (the 2026-07-04 12:40 loss). If the paste never renders, it vanished —
+    # let the caller retry the whole send.
+    def landed_or_done() -> bool:
+        cap = _snapshot(session, pane_index)
+        if text_landed(cap, message):
+            return True
+        if message_on_scrollback(cap, message):
+            return True
+        return marker is not None and message_on_scrollback(cap, marker)
+
+    if not _poll(landed_or_done, LAND_TIMEOUT):
+        return False
+
+    return _submit_phase(session, message, pane_index)
+
+
+def _submit_phase(session: str, message: str, pane_index: int) -> bool:
+    """Phase 2 — press Enter and confirm the box cleared. Enter-only, no paste.
+
+    Re-press is driven by a wall-clock budget, not a fixed count: a single Enter
+    can be swallowed under load, a large paste needs a second Enter (dismiss the
+    ``[Pasted text]`` banner, then submit), and on a bogged-down host the box
+    renders slowly. We keep pressing until the box clears or SUBMIT_BUDGET
+    elapses — an idle Enter on an already-submitted/empty box is a harmless
+    no-op, so over-pressing is safe, while a tight count would give up before a
+    laggy box ever caught up.
+
+    ``submit_confirmed`` only ever trusts a parseable box (#698), so every
+    exit path — including the pre-press short-circuit — has positively seen a
+    box that no longer holds our text. A live select-menu appearing on the
+    target (a permission dialog the recipient's own work raised) aborts the
+    loop instead of pressing Enter into it, which would CONFIRM the
+    highlighted option; the delivery reports unverified and the next tick's
+    ``safe_deliver`` dialog guard + box-aware dedup take it from there.
+    """
+    cap = _snapshot(session, pane_index)
+    if submit_confirmed(cap, message):
+        return True
+    from hermeswire import prompt_router
+
+    deadline = time.time() + SUBMIT_BUDGET
+    attempts = 0
+    while True:
+        if prompt_router.screen_shows_live_menu(cap):
+            return False
+        press_enter(session, pane_index=pane_index)
+        attempts += 1
+        if _poll(
+            lambda: submit_confirmed(_snapshot(session, pane_index), message),
+            SUBMIT_TIMEOUT,
+        ):
+            return True
+        if attempts >= MIN_ENTER_ATTEMPTS and time.time() >= deadline:
+            return False
+        cap = _snapshot(session, pane_index)
+
+
+def finish_submit(session: str, message: str, pane_index: int = 0) -> bool:
+    """Enter-only submit retry for a message already sitting in the input box.
+
+    The #689 healing primitive: when a prior delivery pasted the text but its
+    Enter was swallowed, the fix is to press Enter again — NEVER to re-paste
+    (the #621 idempotency dedup must keep holding; a second paste doubles the
+    draft). Runs the same strict-then-press phase-2 loop as a fresh delivery.
+    Returns True only once submission is confirmed; never raises.
+    """
+    try:
+        return _submit_phase(session, message, pane_index)
+    except Exception:
+        return False
+
+
+def send_verified(
+    session: str,
+    message: str,
+    marker: str | None = None,
+    retries: int = 1,
+    settle: float = 2.0,
+    pane_index: int = 0,
+) -> bool:
+    """Paste a message and verify it was actually *submitted* — adaptively.
+
+    Replaces the old blind fixed-delay-then-Enter with a verified, two-phase
+    submit (the same compare-and-send rigor ``hermeswire prompts answer`` uses):
+
+    1. Paste WITHOUT Enter, then poll the input box (bounded, ``LAND_TIMEOUT``)
+       until the pasted text is actually visible there — never press Enter on a
+       box that hasn't received the paste yet.
+    2. Press Enter and poll (bounded, ``SUBMIT_TIMEOUT`` per press) until the
+       box clears. If a keystroke is swallowed, re-press until ``SUBMIT_BUDGET``
+       elapses (at least ``MIN_ENTER_ATTEMPTS`` presses).
+
+    Returns True once submission is confirmed. Returns False — a hard, surfaced
+    failure the caller must handle — only after exhausting *retries* whole-send
+    attempts; it NEVER silently leaves text sitting unsent.
+
+    *marker* uses council's explicit-marker scrollback check; otherwise the
+    message's own fragment is used. *settle* is retained for signature
+    stability — the adaptive poll supersedes the old fixed pre-Enter sleep.
+    *pane_index* targets a worker pane (1+) instead of the session's pane 0.
+    """
+    del settle  # superseded by adaptive polling; kept for signature stability
+    for _ in range(retries + 1):
+        try:
+            if _deliver_once(session, message, marker, pane_index):
+                return True
+        except Exception:
+            pass
+    return False
+
+
+def _erase_box_draft(session: str, pane_index: int = 0) -> bool:
+    """Backspace an unsubmitted draft out of the input box (#851).
+
+    The escalation behind :func:`clear_input_box` when Escape doesn't take.
+    Backspace is the one key that acts on the draft regardless of how it
+    renders — it deletes a large paste's ``[Pasted text]`` chip whole, and it
+    joins lines at a line start, so a wrapped multi-line draft erases the same
+    way a short one does.
+
+    The draft's true length is unknowable from a box that shows only a window
+    of it, so this sends ``ERASE_CHUNK`` backspaces at a time and re-checks
+    emptiness between chunks: a short draft costs one round, a tall one is
+    bounded at ``ERASE_CHUNK * ERASE_ROUNDS`` characters rather than looping
+    forever. Over-pressing is harmless (backspace on an empty box is a no-op),
+    but a live select-menu aborts before the first keystroke — the same
+    protection Escape gets, because a decision belonging to the recipient's own
+    work must not be edited by us.
+    """
+    from hermeswire import pane_manager, prompt_router
+
+    target = f"{session}.{pane_index}"
+
+    def empty() -> bool:
+        return prompt_router.prompt_is_empty(session, pane_index)
+
+    for _ in range(ERASE_ROUNDS):
+        try:
+            if prompt_router.screen_shows_live_menu(_snapshot(session, pane_index)):
+                return False
+            pane_manager.run_command(
+                ["tmux", "send-keys", "-t", target] + ["BSpace"] * ERASE_CHUNK,
+                timeout=15,
+            )
+            if _poll(empty, CLEAR_BOX_TIMEOUT):
+                return True
+        except Exception:
+            return False
+    return False
+
+
+def clear_input_box(session: str, pane_index: int = 0) -> bool:
+    """Best-effort: clear whatever sits unsubmitted in the input box (#695).
+
+    A failed seed can leave a partial paste in the box, which (a) confuses a
+    human attaching to the session and (b) blocks the msg-inbox fallback
+    forever — the drain only pastes into an EMPTY box. Sends ``C-u`` (prompt_toolkit
+    kill-line) and confirms emptiness with the drain's own SGR-aware gate
+    (``prompt_router.prompt_is_empty``), so "cleared" here means exactly
+    "the drain will deliver". Returns True iff the box ends up empty.
+
+    Escape alone is not enough (#851). A draft taller than the box's visible
+    region ignores it — measured on the wedged pane: 3 Escapes, 9.4s, box
+    unchanged, and ``C-u`` (kill-to-line-start) is equally inert on a draft
+    that wrapped onto many lines. That made ``"inbox_stuck"`` terminal: the
+    durable copy was queued but the drain's empty-box gate stayed blocked by
+    the very draft it was meant to replace, so the session never received the
+    prompt by ANY route until a human pressed Enter. So each Escape that
+    doesn't take escalates to :func:`_erase_box_draft`, which backspaces the
+    draft away in bounded chunks — slower, but it works on the render form
+    Escape can't touch.
+
+    Refuses to press Escape while the screen shows a live select-menu/dialog
+    (#835 review): this function was written for a brand-new session's
+    failed first-message seed, where nothing else could plausibly be on
+    screen. It is also reused for an already-running, independently-busy
+    session (``hermeswire send --verify`` falling back after a failed
+    delivery) — there, "box not empty" can mean a permission dialog or
+    ``AskUserQuestion`` menu belonging to the recipient's own unrelated
+    work, not our stuck paste. Escape is the conventional cancel/decline key
+    for those, so pressing it blind would silently cancel a decision that
+    had nothing to do with us. Returns False without touching the pane in
+    that case; the caller's msg-inbox fallback still gets enqueued and
+    waits for the box to become genuinely idle on its own.
+    """
+    from hermeswire import pane_manager, prompt_router
+
+    target = f"{session}.{pane_index}"
+
+    def empty() -> bool:
+        return prompt_router.prompt_is_empty(session, pane_index)
+
+    for _ in range(CLEAR_BOX_ATTEMPTS):
+        try:
+            if empty():
+                return True
+            if prompt_router.screen_shows_live_menu(_snapshot(session, pane_index)):
+                return False
+            pane_manager.run_command(
+                ["tmux", "send-keys", "-t", target, "C-u"], timeout=5
+            )
+            if _poll(empty, CLEAR_BOX_TIMEOUT):
+                return True
+            if _erase_box_draft(session, pane_index):
+                return True
+        except Exception:
+            pass
+    return False
+
+
+def recover_failed_seed(
+    session: str,
+    message: str,
+    sender: "str | None" = None,
+    pane_index: int = 0,
+    clear: bool = True,
+) -> "str | None":
+    """Recover a first-message seed that failed to deliver (#695).
+
+    1. Clear the partial paste out of the input box (it would block the
+       inbox drain's empty-box gate indefinitely).
+    2. Enqueue the prompt as a ``request`` into the session's msg inbox —
+       the watchdog delivers it once the box is truly ready, and a request
+       that can never deliver dead-letters LOUDLY (owner email) instead of
+       vanishing.
+
+    Step 1's outcome is NOT assumed (#843): if ``clear_input_box`` can't
+    confirm the box ended up empty (Escape did nothing, or the call raised),
+    the ORIGINAL stale, unsubmitted draft may still be sitting in the box —
+    live for whatever unrelated Enter reaches the pane next (a later
+    message's own retry, a human keypress) to submit it, looking exactly
+    like a fresh, legitimate instruction. The durable copy still gets
+    queued either way — still better than nothing — but the return value
+    is honest about which happened instead of reporting blanket success.
+
+    Step 1 is also SKIPPABLE (``clear=False``, #845). Clearing is right when
+    the draft in the box is the wreckage of our own failed paste — the case
+    this function was written for. It is wrong when the draft was already
+    there before we tried: erasing a human's half-typed sentence (or another
+    sender's landed-but-unsubmitted message) to make room for ours is the
+    clobber the whole polite-messaging design exists to prevent. Only the
+    caller knows which it is, because only the caller saw the box BEFORE the
+    attempt; ``send_cli``'s pre-flight passes ``clear=False`` for a draft it
+    positively knows predates us, and the queued copy simply waits for the
+    box to go idle on its own.
+
+    Returns ``"inbox"`` when the box was confirmed cleared AND the prompt
+    was queued, ``"inbox_stuck"`` when the prompt was queued but the box
+    could NOT be confirmed cleared (a stale draft may still be sitting
+    there — needs manual intervention), ``"inbox_blocked"`` when the prompt
+    was queued and the box was deliberately left alone (``clear=False``), or
+    None when even the durable enqueue failed. Never raises.
+    """
+    cleared = False
+    if clear:
+        try:
+            cleared = clear_input_box(session, pane_index=pane_index)
+        except Exception:
+            cleared = False
+    try:
+        from hermeswire import inbox
+
+        inbox.enqueue(session, message, kind="request", sender=sender or "hermeswire")
+        if not clear:
+            return "inbox_blocked"
+        return "inbox" if cleared else "inbox_stuck"
+    except Exception:
+        return None

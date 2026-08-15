@@ -1,15 +1,15 @@
-# AgentWire Portal
+# HermesWire Portal
 
 > Web portal documentation. For project overview, see [CLAUDE.md](../../../CLAUDE.md).
 
 ## Architecture: CLI-First
 
-The portal is a thin wrapper around CLI commands. All business logic lives in `agentwire` CLI.
+The portal is a thin wrapper around CLI commands. All business logic lives in `hermeswire` CLI.
 
 ### Design Principles
 
-1. **CLI is source of truth** - session/machine logic lives in per-domain CLI modules (`agentwire/session_cli.py`, `agentwire/machine_cli.py`, ...) with shared helpers in `agentwire/core.py`; `__main__.py` is just the entry point/parser wiring
-2. **Portal wraps CLI** - calls `run_agentwire_cmd()` instead of direct implementations
+1. **CLI is source of truth** - session/machine logic lives in per-domain CLI modules (`hermeswire/session_cli.py`, `hermeswire/machine_cli.py`, ...) with shared helpers in `hermeswire/core.py`; `__main__.py` is just the entry point/parser wiring
+2. **Portal wraps CLI** - calls `run_hermeswire_cmd()` instead of direct implementations
 3. **JSON mode** - CLI commands support `--json` for machine-readable output
 4. **WebSocket for real-time** - portal adds WebSocket layer for live updates
 
@@ -18,10 +18,10 @@ The portal is a thin wrapper around CLI commands. All business logic lives in `a
 `server.py` is a thin base class composed with `routes/*.py` mixins (`sessions.py`, `sessions_admin.py`, `machines.py`, `scheduler.py`, `config.py`, `safety.py`, `voice.py`, `council.py`, `desktop.py`, `history.py`, `notify.py`, `palette.py`, `permission.py`, `projects.py`, `push.py`, `scratchpad.py`, `artifacts.py`) — the actual endpoint handlers live there:
 
 ```python
-# agentwire/routes/sessions_admin.py
+# hermeswire/routes/sessions_admin.py
 async def api_create_session(self, request):
     args = ["new", "-s", session_name, "--json"]
-    success, result = await self.run_agentwire_cmd(args)
+    success, result = await self.run_hermeswire_cmd(args)
     return web.json_response(result)
 ```
 
@@ -29,18 +29,18 @@ async def api_create_session(self, request):
 
 | API Endpoint | CLI Command |
 |--------------|-------------|
-| `POST /api/create` | `agentwire new -s {name}` |
-| `DELETE /api/sessions/{name}` | `agentwire kill -s {name}` |
-| `GET /api/sessions/local` | `agentwire list --local --sessions` |
-| `GET /api/sessions/remote` | `agentwire list --remote --sessions` |
-| `POST /send/{name}` | `agentwire send -s {name} {text}` |
-| `POST /api/session/{name}/recreate` | `agentwire recreate -s {name}` |
-| `POST /api/session/{name}/fork` | `agentwire fork -s {name}` |
+| `POST /api/create` | `hermeswire new -s {name}` |
+| `DELETE /api/sessions/{name}` | `hermeswire kill -s {name}` |
+| `GET /api/sessions/local` | `hermeswire list --local --sessions` |
+| `GET /api/sessions/remote` | `hermeswire list --remote --sessions` |
+| `POST /send/{name}` | `hermeswire send -s {name} {text}` |
+| `POST /api/session/{name}/recreate` | `hermeswire recreate -s {name}` |
+| `POST /api/session/{name}/fork` | `hermeswire fork -s {name}` |
 
 ### Adding New Features
 
 1. Implement CLI command with `--json` output
-2. Add portal endpoint that calls CLI via `run_agentwire_cmd()`
+2. Add portal endpoint that calls CLI via `run_hermeswire_cmd()`
 3. Never duplicate logic between CLI and portal
 
 ---
@@ -49,13 +49,13 @@ async def api_create_session(self, request):
 
 The portal provides an OS-like desktop interface using WinBox.js for window management. Clean desktop by default with sessions opened as draggable, resizable windows.
 
-**Session topology:** the parent→child session tree is visible and live on the desktop, not just in the sidebar's nested list — sessions created via `agentwire new`/`worktree`/the portal appear instantly rather than waiting for the next poll (live appearance, `session_created` event), and that event auto-peeks the **Session HUD** (a pull-down top-edge frosted topology shade) and flies the new parent→child link into place before retracting, rather than hijacking the screen with an auto-opened window. A shared renderer hosts that shade, a first-class Session Workspace window per family (🛰 launcher), and ghost cards for leftover session-less worktrees (clean up / adopt from the UI). Full reference: **[Session topology](session-topology.md)**.
+**Session topology:** the parent→child session tree is visible and live on the desktop, not just in the sidebar's nested list — sessions created via `hermeswire new`/`worktree`/the portal appear instantly rather than waiting for the next poll (live appearance, `session_created` event), and that event auto-peeks the **Session HUD** (a pull-down top-edge frosted topology shade) and flies the new parent→child link into place before retracting, rather than hijacking the screen with an auto-opened window. A shared renderer hosts that shade, a first-class Session Workspace window per family (🛰 launcher), and ghost cards for leftover session-less worktrees (clean up / adopt from the UI). Full reference: **[Session topology](session-topology.md)**.
 
 ### Menu Bar
 
 | Menu | Items |
 |------|-------|
-| **Projects** | Window listing discovered projects (folders with `.agentwire.yml`) |
+| **Projects** | Window listing discovered projects (folders with `.hermeswire.yml`) |
 | **Sessions** | Window listing all sessions with Monitor/Connect/Chat buttons |
 | **⚙ (Cog)** | Dropdown with Machines and Config options |
 
@@ -67,8 +67,8 @@ The taskbar at the bottom shows open session windows and a system tray with:
 
 | Element | Description |
 |---------|-------------|
-| **PTT Button** | Hold to talk to agentwire session (Ctrl+Space shortcut) |
-| **Voice Indicator** | Shows agentwire session activity state |
+| **PTT Button** | Hold to talk to hermeswire session (Ctrl+Space shortcut) |
+| **Voice Indicator** | Shows hermeswire session activity state |
 
 **Voice Indicator States:**
 
@@ -88,14 +88,14 @@ server:
 
 ### Projects Window
 
-Projects are folders with `.agentwire.yml` files, discovered from `projects.dir` config. Click a project to see details and create new sessions.
+Projects are folders with `.hermeswire.yml` files, discovered from `projects.dir` config. Click a project to see details and create new sessions.
 
 | Field | Description |
 |-------|-------------|
 | Name | Folder name |
 | Posture | Permission mode (`bypass`, `prompted`, `auto`) |
 | Path | Full path to project folder |
-| Roles | Configured roles from `.agentwire.yml` |
+| Roles | Configured roles from `.hermeswire.yml` |
 
 **Drill-down navigation:** Click a project to see details. "New Session" button opens the create session modal pre-filled with project info. Back button returns to list.
 
@@ -145,7 +145,7 @@ Sessions, machines, and projects display icons in their list windows. Icons are 
 static/icons/
 ├── sessions/
 │   ├── custom/          # Named icons for matching
-│   │   ├── agentwire.png
+│   │   ├── hermeswire.png
 │   │   └── myproject.jpeg
 │   ├── fox.jpeg         # Default icons for random
 │   ├── robot.jpeg
@@ -175,27 +175,27 @@ static/icons/
 
 ## Voice Output
 
-Agent (or users) can trigger TTS using the unified `agentwire say` command:
+Agent (or users) can trigger TTS using the unified `hermeswire say` command:
 
 ```bash
-agentwire say "Hello world"          # Smart routing to browser or local
-agentwire say "Message" -v voice     # Specify voice
-agentwire say "Message" -s session   # Specify session
+hermeswire say "Hello world"          # Smart routing to browser or local
+hermeswire say "Message" -v voice     # Specify voice
+hermeswire say "Message" -s session   # Specify session
 ```
 
 **How it works:**
 
-1. Command detects session from `--session`, `AGENTWIRE_SESSION` env var, or tmux session name
+1. Command detects session from `--session`, `HERMESWIRE_SESSION` env var, or tmux session name
 2. Checks if portal has active browser connections for that session
 3. If connected -> Sends to portal (plays on browser/tablet)
 4. If not connected -> Generates locally and plays via system audio
 
 **Session detection priority:**
 1. `--session` argument (explicit)
-2. `AGENTWIRE_SESSION` env var (set automatically when session is created)
+2. `HERMESWIRE_SESSION` env var (set automatically when session is created)
 3. Current tmux session name (if running in tmux)
 
-**For remote sessions:** `AGENTWIRE_SESSION` includes `@machine` suffix (e.g., `myproject@gpu-server`)
+**For remote sessions:** `HERMESWIRE_SESSION` includes `@machine` suffix (e.g., `myproject@gpu-server`)
 
 TTS audio includes 300ms silence padding to prevent first-syllable cutoff.
 
@@ -275,7 +275,7 @@ Images are uploaded to the configured `uploads.dir` and referenced in messages u
 
 ```yaml
 uploads:
-  dir: "~/.agentwire/uploads"
+  dir: "~/.hermeswire/uploads"
   max_size_mb: 10
   cleanup_days: 7
 ```
@@ -297,7 +297,7 @@ uploads:
 | `/api/create` | POST | Create new session |
 | `/api/check-path` | GET | Check if path exists and is git repo |
 | `/api/check-branches` | GET | Get existing branches matching prefix |
-| `/api/projects` | GET | List discovered projects (folders with `.agentwire.yml`) |
+| `/api/projects` | GET | List discovered projects (folders with `.hermeswire.yml`) |
 | `/api/projects/delete` | POST | Delete a project |
 | `/api/roles` | GET | List available roles |
 

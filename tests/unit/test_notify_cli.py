@@ -1,4 +1,4 @@
-"""Tests for ``agentwire notify-parent`` — the --queued msg-inbox path (#667).
+"""Tests for ``hermeswire notify-parent`` — the --queued msg-inbox path (#667).
 
 Idle report-backs ride the polite msg rail (kind=done): empty-box gate, busy
 deferral without dead-letter penalty, full-line scrollback dedup, and
@@ -10,8 +10,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from agentwire import inbox, pane_manager, prompt_router
-from agentwire.notify_cli import cmd_notify_parent
+from hermeswire import inbox, pane_manager, prompt_router
+from hermeswire.notify_cli import cmd_notify_parent
 
 
 @pytest.fixture
@@ -34,7 +34,7 @@ def _args(**kw):
 @pytest.fixture
 def worktree_child(monkeypatch):
     """A pane-0 worktree child whose parent resolves via creator metadata."""
-    monkeypatch.setattr(pane_manager, "get_current_session", lambda: "agentwire-dev-issue-661-bar")
+    monkeypatch.setattr(pane_manager, "get_current_session", lambda: "hermeswire-dev-issue-661-bar")
     monkeypatch.setattr(pane_manager, "get_current_pane_index", lambda: 0)
     monkeypatch.setattr(prompt_router, "resolve_parent", lambda s, p: ("orch", 0))
 
@@ -45,7 +45,7 @@ class TestQueuedMode:
         msgs = inbox.list_messages("orch")
         assert len(msgs) == 1
         assert msgs[0].kind == "done"
-        assert msgs[0].sender == "agentwire-dev-issue-661-bar"
+        assert msgs[0].sender == "hermeswire-dev-issue-661-bar"
         assert msgs[0].text == "is idle and done working"
 
     def test_no_direct_paste_in_queued_mode(self, isolate, worktree_child, monkeypatch):
@@ -76,7 +76,7 @@ class TestQueuedMode:
     def test_on_idle_enqueues_idle_kind_not_done(self, isolate, worktree_child, monkeypatch):
         # #952: the idle handler's placeholder must be TYPED as synthetic, not
         # travel as `done` — the cohort ledger keys on the kind, never the text.
-        from agentwire import services
+        from hermeswire import services
 
         monkeypatch.setattr(services, "is_service_session", lambda s: False)
         assert cmd_notify_parent(_args(on_idle=True)) == 0
@@ -86,7 +86,7 @@ class TestQueuedMode:
         assert msgs[0].text == "is idle and done working"
 
     def test_on_idle_service_session_skips(self, isolate, worktree_child, monkeypatch):
-        from agentwire import services
+        from hermeswire import services
 
         monkeypatch.setattr(services, "is_service_session", lambda s: True)
         assert cmd_notify_parent(_args(on_idle=True)) == 0
@@ -100,7 +100,7 @@ class TestQueuedRendersUniquely:
         full-line dedup can never cross-match them (#621/#667)."""
         monkeypatch.setattr(prompt_router, "resolve_parent", lambda s, p: ("orch", 0))
         monkeypatch.setattr(pane_manager, "get_current_pane_index", lambda: 0)
-        for name in ("agentwire-dev-issue-659-a", "agentwire-dev-issue-659-b"):
+        for name in ("hermeswire-dev-issue-659-a", "hermeswire-dev-issue-659-b"):
             monkeypatch.setattr(pane_manager, "get_current_session", lambda n=name: n)
             assert cmd_notify_parent(_args()) == 0
         rendered = [m.render() for m in inbox.list_messages("orch")]
@@ -112,11 +112,11 @@ class TestBodyFile:
 
     def test_body_file_verbatim(self, isolate, worktree_child, tmp_path):
         p = tmp_path / "body.md"
-        p.write_text("done: run `agentwire doctor` and $(true)")
+        p.write_text("done: run `hermeswire doctor` and $(true)")
         assert cmd_notify_parent(_args(text=[], body_file=str(p))) == 0
         msgs = inbox.list_messages("orch")
         assert len(msgs) == 1
-        assert msgs[0].text == "done: run `agentwire doctor` and $(true)"
+        assert msgs[0].text == "done: run `hermeswire doctor` and $(true)"
 
     def test_mutually_exclusive(self, isolate, worktree_child, tmp_path):
         p = tmp_path / "body.md"

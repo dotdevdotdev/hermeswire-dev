@@ -3,18 +3,18 @@
 
 import pytest
 
-from agentwire.roles import RoleConfig
+from hermeswire.roles import RoleConfig
 
 
 class TestBuildAgentCommand:
     @pytest.fixture(autouse=True)
     def _prompts_dir(self, tmp_path, monkeypatch):
-        """Keep role prompts out of the real ~/.agentwire/role-prompts."""
-        monkeypatch.setattr("agentwire.core.CONFIG_DIR", tmp_path)
+        """Keep role prompts out of the real ~/.hermeswire/role-prompts."""
+        monkeypatch.setattr("hermeswire.core.CONFIG_DIR", tmp_path)
         self.prompts_dir = tmp_path / "role-prompts"
 
     def _build(self, posture, roles=None, model=None, resume_session_id=None):
-        from agentwire.__main__ import build_agent_command
+        from hermeswire.__main__ import build_agent_command
         return build_agent_command(posture, roles=roles, model=model,
                                    resume_session_id=resume_session_id)
 
@@ -39,14 +39,14 @@ class TestBuildAgentCommand:
     def test_restricted_rejected(self):
         import pytest
 
-        from agentwire.project_config import resolve_posture
+        from hermeswire.project_config import resolve_posture
         with pytest.raises(ValueError):
             resolve_posture("restricted")
         with pytest.raises(ValueError):
             resolve_posture("readonly")
 
     def test_auto(self):
-        # auto and bypass both rely on AgentWire's damage-control hooks for
+        # auto and bypass both rely on HermesWire's damage-control hooks for
         # safety, so both map to --yolo (issue #3).
         cmd = self._build("auto")
         assert cmd.command.startswith("hermes chat --cli")
@@ -81,13 +81,13 @@ class TestBuildAgentCommand:
         roles = [RoleConfig(name="test", instructions="Be helpful")]
         cmd = self._build("bypass", roles=roles)
         assert "--append-system-prompt" not in cmd.command
-        assert "-s agentwire-test" in cmd.command
+        assert "-s hermeswire-test" in cmd.command
 
     def test_roles_apply_on_every_posture(self):
         roles = [RoleConfig(name="test", tools=["Read"], instructions="Hello")]
         for posture in ("bypass", "prompted", "auto"):
             cmd = self._build(posture, roles=roles)
-            assert "-s agentwire-test" in cmd.command
+            assert "-s hermeswire-test" in cmd.command
             assert "-t Read" in cmd.command
 
 
@@ -97,7 +97,7 @@ class TestConversationIdentity:
     launch, and a resume launch simply carries the id it resumes."""
 
     def _build(self, posture="bypass", roles=None, resume_session_id=None):
-        from agentwire.__main__ import build_agent_command
+        from hermeswire.__main__ import build_agent_command
         return build_agent_command(posture, roles=roles,
                                    resume_session_id=resume_session_id)
 
@@ -141,7 +141,7 @@ class TestConversationIdentity:
         roles = [RoleConfig(name="test", tools=["Read"], instructions="line1\nline2")]
         cmd = self._build(roles=roles)
         assert "--append-system-prompt" not in cmd.command
-        assert "-s agentwire-test" in cmd.command
+        assert "-s hermeswire-test" in cmd.command
 
 
 class TestExtractHermesSessionId:
@@ -149,13 +149,13 @@ class TestExtractHermesSessionId:
     output. Ids are opaque Hermes-owned strings, returned verbatim."""
 
     def test_parses_q_stderr_line(self):
-        from agentwire.core import extract_hermes_session_id
+        from hermeswire.core import extract_hermes_session_id
         assert extract_hermes_session_id(
             "some noise\nsession_id: 20260813_210702_922597\n") \
             == "20260813_210702_922597"
 
     def test_parses_exit_summary_session_line(self):
-        from agentwire.core import extract_hermes_session_id
+        from hermeswire.core import extract_hermes_session_id
         out = (
             "answer text\n"
             "Session: 20260813_210702_922597\n"
@@ -164,28 +164,28 @@ class TestExtractHermesSessionId:
         assert extract_hermes_session_id(out) == "20260813_210702_922597"
 
     def test_falls_back_to_resume_hint(self):
-        from agentwire.core import extract_hermes_session_id
+        from hermeswire.core import extract_hermes_session_id
         out = "Resume this session with: hermes --resume abc123def456\n"
         assert extract_hermes_session_id(out) == "abc123def456"
 
     def test_treats_the_id_as_opaque(self):
         # Not a UUID, not a timestamp — whatever Hermes emits is returned whole.
-        from agentwire.core import extract_hermes_session_id
+        from hermeswire.core import extract_hermes_session_id
         assert extract_hermes_session_id("session_id: weird-format-id!!") \
             == "weird-format-id!!"
 
     def test_returns_none_when_absent(self):
-        from agentwire.core import extract_hermes_session_id
+        from hermeswire.core import extract_hermes_session_id
         assert extract_hermes_session_id("no id here\njust text\n") is None
 
 
 class TestSessionEnvInjection:
     def test_build_tmux_env_flags_empty(self):
-        from agentwire.__main__ import _build_tmux_env_flags
+        from hermeswire.__main__ import _build_tmux_env_flags
         assert _build_tmux_env_flags({}) == []
 
     def test_build_tmux_env_flags_pairs(self):
-        from agentwire.__main__ import _build_tmux_env_flags
+        from hermeswire.__main__ import _build_tmux_env_flags
         flags = _build_tmux_env_flags({"SVC_API_KEY": "abc", "FOO": "bar"})
         # Each var becomes two list entries: "-e" and "K=V"
         assert flags.count("-e") == 2
@@ -193,11 +193,11 @@ class TestSessionEnvInjection:
         assert "FOO=bar" in flags
 
     def test_build_tmux_env_flags_shell_empty(self):
-        from agentwire.__main__ import _build_tmux_env_flags_shell
+        from hermeswire.__main__ import _build_tmux_env_flags_shell
         assert _build_tmux_env_flags_shell({}) == ""
 
     def test_build_tmux_env_flags_shell_quoted(self):
-        from agentwire.__main__ import _build_tmux_env_flags_shell
+        from hermeswire.__main__ import _build_tmux_env_flags_shell
         frag = _build_tmux_env_flags_shell({"SVC_API_KEY": "abc 123"})
         # Trailing space so it splices into the middle of a command string
         assert frag.endswith(" ")
@@ -206,7 +206,7 @@ class TestSessionEnvInjection:
         assert "'SVC_API_KEY=abc 123'" in frag
 
     def test_build_tmux_env_flags_shell_multiple(self):
-        from agentwire.__main__ import _build_tmux_env_flags_shell
+        from hermeswire.__main__ import _build_tmux_env_flags_shell
         frag = _build_tmux_env_flags_shell({"A": "1", "B": "2"})
         assert frag.count("-e") == 2
         assert "A=1" in frag
@@ -215,39 +215,39 @@ class TestSessionEnvInjection:
 
 class TestParseEnvArgs:
     def test_none_returns_empty(self):
-        from agentwire.__main__ import parse_env_args
+        from hermeswire.__main__ import parse_env_args
         assert parse_env_args(None) == {}
         assert parse_env_args([]) == {}
 
     def test_single_pair(self):
-        from agentwire.__main__ import parse_env_args
+        from hermeswire.__main__ import parse_env_args
         assert parse_env_args(["FOO=bar"]) == {"FOO": "bar"}
 
     def test_multiple_pairs(self):
-        from agentwire.__main__ import parse_env_args
+        from hermeswire.__main__ import parse_env_args
         result = parse_env_args(["A=1", "B=2", "C=3"])
         assert result == {"A": "1", "B": "2", "C": "3"}
 
     def test_value_with_equals_sign_preserved(self):
-        from agentwire.__main__ import parse_env_args
+        from hermeswire.__main__ import parse_env_args
         # Values can contain `=` (e.g. base64 payloads) — only split on the first.
         assert parse_env_args(["TOKEN=abc=def=xyz"]) == {"TOKEN": "abc=def=xyz"}
 
     def test_empty_value_allowed(self):
-        from agentwire.__main__ import parse_env_args
+        from hermeswire.__main__ import parse_env_args
         assert parse_env_args(["DEBUG="]) == {"DEBUG": ""}
 
     def test_missing_equals_exits(self):
-        from agentwire.__main__ import parse_env_args
+        from hermeswire.__main__ import parse_env_args
         with pytest.raises(SystemExit):
             parse_env_args(["BROKEN"])
 
     def test_empty_key_exits(self):
-        from agentwire.__main__ import parse_env_args
+        from hermeswire.__main__ import parse_env_args
         with pytest.raises(SystemExit):
             parse_env_args(["=value"])
 
     def test_later_value_wins(self):
-        from agentwire.__main__ import parse_env_args
+        from hermeswire.__main__ import parse_env_args
         # If the same key appears twice, last one wins (standard dict semantics).
         assert parse_env_args(["K=1", "K=2"]) == {"K": "2"}

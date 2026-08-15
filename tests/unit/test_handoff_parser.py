@@ -1,8 +1,8 @@
-"""Tests for agentwire/handoff/parser.py."""
+"""Tests for hermeswire/handoff/parser.py."""
 
 import pytest
 
-from agentwire.handoff.parser import HandoffParseError, parse
+from hermeswire.handoff.parser import HandoffParseError, parse
 
 
 def _minimal_valid() -> str:

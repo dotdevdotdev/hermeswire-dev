@@ -1,10 +1,10 @@
-"""Tests for agentwire/ssh.py — the ControlMaster multiplexing SSOT (#300)."""
+"""Tests for hermeswire/ssh.py — the ControlMaster multiplexing SSOT (#300)."""
 
 import subprocess
 
 import pytest
 
-from agentwire import ssh
+from hermeswire import ssh
 
 
 @pytest.fixture

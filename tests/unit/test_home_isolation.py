@@ -1,7 +1,7 @@
-"""The suite must never write into the real ~/.agentwire (#893).
+"""The suite must never write into the real ~/.hermeswire (#893).
 
 This is the regression pin for a defect found by accident: the record at
-``~/.agentwire/sessions/resumed/metadata.json`` was written by the test suite
+``~/.hermeswire/sessions/resumed/metadata.json`` was written by the test suite
 and had grown to 80 fabricated conversation ids, one chain entry per full-suite
 run. It was not merely untidy — it corrupted a measurement. Sizing #871's
 orphaned-history doctor check against the real store showed 28 recorded ids
@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-REAL_HOME = Path.home() / ".agentwire"
+REAL_HOME = Path.home() / ".hermeswire"
 
 
 class TestRealHomeIsUntouched:
@@ -34,14 +34,14 @@ class TestRealHomeIsUntouched:
         assert Path.home() != REAL_HOME.parent, "HOME still resolves to the real user home"
         assert Path(os.environ["HOME"]) == Path.home()
         # expanduser goes the same way, so `~`-relative paths are covered too.
-        assert Path("~/.agentwire").expanduser() != REAL_HOME
+        assert Path("~/.hermeswire").expanduser() != REAL_HOME
 
     def test_a_freshly_computed_config_path_is_redirected(self):
         """What a lazily-imported module would compute on first import."""
-        assert (Path.home() / ".agentwire") != REAL_HOME
+        assert (Path.home() / ".hermeswire") != REAL_HOME
 
     def test_config_dir_is_not_the_real_one(self):
-        from agentwire import core
+        from hermeswire import core
 
         assert core.CONFIG_DIR != REAL_HOME
         assert not str(core.CONFIG_DIR).startswith(str(REAL_HOME))
@@ -53,7 +53,7 @@ class TestRealHomeIsUntouched:
         to ``conversation_ids`` — a chain by design (#871), so every suite run
         added another fabricated id.
         """
-        from agentwire import core
+        from hermeswire import core
         from tests import home_guard
 
         before = len(home_guard.WRITES)
@@ -65,7 +65,7 @@ class TestRealHomeIsUntouched:
 
         # Asserted against the audit hook, NOT a before/after snapshot of the
         # real home. This module used to snapshot, and it flaked for precisely
-        # the reason this PR argues the guard must be in-process: ~/.agentwire
+        # the reason this PR argues the guard must be in-process: ~/.hermeswire
         # is written continuously by the live fleet, so a snapshot cannot tell
         # this process from the rest of the machine. Sampling it three seconds
         # apart on an idle box still showed entries changing. The argument and
@@ -75,10 +75,10 @@ class TestRealHomeIsUntouched:
         # ...and it did write, to the redirected location.
         assert (core.CONFIG_DIR / "sessions" / "resumed" / "metadata.json").is_file()
 
-    def test_no_agentwire_module_still_points_at_the_real_home(self):
+    def test_no_hermeswire_module_still_points_at_the_real_home(self):
         """Static check: catches a NEW module constant the moment it appears.
 
-        Import-time constants (``Path.home() / ".agentwire" / ...``) are frozen
+        Import-time constants (``Path.home() / ".hermeswire" / ...``) are frozen
         before any fixture runs, so redirecting ``$HOME`` alone does not move
         them. Roughly forty exist across ~25 modules; enumerating them by hand
         would rot immediately, so the isolation fixture rebinds them by walking
@@ -89,14 +89,14 @@ class TestRealHomeIsUntouched:
         leaked = []
         for module in list(sys.modules.values()):
             name = getattr(module, "__name__", "")
-            if not name.startswith("agentwire"):
+            if not name.startswith("hermeswire"):
                 continue
             for attr, value in list(vars(module).items()):
                 if isinstance(value, Path) and (
                     value == REAL_HOME or REAL_HOME in value.parents
                 ):
                     leaked.append(f"{name}.{attr} = {value}")
-        assert not leaked, "still pointing at the real ~/.agentwire:\n  " + "\n  ".join(leaked)
+        assert not leaked, "still pointing at the real ~/.hermeswire:\n  " + "\n  ".join(leaked)
 
 
 class TestLazyImportsCannotFreezeAFakeHome:
@@ -105,7 +105,7 @@ class TestLazyImportsCannotFreezeAFakeHome:
     Much of this codebase imports lazily inside functions. Before the eager
     import in ``conftest``, the first test to trigger such an import did it
     while ``$HOME`` already pointed at *that test's* tmp directory, so the
-    module computed ``CONFIG_DIR = Path.home() / ".agentwire"`` against the
+    module computed ``CONFIG_DIR = Path.home() / ".hermeswire"`` against the
     fake home and froze there for the rest of the session — monkeypatch never
     patched it, so there was nothing to restore. Every later test then read a
     constant belonging to a long-finished test.
@@ -114,21 +114,21 @@ class TestLazyImportsCannotFreezeAFakeHome:
     def test_lazily_imported_modules_are_loaded_up_front(self):
         import sys
 
-        # ``agentwire.__main__`` is the one the old bug travelled through:
-        # test helpers do `from agentwire.__main__ import build_agent_command`.
-        assert "agentwire.__main__" in sys.modules
-        assert "agentwire.core" in sys.modules
+        # ``hermeswire.__main__`` is the one the old bug travelled through:
+        # test helpers do `from hermeswire.__main__ import build_agent_command`.
+        assert "hermeswire.__main__" in sys.modules
+        assert "hermeswire.core" in sys.modules
 
-    def test_no_module_points_at_another_tests_home(self, _isolate_agentwire_home):
+    def test_no_module_points_at_another_tests_home(self, _isolate_hermeswire_home):
         """Every redirected constant belongs to THIS test, not a previous one."""
         import re
         import sys
 
-        mine = str(_isolate_agentwire_home)
-        other_home = re.compile(r"/home\d+/\.agentwire")
+        mine = str(_isolate_hermeswire_home)
+        other_home = re.compile(r"/home\d+/\.hermeswire")
         stray = []
         for module in list(sys.modules.values()):
-            if not getattr(module, "__name__", "").startswith("agentwire"):
+            if not getattr(module, "__name__", "").startswith("hermeswire"):
                 continue
             for attr, value in list(vars(module).items()):
                 if not isinstance(value, Path):
@@ -139,7 +139,7 @@ class TestLazyImportsCannotFreezeAFakeHome:
         assert not stray, "constants frozen to another test's home:\n  " + "\n  ".join(stray)
 
 
-@pytest.mark.real_agentwire_home
+@pytest.mark.real_hermeswire_home
 class TestTheAuditHookCanActuallyFail:
     """The backstop must be provably capable of catching each write primitive.
 
@@ -165,7 +165,7 @@ class TestTheAuditHookCanActuallyFail:
     def _probe(self, name):
         from tests import home_guard
 
-        return home_guard.REAL_AGENTWIRE_HOME / name
+        return home_guard.REAL_HERMESWIRE_HOME / name
 
     def _recorded_since(self, mark):
         from tests import home_guard
@@ -253,7 +253,7 @@ class TestTheAuditHookCanActuallyFail:
 
     def test_catches_atomic_write_via_os_replace(self):
         """``_atomic_write`` publishes with a rename; the temp file is os.open'd."""
-        from agentwire import core
+        from hermeswire import core
 
         target, mark = self._probe("zz-probe-atomic.json"), self._mark()
         try:
@@ -272,7 +272,7 @@ class TestTheAuditHookCanActuallyFail:
         target.read_text()
         assert not self._recorded_since(mark), "a plain read was recorded as a write"
         target.unlink()
-        assert home_guard.REAL_AGENTWIRE_HOME.exists()
+        assert home_guard.REAL_HERMESWIRE_HOME.exists()
 
     def test_ignores_writes_outside_the_real_home(self, tmp_path):
         mark = self._mark()
@@ -287,10 +287,10 @@ class TestTheAuditHookCanActuallyFail:
     ("worktree registry", "worktrees.json"),
 ])
 def test_subsystem_stores_are_redirected(subsystem, relative):
-    """~/.agentwire holds more than sessions/, and tests touch all of it."""
-    import agentwire.cohort as cohort
-    import agentwire.inbox as inbox
-    import agentwire.usage_limit as usage_limit
+    """~/.hermeswire holds more than sessions/, and tests touch all of it."""
+    import hermeswire.cohort as cohort
+    import hermeswire.inbox as inbox
+    import hermeswire.usage_limit as usage_limit
 
     for mod, attr in (
         (inbox, "INBOX_ROOT"), (cohort, "COHORT_ROOT"), (usage_limit, "STATE_DIR"),

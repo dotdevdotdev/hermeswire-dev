@@ -1,4 +1,4 @@
-"""Unit tests for the wiki ground-truth audit (agentwire/wiki_audit.py).
+"""Unit tests for the wiki ground-truth audit (hermeswire/wiki_audit.py).
 
 Each test builds a tiny fake repo + wiki text in tmp_path so the extractors and
 verifiers are exercised in isolation, then asserts on the precise findings. The
@@ -10,13 +10,13 @@ from pathlib import Path
 
 import pytest
 
-from agentwire.wiki_audit import audit, audit_text, build_codebase_index, main
+from hermeswire.wiki_audit import audit, audit_text, build_codebase_index, main
 
 
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
-    """A minimal agentwire-shaped repo: known subcommands, flags, config, modules."""
-    pkg = tmp_path / "agentwire"
+    """A minimal hermeswire-shaped repo: known subcommands, flags, config, modules."""
+    pkg = tmp_path / "hermeswire"
     pkg.mkdir()
     (pkg / "__init__.py").write_text("")
     (pkg / "__main__.py").write_text(
@@ -62,16 +62,16 @@ def test_index_collects_vocabulary(idx):
 # --- flags ------------------------------------------------------------------
 
 def test_valid_flag_not_flagged(idx):
-    assert audit_text(idx, "p.md", "Run `agentwire portal start --dev`.") == []
+    assert audit_text(idx, "p.md", "Run `hermeswire portal start --dev`.") == []
 
 
 def test_unknown_flag_flagged(idx):
-    findings = audit_text(idx, "p.md", "Run `agentwire portal start --devmode`.")
+    findings = audit_text(idx, "p.md", "Run `hermeswire portal start --devmode`.")
     assert _kinds(findings) == [("flag", "--devmode")]
 
 
-def test_flag_only_scoped_to_agentwire_command(idx):
-    # A non-agentwire tool's flag in the same doc must not be attributed to agentwire.
+def test_flag_only_scoped_to_hermeswire_command(idx):
+    # A non-hermeswire tool's flag in the same doc must not be attributed to hermeswire.
     assert audit_text(idx, "p.md", "Pi uses `pi --provider zai` and `--disallowedTools`.") == []
 
 
@@ -83,41 +83,41 @@ def test_flag_ignored_in_bare_prose(idx):
 # --- subcommands ------------------------------------------------------------
 
 def test_valid_subcommand_not_flagged(idx):
-    assert audit_text(idx, "p.md", "`agentwire new -s proj/branch`") == []
+    assert audit_text(idx, "p.md", "`hermeswire new -s proj/branch`") == []
 
 
 def test_removed_subcommand_flagged(idx):
-    findings = audit_text(idx, "p.md", "Use `agentwire brave search`.")
-    assert ("subcommand", "agentwire brave") in _kinds(findings)
+    findings = audit_text(idx, "p.md", "Use `hermeswire brave search`.")
+    assert ("subcommand", "hermeswire brave") in _kinds(findings)
 
 
 def test_subcommand_ignored_in_prose(idx):
-    # "agentwire" as the product name + an English word is not a command.
-    assert audit_text(idx, "p.md", "The agentwire project would benefit from this.") == []
+    # "hermeswire" as the product name + an English word is not a command.
+    assert audit_text(idx, "p.md", "The hermeswire project would benefit from this.") == []
 
 
 def test_version_string_not_a_subcommand(idx):
-    assert audit_text(idx, "p.md", 'Render `"agentwire v1.35.1"` verbatim.') == []
+    assert audit_text(idx, "p.md", 'Render `"hermeswire v1.35.1"` verbatim.') == []
 
 
 # --- paths ------------------------------------------------------------------
 
 def test_existing_path_not_flagged(idx):
-    assert audit_text(idx, "p.md", "See `agentwire/server.py` and `docs/real.md`.") == []
+    assert audit_text(idx, "p.md", "See `hermeswire/server.py` and `docs/real.md`.") == []
 
 
 def test_missing_path_flagged(idx):
-    findings = audit_text(idx, "p.md", "See `agentwire/sdk/client.py`.")
-    assert _kinds(findings) == [("path", "agentwire/sdk/client.py")]
+    findings = audit_text(idx, "p.md", "See `hermeswire/sdk/client.py`.")
+    assert _kinds(findings) == [("path", "hermeswire/sdk/client.py")]
 
 
 def test_placeholder_path_skipped(idx):
-    assert audit_text(idx, "p.md", "Edit `agentwire/<module>.py` or `static/js/*`.") == []
+    assert audit_text(idx, "p.md", "Edit `hermeswire/<module>.py` or `static/js/*`.") == []
 
 
 def test_non_repo_paths_ignored(idx):
     # Home/runtime paths and the wiki's own tree are not codebase claims.
-    assert audit_text(idx, "p.md", "Lives at `~/.agentwire/wiki/foo.md` and `/usr/bin/pi`.") == []
+    assert audit_text(idx, "p.md", "Lives at `~/.hermeswire/wiki/foo.md` and `/usr/bin/pi`.") == []
 
 
 # --- symbols ----------------------------------------------------------------
@@ -132,7 +132,7 @@ def test_undefined_symbol_flagged(idx):
 
 
 def test_common_method_call_not_flagged(idx):
-    # config.get(...) is a method on a variable, not agentwire.config.get.
+    # config.get(...) is a method on a variable, not hermeswire.config.get.
     assert audit_text(idx, "p.md", "We call `config.get('stt')` here.") == []
 
 
@@ -164,9 +164,9 @@ def test_rename_a_flag_flags_exactly_that_line(repo: Path, tmp_path: Path):
     # One stale line (renamed flag) among otherwise-correct claims.
     (wiki / "patterns" / "dev.md").write_text(
         "# Dev\n\n"
-        "Normal restart: `agentwire portal restart --dev`.\n"
-        "After a change: `agentwire portal start --devmode`.\n"  # stale: --dev was renamed
-        "Paths like `agentwire/server.py` still resolve.\n"
+        "Normal restart: `hermeswire portal restart --dev`.\n"
+        "After a change: `hermeswire portal start --devmode`.\n"  # stale: --dev was renamed
+        "Paths like `hermeswire/server.py` still resolve.\n"
     )
     findings = audit(wiki, repo)
     assert len(findings) == 1
@@ -178,10 +178,10 @@ def test_rename_a_flag_flags_exactly_that_line(repo: Path, tmp_path: Path):
 def test_main_strict_exit_code(repo: Path, tmp_path: Path, capsys):
     wiki = tmp_path / "wiki"
     wiki.mkdir()
-    (wiki / "ok.md").write_text("All good: `agentwire portal start --dev`.\n")
-    (wiki / "bad.md").write_text("Stale: `agentwire brave`.\n")
+    (wiki / "ok.md").write_text("All good: `hermeswire portal start --dev`.\n")
+    (wiki / "bad.md").write_text("Stale: `hermeswire brave`.\n")
 
     assert main(["--wiki-dir", str(wiki), "--repo-dir", str(repo)]) == 0  # informational
     assert main(["--wiki-dir", str(wiki), "--repo-dir", str(repo), "--strict"]) == 1
     out = capsys.readouterr().out
-    assert "agentwire brave" in out
+    assert "hermeswire brave" in out

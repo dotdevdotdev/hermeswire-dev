@@ -2,9 +2,9 @@
 
 > Multi-soul orchestrator: fan a prompt out to distinct lens sessions, collect
 > their takes, synthesize with attribution. The bundled `soul` role is the
-> blended default voice ([#212](https://github.com/dotdevdotdev/agentwire-dev/issues/212));
+> blended default voice ([#212](https://github.com/dotdevdotdev/hermeswire-dev/issues/212));
 > the council unbundles it into its constituent lenses
-> ([#213](https://github.com/dotdevdotdev/agentwire-dev/issues/213)).
+> ([#213](https://github.com/dotdevdotdev/hermeswire-dev/issues/213)).
 
 ## Mental model
 
@@ -12,7 +12,7 @@ A **sitting** is one `council start` → `council stop` span, **namespaced by
 `<name>`** so independent councils run concurrently (one per project/decision).
 It comprises:
 
-- The **orchestrator** — the `agentwire-council-<name>` session (role
+- The **orchestrator** — the `hermeswire-council-<name>` session (role
   `council-orchestrator`). You talk to it; it fans out, collects, and
   synthesizes.
 - The **souls** — one `council-<name>-<lens>` session per roster lens, each
@@ -23,7 +23,7 @@ It comprises:
 
 `<name>` is identity — deterministic and inspectable, never a hidden
 active-pointer. Every command resolves the same way and **echoes which sitting
-it acted on** (`→ council 'agentwire-dev' (prompt #3)`):
+it acted on** (`→ council 'hermeswire-dev' (prompt #3)`):
 
 1. explicit `--name`, else
 2. the **cwd-repo-slug** if it matches a live sitting, else
@@ -49,13 +49,13 @@ Default roster:
 | `devils-advocate` | The strongest opposing case, argued in good faith |
 
 All of a sitting's sessions run in its own workspace
-(`~/.agentwire/council/<name>/workspace/`) whose `.agentwire.yml` sets
-`parent: agentwire-council-<name>`, and none of them receive the standard
+(`~/.hermeswire/council/<name>/workspace/`) whose `.hermeswire.yml` sets
+`parent: hermeswire-council-<name>`, and none of them receive the standard
 `soul` role — `inject_soul()` skips any session carrying a `council-*` role.
 
 ## The protocol
 
-Per prompt, on disk under `~/.agentwire/council/<name>/prompts/NNNN/`:
+Per prompt, on disk under `~/.hermeswire/council/<name>/prompts/NNNN/`:
 
 ```
 prompt.md        # the fanned-out prompt
@@ -77,22 +77,22 @@ follow-up and the CLI itself nudges the orchestrator's pane with a
 remembering to notify.
 
 Sitting state (roster, session names, originating cwd, prompt counter) lives at
-`~/.agentwire/council/<name>/sitting.json`. `council stop` clears it but keeps
+`~/.hermeswire/council/<name>/sitting.json`. `council stop` clears it but keeps
 the `prompts/` history.
 
 ## CLI
 
 ```bash
-agentwire council start [--name N] [--roster brain,gut,...] [--posture P] [--model M] [--force]
-agentwire council list                          # every sitting: name·cwd·age·live·prompts
-agentwire council stop    [--name N] [--minutes|--no-minutes] [--synthesis S]
-agentwire council status  [--name N]
-agentwire council ask     [--name N] "Should we ship X?"   # or --file / stdin
-agentwire council collect [--name N] [--prompt P] [--timeout 120] [--no-wait]
-agentwire council reply   --name N --prompt P --take --text "..."   # souls run this
-agentwire council reply   --name N --prompt P --ack
-agentwire council reply   --name N --prompt P --pass
-agentwire council minutes [--name N] [--prompt P|all] [--synthesis S]  # render record → HTML
+hermeswire council start [--name N] [--roster brain,gut,...] [--posture P] [--model M] [--force]
+hermeswire council list                          # every sitting: name·cwd·age·live·prompts
+hermeswire council stop    [--name N] [--minutes|--no-minutes] [--synthesis S]
+hermeswire council status  [--name N]
+hermeswire council ask     [--name N] "Should we ship X?"   # or --file / stdin
+hermeswire council collect [--name N] [--prompt P] [--timeout 120] [--no-wait]
+hermeswire council reply   --name N --prompt P --take --text "..."   # souls run this
+hermeswire council reply   --name N --prompt P --ack
+hermeswire council reply   --name N --prompt P --pass
+hermeswire council minutes [--name N] [--prompt P|all] [--synthesis S]  # render record → HTML
 ```
 
 `--name` is optional everywhere (resolved per the targeting rules above); the
@@ -124,17 +124,17 @@ see which sitting it hit.
 sitting — the original question, the orchestrator's synthesis, and the
 verbatim per-soul replies (attributed, badged take/ack/pass/followup), one
 section per prompt — following the handoff pattern
-([#708](https://github.com/dotdevdotdev/agentwire-dev/issues/708)):
+([#708](https://github.com/dotdevdotdev/hermeswire-dev/issues/708)):
 
 - **Deterministic render of disk state.** Everything verbatim already
-  persists under `~/.agentwire/council/<name>/prompts/NNNN/`; the renderer is
+  persists under `~/.hermeswire/council/<name>/prompts/NNNN/`; the renderer is
   a pure function of it. The synthesis exists only in the orchestrator's
   context, so it's an *input*: `--synthesis <file-or-text>` (omitted →
   minutes without a synthesis section).
 - **Output** is one fully self-contained file (inline CSS only — the portal's
   artifact CSP blocks external fetches; verbatim text is HTML-escaped),
   theme-aware light/dark, at
-  `~/.agentwire/artifacts/council-<name>-minutes/index.html`. The command
+  `~/.hermeswire/artifacts/council-<name>-minutes/index.html`. The command
   prints the path and best-effort announces it as a click-to-open portal
   notification — toast + Session HUD entry, never a focus-stealing window
   open (#817) — when the portal is up (`notified` in the `--json` payload).
@@ -151,9 +151,9 @@ section per prompt — following the handoff pattern
 
 Lens roles are ordinary role files, so discovery shadowing applies:
 
-1. Drop `council-<newlens>.md` in `~/.agentwire/roles/` (or a project's
-   `.agentwire/roles/`) — frontmatter `name` + `description`, body = the lens.
-2. `agentwire council start --roster brain,critic,newlens`
+1. Drop `council-<newlens>.md` in `~/.hermeswire/roles/` (or a project's
+   `.hermeswire/roles/`) — frontmatter `name` + `description`, body = the lens.
+2. `hermeswire council start --roster brain,critic,newlens`
 
 Overriding a bundled lens's content works the same way — a user-level
 `council-brain.md` shadows the bundled one.
@@ -166,7 +166,7 @@ Overriding a bundled lens's content works the same way — a user-level
   list rather than blocking forever.
 - **Stale sitting after a crash** — `council start --force` (same `--name`)
   tears down whatever is left and starts fresh. First run after upgrading from
-  the pre-namespace singleton sweeps any zombie `council-*` / `agentwire-council`
+  the pre-namespace singleton sweeps any zombie `council-*` / `hermeswire-council`
   panes + orphaned global `sitting.json` automatically.
 - **"multiple councils live" error** — pass `--name`; `council list` shows the
   candidates (the age column flags forgotten token-burning sittings).

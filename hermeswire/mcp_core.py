@@ -1,0 +1,288 @@
+"""Shared MCP server foundation.
+
+Holds the singleton ``mcp = FastMCP(...)`` instance plus the cross-domain
+result formatters that every ``mcp_*`` domain module imports. Mirrors
+``core.py`` for the CLI split (#495).
+
+**Importing this module builds an MCP server.** Only ``mcp_*`` modules and the
+``mcp_server`` entrypoint may import it — the CLI-runner helper that used to
+live here now sits in :mod:`hermeswire.core`, because a non-MCP consumer of it
+(``buddy_cli``, which ``build_parser()`` imports on EVERY invocation) dragged
+the whole FastMCP construction into ordinary CLI startup (#1018).
+"""
+
+import logging
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+import mcp.server.fastmcp.server as _fastmcp_server
+from mcp.server.fastmcp import FastMCP
+
+logger = logging.getLogger("hermeswire-mcp")
+
+
+def configure_logging() -> None:
+    """Send MCP server logs to stderr (stdout is the JSON-RPC channel).
+
+    Called by :func:`hermeswire.mcp_server.run_server`, NOT at import time:
+    ``basicConfig`` mutates the ROOT logger, so doing it on import turned every
+    library INFO record in the whole process into CLI stderr noise (#1018).
+    """
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        stream=sys.stderr,
+    )
+
+
+# ``FastMCP``'s own settings model annotates ``lifespan`` with a forward
+# reference to ``FastMCP`` itself, which is defined further down the same
+# module — so at class-creation time it is unresolved, and pydantic-settings
+# >= 2.15 warns about it on every instantiation. The library ships no
+# ``model_rebuild()`` call of its own; do it here, once the module (and hence
+# the referenced class) is fully imported. This is the exact remedy the warning
+# names, and it is a no-op on versions that already resolve it.
+#
+# Guarded by ``getattr`` deliberately: an upstream rename of ``Settings`` must
+# not take the entire MCP tool surface down with it (#874 was exactly that
+# failure — an SDK bump that removed a module we import at load time). The cost
+# is that the guard degrades to a silent no-op, so the degradation is pinned
+# structurally rather than by the warning:
+# ``test_mcp_core_rebuilds_settings_before_it_constructs_the_server`` fails on
+# the rename AND on a reordering that put this after the construction below.
+# Watching for the warning itself would NOT do: only pydantic-settings >= 2.15
+# emits it, ``uv.lock`` pins 2.14.2, and constructing ``FastMCP`` completes the
+# model as a side effect — so both obvious probes are green under the deps CI
+# actually runs.
+_fastmcp_settings = getattr(_fastmcp_server, "Settings", None)
+if _fastmcp_settings is not None:
+    _fastmcp_settings.model_rebuild()
+
+# Initialize FastMCP server
+mcp = FastMCP(
+    name="hermeswire",
+    instructions="HermesWire MCP server for terminal session management, remote machines, and voice interface for AI agents.",
+)
+
+
+def get_portal_url() -> str:
+    """Get portal URL from environment or config.
+
+    Resolution order:
+    1. HERMESWIRE_PORTAL_URL env var
+    2. ~/.hermeswire/config.yaml → portal.url
+    3. Default: localhost:8765 (https when SSL certs exist, else http)
+    """
+    # 1. Environment variable
+    if url := os.environ.get("HERMESWIRE_PORTAL_URL"):
+        return url
+
+    # 2. Config file
+    config = {}
+    config_path = Path.home() / ".hermeswire" / "config.yaml"
+    if config_path.exists():
+        try:
+            import yaml
+            with open(config_path) as f:
+                config = yaml.safe_load(f) or {}
+                if url := config.get("portal", {}).get("url"):
+                    return url
+        except Exception as e:
+            logger.warning(f"Failed to read config: {e}")
+
+    # 3. Default — https only when server.ssl cert/key are configured AND
+    # exist (mirrors the typed config's scheme logic)
+    ssl_cfg = config.get("server", {}).get("ssl", {})
+    cert, key = ssl_cfg.get("cert"), ssl_cfg.get("key")
+    enabled = bool(
+        cert and key
+        and Path(os.path.expanduser(cert)).exists()
+        and Path(os.path.expanduser(key)).exists()
+    )
+    return f"{'https' if enabled else 'http'}://localhost:8765"
+
+
+def get_caller_session() -> str | None:
+    """Get the tmux session name of the calling agent.
+
+    The MCP server runs inside the caller's tmux session,
+    so we can detect their session name from $TMUX_PANE.
+    """
+    tmux_pane = os.environ.get("TMUX_PANE")
+    if not tmux_pane:
+        return None
+    try:
+        result = subprocess.run(
+            ["tmux", "display", "-t", tmux_pane, "-p", "#{session_name}"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+    return None
+
+
+def _delivery_result(data: dict, where: str) -> str:
+    """Honest delivery report for send/notify tools (#444).
+
+    The CLI confirms a paste actually landed in the pane (``--verify``) and
+    returns ``verified``: True (landed), False (sent but not seen — likely a
+    busy/booting pane that dropped it), or None (remote — unverifiable across
+    SSH). Surface that instead of a blind "sent".
+
+    A ``False`` verify from a *session*-level send no longer just hands the
+    problem back to whichever caller reads this string (#834) — the CLI
+    falls back to the durable msg inbox (retried across ticks, dead-lettered
+    + emailed on true exhaustion) when the direct paste can't be confirmed,
+    so report THAT outcome rather than telling the caller to notice and
+    resend by hand. A worker *pane* send has no such fallback (the msg inbox
+    only addresses sessions, not individual panes) — ``data`` won't carry a
+    ``fallback`` key at all in that case, distinguishing "not attempted"
+    from "attempted and failed" so this never claims a fallback that never
+    ran.
+    """
+    verified = data.get("verified")
+    if verified is True:
+        return f"Message delivered {where} (verified in pane)."
+    if verified is False:
+        if "fallback" in data:
+            if data.get("fallback") == "already_delivered":
+                return (f"Message sent {where} — the pane confirmation was ambiguous, but the "
+                        f"message is already visible on scrollback, so it was in fact delivered. "
+                        f"No action needed.")
+            if data.get("fallback") == "inbox":
+                return (f"Message sent {where} but delivery could NOT be verified in the pane — "
+                        f"queued to its msg inbox instead, which guarantees delivery (retried "
+                        f"automatically, dead-lettered + emailed to the owner only if it truly "
+                        f"can't land). No action needed.")
+            if data.get("fallback") == "inbox_stuck":
+                return (f"Message sent {where} but delivery could NOT be verified in the pane — "
+                        f"queued to its msg inbox as a durable backup, but the ORIGINAL stale draft "
+                        f"could NOT be confirmed cleared from the input box. It may still be sitting "
+                        f"there and get submitted later by an unrelated Enter. Check the pane manually.")
+            return (f"Message sent {where} but delivery could NOT be verified, AND the msg-inbox "
+                    f"fallback also failed — this message may be lost. Check the pane or resend.")
+        return (f"Message sent {where} but delivery could NOT be verified — it may "
+                f"have been dropped (busy/booting pane). Check the pane or resend.")
+    if verified is None and "verified" in data:
+        return f"Message sent {where} (remote session — delivery can't be verified across SSH)."
+    return f"Message sent {where}."
+
+
+def _mcp_result(data: dict, on_success: str, operation: str = "complete operation") -> str:
+    """Standard success/error string for a thin MCP wrapper over run_hermeswire_cmd.
+
+    Collapses the repeated `if data.get("success"): return X; return f"Failed…"`
+    pattern so every wrapper reports failures the same way.
+    """
+    if data.get("success"):
+        return on_success
+    return f"Failed to {operation}: {data.get('error', 'Unknown error')}"
+
+
+def format_sessions(data: dict) -> str:
+    """Format sessions list for LLM consumption."""
+    sessions = data.get("sessions", [])
+    if not sessions:
+        return "No active sessions."
+
+    lines = ["Active sessions:"]
+    for s in sessions:
+        machine = s.get("machine") or "local"
+        name = s.get("name", "unknown")
+        windows = s.get("windows", 1)
+        path = s.get("path", "")
+        posture = s.get("posture", "unknown")
+        parked = " [PARKED: usage limit, auto-resumes after reset]" if s.get("usage_limit") else ""
+        lines.append(f"  - {name} ({machine}): {windows} window(s), posture={posture}, path={path}{parked}")
+
+    return "\n".join(lines)
+
+
+def format_panes(data: dict) -> str:
+    """Format panes list for LLM consumption."""
+    panes = data.get("panes", [])
+    session = data.get("session", "unknown")
+
+    if not panes:
+        return f"No panes in session '{session}'."
+
+    lines = [f"Panes in session '{session}':"]
+    for p in panes:
+        idx = p.get("index", 0)
+        cmd = p.get("command", "unknown")
+        active = " (active)" if p.get("active") else ""
+        role = "orchestrator" if idx == 0 else "worker"
+        lines.append(f"  - Pane {idx} [{role}]: {cmd}{active}")
+
+    return "\n".join(lines)
+
+
+def format_machines(data: dict) -> str:
+    """Format machines list for LLM consumption."""
+    machines = data.get("machines", [])
+    if not machines:
+        return "No remote machines configured."
+
+    lines = ["Configured machines:"]
+    for m in machines:
+        mid = m.get("id", "unknown")
+        host = m.get("host", "unknown")
+        user = m.get("user", "")
+        status = m.get("status", "unknown")
+        user_str = f"{user}@" if user else ""
+        lines.append(f"  - {mid}: {user_str}{host} (status: {status})")
+
+    return "\n".join(lines)
+
+
+def format_projects(data: dict) -> str:
+    """Format projects list for LLM consumption."""
+    projects = data.get("projects", [])
+    if not projects:
+        return "No projects found."
+
+    lines = ["Available projects:"]
+    for p in projects:
+        name = p.get("name", "unknown")
+        path = p.get("path", "")
+        has_config = p.get("has_config", False)
+        config_marker = " (has .hermeswire.yml)" if has_config else ""
+        lines.append(f"  - {name}: {path}{config_marker}")
+
+    return "\n".join(lines)
+
+
+def format_roles(data: dict) -> str:
+    """Format roles list for LLM consumption."""
+    roles = data.get("roles", [])
+    if not roles:
+        return "No roles available."
+
+    lines = ["Available roles:"]
+    for r in roles:
+        name = r.get("name", "unknown")
+        desc = r.get("description", "")
+        source = r.get("source", "")
+        lines.append(f"  - {name}: {desc} ({source})")
+
+    return "\n".join(lines)
+
+
+def format_voices(data: dict) -> str:
+    """Format voices list for LLM consumption."""
+    voices = data.get("voices", [])
+    if not voices:
+        return "No custom voices available. Default voice will be used."
+
+    lines = ["Available voices:"]
+    for v in voices:
+        name = v.get("name", "unknown") if isinstance(v, dict) else v
+        lines.append(f"  - {name}")
+
+    return "\n".join(lines)

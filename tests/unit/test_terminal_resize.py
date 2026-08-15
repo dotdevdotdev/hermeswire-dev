@@ -13,9 +13,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from agentwire.server import unpin_tmux_window
+from hermeswire.server import unpin_tmux_window
 
-AGENTWIRE_SRC = Path(__file__).parents[2] / "agentwire"
+HERMESWIRE_SRC = Path(__file__).parents[2] / "hermeswire"
 
 
 def _mock_subprocess():
@@ -65,10 +65,10 @@ class TestNoManualPinRegression:
         """tmux resize-window must never be invoked: -x/-y pins manual size
         mode and -a/-A leave it set (#258). Re-fitting is done by unsetting
         the window-size option."""
-        for src_file in AGENTWIRE_SRC.rglob("*.py"):
+        for src_file in HERMESWIRE_SRC.rglob("*.py"):
             for lineno, line in enumerate(src_file.read_text().splitlines(), 1):
                 code = line.split("#", 1)[0]
                 assert "resize-window" not in code, (
                     f"resize-window invocation found in "
-                    f"{src_file.relative_to(AGENTWIRE_SRC)}:{lineno}: {line.strip()!r}"
+                    f"{src_file.relative_to(HERMESWIRE_SRC)}:{lineno}: {line.strip()!r}"
                 )

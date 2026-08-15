@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from agentwire import worktree_registry as reg
-from agentwire.session_cli import _cleanup_empty_project_dir, _resolve_worktree_entry
+from hermeswire import worktree_registry as reg
+from hermeswire.session_cli import _cleanup_empty_project_dir, _resolve_worktree_entry
 
 
 @pytest.fixture

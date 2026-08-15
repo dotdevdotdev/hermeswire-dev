@@ -26,8 +26,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from agentwire import buddy_cli, core, inbox
-from agentwire.voice_layer import client, identity, realtime, server
+from hermeswire import buddy_cli, core, inbox
+from hermeswire.voice_layer import client, identity, realtime, server
 from tests.page_slice import page_slice
 
 needs_node = pytest.mark.skipif(

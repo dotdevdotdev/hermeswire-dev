@@ -1,9 +1,9 @@
-"""Tests for `agentwire config get|set|list` (#670).
+"""Tests for `hermeswire config get|set|list` (#670).
 
 The allowlist gate lives in the CLI, not the hook: allowlisted keys
 round-trip atomically with typed validation; execution-plane, unknown, and
 malformed writes are refused. All writes here target a temp config path —
-never the real ~/.agentwire/config.yaml.
+never the real ~/.hermeswire/config.yaml.
 """
 
 import argparse
@@ -11,12 +11,12 @@ import argparse
 import pytest
 import yaml
 
-from agentwire import config_cli
+from hermeswire import config_cli
 
 
 @pytest.fixture
 def config_dir(tmp_path, monkeypatch):
-    """Point config_cli at a temp ~/.agentwire with a seeded config.yaml."""
+    """Point config_cli at a temp ~/.hermeswire with a seeded config.yaml."""
     monkeypatch.setattr(config_cli, "CONFIG_DIR", tmp_path)
     (tmp_path / "config.yaml").write_text(
         yaml.safe_dump(

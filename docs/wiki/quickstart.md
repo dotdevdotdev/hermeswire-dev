@@ -13,34 +13,34 @@ This page assumes you're on macOS or Linux with Python 3.10+ already installed. 
 ```bash
 # macOS
 brew install tmux uv
-uv tool install agentwire-dev
+uv tool install hermeswire-dev
 
 # Ubuntu / Debian
 sudo apt install tmux
 curl -LsSf https://astral.sh/uv/install.sh | sh
-uv tool install agentwire-dev
+uv tool install hermeswire-dev
 ```
 
-`uv tool install` (or `pipx install agentwire-dev`) puts agentwire in its own isolated environment, so it works on PEP 668 "externally-managed" Pythons — bare `pip install agentwire-dev` fails there (Homebrew Python 3.12+, Debian/Ubuntu system Python). If you'd rather use pip, do it inside a venv.
+`uv tool install` (or `pipx install hermeswire-dev`) puts hermeswire in its own isolated environment, so it works on PEP 668 "externally-managed" Pythons — bare `pip install hermeswire-dev` fails there (Homebrew Python 3.12+, Debian/Ubuntu system Python). If you'd rather use pip, do it inside a venv.
 
-ffmpeg is **optional**: browser voice input works without it (WebM/Opus uploads are decoded in-process via PyAV). Install it only if you want host-mic push-to-talk capture (`agentwire listen`) — `brew install ffmpeg` / `sudo apt install ffmpeg`.
+ffmpeg is **optional**: browser voice input works without it (WebM/Opus uploads are decoded in-process via PyAV). Install it only if you want host-mic push-to-talk capture (`hermeswire listen`) — `brew install ffmpeg` / `sudo apt install ffmpeg`.
 
 You'll also want **Hermes Agent** installed (`hermes --version`) since the default posture runs through it.
 
-Then install the agentwire hooks Hermes Agent needs to talk back to AgentWire:
+Then install the hermeswire hooks Hermes Agent needs to talk back to HermesWire:
 
 ```bash
-agentwire hooks install
-agentwire doctor      # one-shot diagnostic — confirms tmux, ffmpeg, hooks, hermes
+hermeswire hooks install
+hermeswire doctor      # one-shot diagnostic — confirms tmux, ffmpeg, hooks, hermes
 ```
 
-`agentwire doctor` reports anything missing with a fix suggestion. Re-run until it's all green.
+`hermeswire doctor` reports anything missing with a fix suggestion. Re-run until it's all green.
 
 ### Recommended tmux config
 
-AgentWire's whole UX is "tmux as the agent canvas" — but tmux's defaults fight it: no mouse scroll, a 2,000-line scrollback that loses agent transcripts, broken text selection, and a Hermes Agent setup tip on every session start (`focus-events off`).
+HermesWire's whole UX is "tmux as the agent canvas" — but tmux's defaults fight it: no mouse scroll, a 2,000-line scrollback that loses agent transcripts, broken text selection, and a Hermes Agent setup tip on every session start (`focus-events off`).
 
-The fastest fix: **`agentwire init`** offers to install the full recommended config (backing up any existing `~/.tmux.conf` first; it never clobbers without asking). The bundled template lives at `agentwire/templates/tmux.conf` and also adds a status bar, pane-split bindings, and click/drag protection so stray clicks can't poke an agent.
+The fastest fix: **`hermeswire init`** offers to install the full recommended config (backing up any existing `~/.tmux.conf` first; it never clobbers without asking). The bundled template lives at `hermeswire/templates/tmux.conf` and also adds a status bar, pane-split bindings, and click/drag protection so stray clicks can't poke an agent.
 
 Already have a `~/.tmux.conf` you'd rather merge into? These are the settings that matter:
 
@@ -68,7 +68,7 @@ unbind -T copy-mode-vi MouseDragEnd1Pane
 set -g window-size largest
 ```
 
-`agentwire doctor` warns if the running tmux server has `focus-events` or `mouse` off.
+`hermeswire doctor` warns if the running tmux server has `focus-events` or `mouse` off.
 
 ### Hermes Agent status bar
 
@@ -76,41 +76,41 @@ Hermes Agent ships a built-in status bar (`⚕ {model} │ {used}/{total} │ �
 
 ---
 
-## Have the repo cloned? `agentwire dev`
+## Have the repo cloned? `hermeswire dev`
 
 ```bash
-git clone https://github.com/dotdevdotdev/agentwire-dev ~/projects/agentwire-dev
-agentwire dev
+git clone https://github.com/dotdevdotdev/hermeswire-dev ~/projects/hermeswire-dev
+hermeswire dev
 ```
 
 Starts (or re-attaches to) a guided **helper session** — an agent running the `contributor` role that walks you through setup, wires up your own projects, explains how sessions/panes/orchestration work, and helps you file a clean issue or fork the repo to contribute.
 
-It **requires a source checkout** of the agentwire-dev repo (the session runs inside it); a pip/uv-tool install alone doesn't need or include one, and everything else on this page works without it. `agentwire dev` searches `~/projects/agentwire-dev`, `~/agentwire-dev`, `~/src/agentwire-dev`, and `~/code/agentwire-dev`; cloned somewhere else, point at it with `dev.source_dir` in `~/.agentwire/config.yaml` or the `AGENTWIRE_SOURCE_DIR` env var.
+It **requires a source checkout** of the hermeswire-dev repo (the session runs inside it); a pip/uv-tool install alone doesn't need or include one, and everything else on this page works without it. `hermeswire dev` searches `~/projects/hermeswire-dev`, `~/hermeswire-dev`, `~/src/hermeswire-dev`, and `~/code/hermeswire-dev`; cloned somewhere else, point at it with `dev.source_dir` in `~/.hermeswire/config.yaml` or the `HERMESWIRE_SOURCE_DIR` env var.
 
 ---
 
 ## 2. Your first session
 
 ```bash
-agentwire new -s hello -p ~/projects/hello
+hermeswire new -s hello -p ~/projects/hello
 ```
 
 That creates:
 - a tmux session named `hello`
 - a Hermes Agent agent in pane 0 (the *orchestrator*)
 
-If `~/projects/hello/.agentwire.yml` exists, its posture / roles / voice are picked up automatically. Want one written for you? Add `--persist` (e.g. `--roles agentwire,voice --persist` or `--posture bypass --persist`) and AgentWire saves the config — and, in a git repo, adds `.agentwire.yml` to `.gitignore`. Without `--persist`, flags are session-level overrides only. **Keep it gitignored**: it's personal config (voices, schedules, notification addresses), and a tracked copy makes worktree-dispatched runs silently use the stale committed version instead of your live edits.
+If `~/projects/hello/.hermeswire.yml` exists, its posture / roles / voice are picked up automatically. Want one written for you? Add `--persist` (e.g. `--roles hermeswire,voice --persist` or `--posture bypass --persist`) and HermesWire saves the config — and, in a git repo, adds `.hermeswire.yml` to `.gitignore`. Without `--persist`, flags are session-level overrides only. **Keep it gitignored**: it's personal config (voices, schedules, notification addresses), and a tracked copy makes worktree-dispatched runs silently use the stale committed version instead of your live edits.
 
 Talk to it from another terminal:
 
 ```bash
-agentwire send -s hello "list the files in this directory and summarize what this project is"
-agentwire output -s hello -n 50    # last 50 lines
+hermeswire send -s hello "list the files in this directory and summarize what this project is"
+hermeswire output -s hello -n 50    # last 50 lines
 ```
 
 Or attach directly: `tmux attach -t hello`. Both views see the same session — orchestrator, output, transcript.
 
-To kill it: `agentwire kill -s hello`.
+To kill it: `hermeswire kill -s hello`.
 
 ---
 
@@ -119,7 +119,7 @@ To kill it: `agentwire kill -s hello`.
 Voice works out of the box — no certs, no GPU, no commands:
 
 ```bash
-agentwire portal start                # serves on http://127.0.0.1:8765
+hermeswire portal start                # serves on http://127.0.0.1:8765
 ```
 
 Open `http://127.0.0.1:8765` in **Chrome** (the blessed browser for instant
@@ -136,12 +136,12 @@ then upgrades automatically. With no browser open, speech plays on local
 speakers. Test it:
 
 ```bash
-agentwire say "Hello, this is your agent speaking."
+hermeswire say "Hello, this is your agent speaking."
 ```
 
 **Upgrading:** real cloned voices, Whisper-grade transcription, and
 phone-from-anywhere come from pointing `tts:`/`stt:` at a custom shim — the
-bundled servers (`agentwire tts start` / `agentwire stt start`) are reference
+bundled servers (`hermeswire tts start` / `hermeswire stt start`) are reference
 implementations. See the [shim contract](voice/shim-contract.md) and
 [self-hosted TTS](voice/tts-self-hosted.md). Phone/LAN access additionally
 needs `server.host: 0.0.0.0` + certs + the portal token (see SECURITY.md).
@@ -150,14 +150,14 @@ needs `server.host: 0.0.0.0` + certs + the portal token (see SECURITY.md).
 
 ## 4. Your first scheduled task
 
-Set the session config in `~/projects/hello/.agentwire.yml` (gitignored — see §2):
+Set the session config in `~/projects/hello/.hermeswire.yml` (gitignored — see §2):
 
 ```yaml
 posture: auto      # safer than bypass for unattended work
 roles: [task-runner]
 ```
 
-Then define the task itself in the separate, protected `~/projects/hello/.agentwire.tasks.yml` — see the `agentwire-project-config` skill for the propose-and-promote authoring flow:
+Then define the task itself in the separate, protected `~/projects/hello/.hermeswire.tasks.yml` — see the `hermeswire-project-config` skill for the propose-and-promote authoring flow:
 
 ```yaml
 tasks:
@@ -168,7 +168,7 @@ tasks:
     idle_timeout: 30
 ```
 
-Schedule it via `~/.agentwire/scheduler.yaml`:
+Schedule it via `~/.hermeswire/scheduler.yaml`:
 
 ```yaml
 tasks:
@@ -184,9 +184,9 @@ tasks:
 Verify it parses, then dry-run, then fire:
 
 ```bash
-agentwire scheduler board                     # see the task with its schedule
-agentwire scheduler run hello-nightly         # fire it now (ignores schedule)
-agentwire scheduler events --task hello-nightly --tail 20    # see what happened
+hermeswire scheduler board                     # see the task with its schedule
+hermeswire scheduler run hello-nightly         # fire it now (ignores schedule)
+hermeswire scheduler events --task hello-nightly --tail 20    # see what happened
 ```
 
 The scheduler runs the prompt headless in a fresh tmux session, captures the agent's output, writes a summary file, and tears the session down. → [Scheduled workloads](scheduling/scheduled-workloads.md) for branch management and gates.
@@ -197,13 +197,13 @@ The scheduler runs the prompt headless in a fresh tmux session, captures the age
 
 Channels are outbound-only — a session sends you an email or SMS without exposing any inbound surface. Two ship today: **email** (Resend) and **quo** (OpenPhone SMS).
 
-1. Put your Resend key in `~/.agentwire/.env` — the one place all keys live ([Secrets & API keys](security/secrets.md)):
+1. Put your Resend key in `~/.hermeswire/.env` — the one place all keys live ([Secrets & API keys](security/secrets.md)):
 
    ```bash
-   echo 'RESEND_API_KEY=re_...' >> ~/.agentwire/.env
+   echo 'RESEND_API_KEY=re_...' >> ~/.hermeswire/.env
    ```
 
-2. Add to `~/.agentwire/config.yaml` (no key here — config never holds secrets):
+2. Add to `~/.hermeswire/config.yaml` (no key here — config never holds secrets):
 
    ```yaml
    channels:
@@ -215,10 +215,10 @@ Channels are outbound-only — a session sends you an email or SMS without expos
 3. From a session, send yourself a note:
 
    ```bash
-   agentwire email --subject "Task done" --body "Build green on main."
+   hermeswire email --subject "Task done" --body "Build green on main."
    ```
 
-That's it — the session can `agentwire email ...` or `agentwire quo ...` whenever it wants to escalate. Inbound user input flows through the portal (web + tunnel), not through a chat-app bridge. → [Channels](communication/channels.md).
+That's it — the session can `hermeswire email ...` or `hermeswire quo ...` whenever it wants to escalate. Inbound user input flows through the portal (web + tunnel), not through a chat-app bridge. → [Channels](communication/channels.md).
 
 ---
 

@@ -438,15 +438,15 @@ class TestTheIgnoreRationaleIsStillTrue:
     An ignore justified by "we don't use that" is only as strong as the path
     staying unused — and a rationale that has quietly become false is WORSE
     than none, because the next reader trusts it and stops checking. So the
-    premise is pinned here: if agentwire ever serves MCP over WebSocket, these
+    premise is pinned here: if hermeswire ever serves MCP over WebSocket, these
     fail and name the ignore that must be revisited.
     """
 
-    AGENTWIRE = REPO / "agentwire"
+    HERMESWIRE = REPO / "hermeswire"
     IGNORE = "PYSEC-2026-3483"
 
     def test_the_mcp_server_runs_on_stdio(self):
-        source = (self.AGENTWIRE / "mcp_server.py").read_text()
+        source = (self.HERMESWIRE / "mcp_server.py").read_text()
         assert 'transport="stdio"' in source, (
             f"the MCP server no longer runs on stdio — the reachability "
             f"argument for --ignore-vuln {self.IGNORE} no longer holds")
@@ -455,7 +455,7 @@ class TestTheIgnoreRationaleIsStillTrue:
         """The module the advisory is actually about."""
         offenders = [
             path.relative_to(REPO)
-            for path in self.AGENTWIRE.rglob("*.py")
+            for path in self.HERMESWIRE.rglob("*.py")
             if "mcp.server.websocket" in path.read_text()
             or "websocket_server" in path.read_text()
         ]

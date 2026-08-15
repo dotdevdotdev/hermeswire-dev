@@ -1,38 +1,38 @@
-# AgentWire Wiki
+# HermesWire Wiki
 
-Reference manual for AgentWire features and internals.
+Reference manual for HermesWire features and internals.
 
-> **Living wiki.** Update existing pages, don't create new versions. New work is tracked in [GitHub issues](https://github.com/dotdevdotdev/agentwire-dev/issues) and pull requests, not in this repo.
+> **Living wiki.** Update existing pages, don't create new versions. New work is tracked in [GitHub issues](https://github.com/dotdevdotdev/hermeswire-dev/issues) and pull requests, not in this repo.
 
 ## Getting Started
 
-New to AgentWire? Start here:
+New to HermesWire? Start here:
 
 1. **[Quickstart](quickstart.md)** — install → first session → voice → first scheduled task → first channel, in 5 minutes
 2. **[Concepts](concepts.md)** — narrative mental model: why tmux, sessions, orchestrator/worker, channels, scheduled work
 3. **[Architecture](architecture.md)** — single-page diagram of how the pieces fit together
 4. **[Glossary](glossary.md)** — definitions for session, pane, channel, gate, and the rest
-5. **[README](../../README.md)** — what AgentWire is, full install matrix, feature list
+5. **[README](../../README.md)** — what HermesWire is, full install matrix, feature list
 6. **[CLAUDE.md](../../CLAUDE.md)** — agent-facing project guide
 7. **[Sessions: hermes-safety-posture](sessions/hermes-safety-posture.md)** — Hermes safety posture for autonomous work (hooks + approvals + checkpoints + `--yolo`)
 
 ## Sessions
 
-How AgentWire runs AI agents — postures, REPLs, and permission models.
+How HermesWire runs AI agents — postures, REPLs, and permission models.
 
-- **[Worktree sessions](sessions/worktree-sessions.md)** — `agentwire worktree <name>`: isolated branch + worktree + standalone session for one unit of work; repo-derived base branch, naming templates, monorepo support, local branch↔session registry (`--list`/`--remove`/`--prune`/`--dangling`); `--kind orchestrator` / `agentwire orchestrator` for a durable project window on the same topology (role⟂topology, #716)
-- **[Helper sessions](sessions/helper-sessions.md)** — `agentwire helper <name>`: a worker session with NO isolation, sharing the caller's checkout (no worktree, no branch, no registry entry, zero git work at creation). Reproduces a worker pane's one real advantage on a real session — msg inbox, voice, prompt routing, portal visibility all included; the `shared-checkout` role holds the line at "files yours, git state theirs" (#838)
-- **[Conversation identity](sessions/conversation-identity.md)** — every session records WHICH Hermes conversation it is: the Hermes session id is minted by Hermes itself (resumed via `--resume`), so `~/.agentwire/sessions/<name>/metadata.json` carries an authoritative `conversation_ids` chain plus cwd/repo/branch/roles/posture — enough to regenerate the system prompt, not merely reference it. Also why the role prompt moved out of `/var/folders` (macOS GC'd it and the role silently vanished), and how `agentwire restart` relaunches a session in place on that record — degrading to a fresh conversation, out loud, when the history is orphaned or gone
+- **[Worktree sessions](sessions/worktree-sessions.md)** — `hermeswire worktree <name>`: isolated branch + worktree + standalone session for one unit of work; repo-derived base branch, naming templates, monorepo support, local branch↔session registry (`--list`/`--remove`/`--prune`/`--dangling`); `--kind orchestrator` / `hermeswire orchestrator` for a durable project window on the same topology (role⟂topology, #716)
+- **[Helper sessions](sessions/helper-sessions.md)** — `hermeswire helper <name>`: a worker session with NO isolation, sharing the caller's checkout (no worktree, no branch, no registry entry, zero git work at creation). Reproduces a worker pane's one real advantage on a real session — msg inbox, voice, prompt routing, portal visibility all included; the `shared-checkout` role holds the line at "files yours, git state theirs" (#838)
+- **[Conversation identity](sessions/conversation-identity.md)** — every session records WHICH Hermes conversation it is: the Hermes session id is minted by Hermes itself (resumed via `--resume`), so `~/.hermeswire/sessions/<name>/metadata.json` carries an authoritative `conversation_ids` chain plus cwd/repo/branch/roles/posture — enough to regenerate the system prompt, not merely reference it. Also why the role prompt moved out of `/var/folders` (macOS GC'd it and the role silently vanished), and how `hermeswire restart` relaunches a session in place on that record — degrading to a fresh conversation, out loud, when the history is orphaned or gone
 - **[hermes-safety-posture](sessions/hermes-safety-posture.md)** — Hermes safety posture: damage-control hooks + approval gate + checkpoints + `--yolo` (no classifier)
 - **[Window sizing](sessions/window-sizing.md)** — how tmux `window-size` policies interact with the portal (v1.33+ behavior change, healing stuck windows, policy picker)
-- **[Custom services](services.md)** — registered long-running sessions: autostart on portal launch, watchdog health checks + restart with backoff, `agentwire services` CLI
+- **[Custom services](services.md)** — registered long-running sessions: autostart on portal launch, watchdog health checks + restart with backoff, `hermeswire services` CLI
 - **[Council](council.md)** — multi-soul orchestrator sitting: fan a prompt out to lens sessions (brain, conscience, gut, critic, …), collect via file inbox, synthesize with attribution
 - **[Briefing Mode](briefing-mode.md)** — asymmetric-verbosity orchestration: a terse `anchor` fans out verbose `correspondent` worktrees that signal passively (`msg ingest`), then briefs the human across voice + screen (`say(text=, display=)`) on cue. Roles + dropbox + passive-pull + worktree lifecycle quartet
 - **[Voice Layer](voice-layer.md)** — ⚗️ **BETA, opt-in: off unless `beta.voice_layer: true`.** A realtime voice buddy (`gpt-realtime-2.1` over WebRTC) the owner talks to *about* the fleet — fleet awareness across a tiered read surface, a session identity with no tmux session, one inbox delivery adapter, and exactly ONE write (a message to a running session) gated below the model by a spoken nonce. Explicitly **not a harness**: never writes code, never owns a worktree, never appears in the topology
-- **[Fan-out cohorts](sessions/fan-out-cohorts.md)** — `agentwire wait --children` / `wait_children`: a parent blocks on the children it spawned instead of going idle and being reaped mid-fan-out; auto-enrolled ledger (independent of #715 rooting), collect-then-kill teardown, idle-handler guard + watchdog sweeper so nothing leaks
-- **[Prompt routing](sessions/prompt-routing.md)** — permission/plan/AskUserQuestion prompts in a child session route to its parent (hook path + watchdog sweep); guarded `agentwire prompts answer`, no auto-answering
-- **[Polite messaging](sessions/messaging.md)** — `agentwire msg` drops typed messages into a per-session file inbox and injects them only when the input box is empty (`prompt_is_empty`) and the pane is safe; never clobbers a human draft, the way `agentwire send` does. `@all` broadcast, MCP `msg_send`/`msg_inbox`. Plus the **passive `ingest`** kind (never auto-delivered; pulled with `msg pull`) + typed `ref` pointer — the awareness primitive behind Briefing Mode
-- **[The #689 heal cliff](sessions/heal-line-count-cliff.md)** — measured: the drain's `stuck` test misses in TWO regimes with different governing variables (one long line WINDOWS at ~530 chars with no chip at all; four-plus lines CHIP at any size), so a coalesced drain of 4+ messages wedges every one of them — never healed, never dead-lettered, never emailed ([#930](https://github.com/dotdevdotdev/agentwire-dev/issues/930))
+- **[Fan-out cohorts](sessions/fan-out-cohorts.md)** — `hermeswire wait --children` / `wait_children`: a parent blocks on the children it spawned instead of going idle and being reaped mid-fan-out; auto-enrolled ledger (independent of #715 rooting), collect-then-kill teardown, idle-handler guard + watchdog sweeper so nothing leaks
+- **[Prompt routing](sessions/prompt-routing.md)** — permission/plan/AskUserQuestion prompts in a child session route to its parent (hook path + watchdog sweep); guarded `hermeswire prompts answer`, no auto-answering
+- **[Polite messaging](sessions/messaging.md)** — `hermeswire msg` drops typed messages into a per-session file inbox and injects them only when the input box is empty (`prompt_is_empty`) and the pane is safe; never clobbers a human draft, the way `hermeswire send` does. `@all` broadcast, MCP `msg_send`/`msg_inbox`. Plus the **passive `ingest`** kind (never auto-delivered; pulled with `msg pull`) + typed `ref` pointer — the awareness primitive behind Briefing Mode
+- **[The #689 heal cliff](sessions/heal-line-count-cliff.md)** — measured: the drain's `stuck` test misses in TWO regimes with different governing variables (one long line WINDOWS at ~530 chars with no chip at all; four-plus lines CHIP at any size), so a coalesced drain of 4+ messages wedges every one of them — never healed, never dead-lettered, never emailed ([#930](https://github.com/dotdevdotdev/hermeswire-dev/issues/930))
 
 ## Communication
 
@@ -46,27 +46,27 @@ How sessions talk to humans and external platforms.
 
 Headless and scheduled execution.
 
-- **[Scheduled workloads](scheduling/scheduled-workloads.md)** — `agentwire ensure`, `.agentwire.tasks.yml` task schema
+- **[Scheduled workloads](scheduling/scheduled-workloads.md)** — `hermeswire ensure`, `.hermeswire.tasks.yml` task schema
 - **[Usage-limit recovery](usage-limit-recovery.md)** — deterministic detect → park → email → auto-resume for the usage-limit dialog; launchd watchdog, zero LLM involvement
 - **[Expired-login detection](auth-expired.md)** — a refused turn (`authentication_failed`) read from the transcript, not the pane; machine-wide outage state gates dispatch and emails the owner once
 
 ## Security
 
-- **[Secrets & API keys](security/secrets.md)** — `~/.agentwire/.env` is the one place every key lives; which vars each feature reads; the `api_key_env` pattern for new integrations
-- **[Remote-access hardening](security/remote-access-hardening.md)** — threat model for the any-device→tunnel→portal→shell path; network footprint map (what agentwire owns vs BYO tunnels); the portal auth boundary and the per-device / capability-scope / freeze-config hardening plan (#396, #420, #423–#425)
+- **[Secrets & API keys](security/secrets.md)** — `~/.hermeswire/.env` is the one place every key lives; which vars each feature reads; the `api_key_env` pattern for new integrations
+- **[Remote-access hardening](security/remote-access-hardening.md)** — threat model for the any-device→tunnel→portal→shell path; network footprint map (what hermeswire owns vs BYO tunnels); the portal auth boundary and the per-device / capability-scope / freeze-config hardening plan (#396, #420, #423–#425)
 - **[Damage control](internals/damage-control.md)** — safety hooks: rules, patterns, audit log
 - **[Damage-control matcher hardening](security/damage-control-hardening.md)** — consolidated note for the matcher hardening shipped in PR #500
 - **[pip-audit](security/pip-audit.md)** — dependency CVE triage workflow
 
 ## Integrations
 
-External tools wired into AgentWire.
+External tools wired into HermesWire.
 
 - **[Google Workspace CLI (`gws`)](integrations/gws-google-workspace-cli.md)** — Gmail/Drive/Calendar via `@googleworkspace/cli`
 
 ## Deployment
 
-Running AgentWire across machines and exposing the portal.
+Running HermesWire across machines and exposing the portal.
 
 - **[Remote machines](deployment/remote-machines.md)** — SSH-based multi-machine orchestration, WSL2 setup
 - **[Remote access](deployment/remote-access.md)** — Cloudflare Tunnel + Zero Trust auth for the portal
@@ -75,7 +75,7 @@ Running AgentWire across machines and exposing the portal.
 
 Recon notes and evaluations that inform direction (not yet implemented).
 
-- **[Orchestration transport alternatives](research/orchestration-transport-alternatives.md)** — the "we don't use SSH" competitor pitch, evaluated: claims-vs-reality on faster/more-secure, and why the cheap wins are SSH `ControlMaster` multiplexing + a Tailscale mesh underlay rather than a new transport ([#297](https://github.com/dotdevdotdev/agentwire-dev/issues/297))
+- **[Orchestration transport alternatives](research/orchestration-transport-alternatives.md)** — the "we don't use SSH" competitor pitch, evaluated: claims-vs-reality on faster/more-secure, and why the cheap wins are SSH `ControlMaster` multiplexing + a Tailscale mesh underlay rather than a new transport ([#297](https://github.com/dotdevdotdev/hermeswire-dev/issues/297))
 - **[Briefing Mode feasibility](research/briefing-mode-feasibility.md)** — asymmetric-verbosity orchestration evaluation that informed the shipped Briefing Mode
 
 ## Voice (TTS & STT)
@@ -110,13 +110,13 @@ Agent-facing reference lives in `.hermes/skills/` and loads automatically inside
 
 | Skill | Topic |
 |---|---|
-| `agentwire-cli` | Composing `agentwire ...` shell commands |
-| `agentwire-mcp-tools` | Picking the right MCP tool inside a session |
-| `agentwire-config` | Editing `~/.agentwire/config.yaml` |
-| `agentwire-project-config` | Editing `.agentwire.yml` (roles/session config) + `.agentwire.tasks.yml` (tasks) |
-| `agentwire-scheduler` | Scheduled tasks, gates |
-| `agentwire-desktop-ui` | Editing portal static files |
+| `hermeswire-cli` | Composing `hermeswire ...` shell commands |
+| `hermeswire-mcp-tools` | Picking the right MCP tool inside a session |
+| `hermeswire-config` | Editing `~/.hermeswire/config.yaml` |
+| `hermeswire-project-config` | Editing `.hermeswire.yml` (roles/session config) + `.hermeswire.tasks.yml` (tasks) |
+| `hermeswire-scheduler` | Scheduled tasks, gates |
+| `hermeswire-desktop-ui` | Editing portal static files |
 
 ## Issue tracking
 
-Plans, status, and history live in [GitHub issues](https://github.com/dotdevdotdev/agentwire-dev/issues). Issue body = plan, comments = progress breadcrumbs, PR body = end-of-task summary. (This is a contributor convention, not something agentwire ships.)
+Plans, status, and history live in [GitHub issues](https://github.com/dotdevdotdev/hermeswire-dev/issues). Issue body = plan, comments = progress breadcrumbs, PR body = end-of-task summary. (This is a contributor convention, not something hermeswire ships.)

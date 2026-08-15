@@ -12,7 +12,7 @@ import types
 
 import pytest
 
-from agentwire import doctor_cli, history
+from hermeswire import doctor_cli, history
 
 
 class FakeStore:
@@ -30,17 +30,17 @@ class FakeStore:
 
 @pytest.fixture
 def store(tmp_path, monkeypatch):
-    monkeypatch.setattr("agentwire.core.CONFIG_DIR", tmp_path / "agentwire")
+    monkeypatch.setattr("hermeswire.core.CONFIG_DIR", tmp_path / "hermeswire")
     fake = FakeStore()
     monkeypatch.setattr(history, "_db", lambda: fake)
     # Default: nothing is live. Each test opts in.
     monkeypatch.setattr(doctor_cli, "tmux_session_exists", lambda n: False)
-    monkeypatch.setattr("agentwire.core.tmux_session_cwd", lambda n: None)
+    monkeypatch.setattr("hermeswire.core.tmux_session_cwd", lambda n: None)
     return types.SimpleNamespace(root=tmp_path, store=fake)
 
 
 def record(session, *, cwd, ids, **extra):
-    from agentwire.core import store_session_metadata
+    from hermeswire.core import store_session_metadata
 
     store_session_metadata(session, {
         "cwd_at_launch": str(cwd),
@@ -81,7 +81,7 @@ class TestScanOrphanedHistory:
         assert doctor_cli._render_orphaned_history_section() == 0  # stated, not counted
 
     def test_pre_871_records_are_skipped(self, store):
-        from agentwire.core import store_session_metadata
+        from hermeswire.core import store_session_metadata
 
         store_session_metadata("old-shape", {"created_by": "orch"})
         store_session_metadata("no-ids", {"cwd_at_launch": str(store.root)})

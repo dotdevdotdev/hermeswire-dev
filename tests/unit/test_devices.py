@@ -1,12 +1,12 @@
-"""Unit tests for agentwire.devices — registry, hashing, pairing lifecycle."""
+"""Unit tests for hermeswire.devices — registry, hashing, pairing lifecycle."""
 
 import time
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from agentwire import devices
-from agentwire.devices import (
+from hermeswire import devices
+from hermeswire.devices import (
     DeviceRegistry,
     consume_pairing,
     create_pairing,
@@ -161,7 +161,7 @@ class TestConcurrency:
         # Make last_seen stale so touch() actually wants to write.
         from dataclasses import asdict
 
-        from agentwire.devices import _atomic_write_json, _iso, _read_devices
+        from hermeswire.devices import _atomic_write_json, _iso, _read_devices
         ds = _read_devices(reg_path)
         ds[0].last_seen = _iso(0)
         _atomic_write_json(reg_path, {"devices": [asdict(d) for d in ds]})

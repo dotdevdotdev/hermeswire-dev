@@ -15,13 +15,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from agentwire import auth_expired, core, fleet_alerts, inbox
-from agentwire.voice_layer import delivery, identity
+from hermeswire import auth_expired, core, fleet_alerts, inbox
+from hermeswire.voice_layer import delivery, identity
 
 
 @pytest.fixture
 def isolate(tmp_path, monkeypatch):
-    root = tmp_path / "agentwire"
+    root = tmp_path / "hermeswire"
     (root / "sessions").mkdir(parents=True)
     monkeypatch.setattr(core, "CONFIG_DIR", root)
     monkeypatch.setattr(inbox, "INBOX_ROOT", root / "inbox")
@@ -58,8 +58,8 @@ class TestBuddyLease:
         active buddy — register alone would mean a buddy started a fortnight
         after registration hears nothing at all.
         """
-        from agentwire import buddy_cli
-        from agentwire.voice_layer import server
+        from hermeswire import buddy_cli
+        from hermeswire.voice_layer import server
 
         identity.register("buddy")
         meta = core.load_session_metadata("buddy")
@@ -103,8 +103,8 @@ class TestAlertingCannotBreakTheBuddy:
         assert delivery.session_state_dir("buddy").is_dir()
 
     def test_serve_still_serves(self, isolate, broken_subscribe, monkeypatch):
-        from agentwire import buddy_cli
-        from agentwire.voice_layer import server
+        from hermeswire import buddy_cli
+        from hermeswire.voice_layer import server
 
         identity.register("buddy")
         served: list = []
@@ -133,7 +133,7 @@ class TestReachesTheSpool:
         """
         identity.register("buddy")
         monkeypatch.setattr(
-            "agentwire.channels.email.send_email",
+            "hermeswire.channels.email.send_email",
             lambda **k: SimpleNamespace(success=False, error="no key"),
         )
         auth_expired.record_outage({"session": "task-a", "transcript": "/t.jsonl"})
@@ -149,7 +149,7 @@ class TestReachesTheSpool:
 
     def test_no_buddy_registered_means_nothing_is_produced(self, isolate, monkeypatch):
         monkeypatch.setattr(
-            "agentwire.channels.email.send_email",
+            "hermeswire.channels.email.send_email",
             lambda **k: SimpleNamespace(success=False, error="no key"),
         )
         auth_expired.record_outage({"session": "task-a", "transcript": "/t.jsonl"})

@@ -4,7 +4,7 @@ from datetime import datetime
 
 import pytest
 
-from agentwire.scheduler import _day_matches, _parse_duration, _parse_time
+from hermeswire.scheduler import _day_matches, _parse_duration, _parse_time
 
 
 @pytest.mark.parametrize("text,expected", [

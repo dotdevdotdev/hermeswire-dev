@@ -1,4 +1,4 @@
-"""CLI-surface tests for ``agentwire msg`` (#333).
+"""CLI-surface tests for ``hermeswire msg`` (#333).
 
 Covers the sharpened empty-recipient reason on ``msg send``, the send-time
 gone-target warning (#694), and the ``msg dead`` lister (JSON shape + human
@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from agentwire import inbox, msg_cli
+from hermeswire import inbox, msg_cli
 
 
 @pytest.fixture
@@ -139,10 +139,10 @@ class TestDeadGlobalScope:
 
 class TestDeadLister:
     def _kill_one(self, monkeypatch, session="s"):
-        from agentwire import prompt_router
+        from hermeswire import prompt_router
 
         inbox.enqueue(session, "stuck", sender="x")
-        monkeypatch.setattr("agentwire.usage_limit._capture", lambda s, **kw: "dummy")
+        monkeypatch.setattr("hermeswire.usage_limit._capture", lambda s, **kw: "dummy")
         monkeypatch.setattr(prompt_router, "capture", lambda s, p=0, **kw: "dummy")
         # Box content must CHANGE between sweeps to keep penalizing — identical
         # content across sweeps is the no-penalty box_static path (#669).

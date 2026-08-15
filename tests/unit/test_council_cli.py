@@ -1,11 +1,11 @@
-"""Tests for agentwire/council/cli.py — handlers with side effects mocked."""
+"""Tests for hermeswire/council/cli.py — handlers with side effects mocked."""
 
 import argparse
 import json
 
 import pytest
 
-from agentwire.council import cli, inbox, state
+from hermeswire.council import cli, inbox, state
 
 NAME = "proj"
 
@@ -74,9 +74,9 @@ class TestStart:
         assert payload["success"]
         assert payload["council"] == NAME
         names = [c[0] for c in mocks["created"]]
-        assert names == ["agentwire-council-proj", "council-proj-brain", "council-proj-gut"]
+        assert names == ["hermeswire-council-proj", "council-proj-brain", "council-proj-gut"]
         roles = {c[0]: c[1] for c in mocks["created"]}
-        assert roles["agentwire-council-proj"] == ["council-orchestrator"]
+        assert roles["hermeswire-council-proj"] == ["council-orchestrator"]
         assert roles["council-proj-brain"] == ["council-member", "council-brain"]
         sitting = state.read_sitting(NAME)
         assert sitting.roster == ["brain", "gut"]
@@ -84,12 +84,12 @@ class TestStart:
             "brain": "council-proj-brain",
             "gut": "council-proj-gut",
         }
-        assert sitting.orchestrator == "agentwire-council-proj"
+        assert sitting.orchestrator == "hermeswire-council-proj"
 
     def test_writes_workspace_config(self, mocks, capsys):
         _start(mocks)
-        yml = (state.workspace_dir(NAME) / ".agentwire.yml").read_text()
-        assert "parent: agentwire-council-proj" in yml
+        yml = (state.workspace_dir(NAME) / ".hermeswire.yml").read_text()
+        assert "parent: hermeswire-council-proj" in yml
 
     def test_default_roster(self, mocks, capsys):
         _start(mocks, roster=None)
@@ -113,7 +113,7 @@ class TestStart:
         capsys.readouterr()
         args = _args(roster="brain", type=None, model=None, force=True, json=True)
         assert cli.cmd_council_start(args) == 0
-        assert "agentwire-council-proj" in mocks["killed"]
+        assert "hermeswire-council-proj" in mocks["killed"]
         assert state.read_sitting(NAME).roster == ["brain"]
 
     def test_concurrent_sittings_isolated(self, mocks, capsys):
@@ -124,8 +124,8 @@ class TestStart:
         # Advisory names every live sitting when seating beyond the first.
         assert "councils live" in payload["advisory"]
         assert set(state.list_sittings()) == {"a", "b"}
-        assert state.read_sitting("a").orchestrator == "agentwire-council-a"
-        assert state.read_sitting("b").orchestrator == "agentwire-council-b"
+        assert state.read_sitting("a").orchestrator == "hermeswire-council-a"
+        assert state.read_sitting("b").orchestrator == "hermeswire-council-b"
 
 
 class TestStop:
@@ -136,7 +136,7 @@ class TestStop:
         payload = _payload(capsys)
         assert payload["council"] == NAME
         assert set(payload["killed"]) == {
-            "agentwire-council-proj",
+            "hermeswire-council-proj",
             "council-proj-brain",
             "council-proj-gut",
         }
@@ -384,7 +384,7 @@ class TestReply:
         nudges = mocks["sent"][sent_before:]
         assert len(nudges) == 1
         session, msg = nudges[0]
-        assert session == "agentwire-council-proj"
+        assert session == "hermeswire-council-proj"
         assert "[COUNCIL FOLLOW-UP]" in msg and "brain" in msg
 
     def test_initial_reply_does_not_nudge(self, mocks, capsys):

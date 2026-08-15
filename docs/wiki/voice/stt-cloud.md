@@ -11,7 +11,7 @@ a hosted transcription API. No shim process, no new ports.
 ## Configuration
 
 ```yaml
-# ~/.agentwire/config.yaml
+# ~/.hermeswire/config.yaml
 stt:
   backend: cloud
   cloud:
@@ -25,11 +25,11 @@ stt:
 Every `cloud.*` field is optional — the defaults above are what you get with
 just `backend: cloud`. The portal reads the key from the env var named by
 `api_key_env` at startup and **refuses to start** if it's missing (fail fast
-beats silent dead mics). `agentwire doctor` checks the same thing.
+beats silent dead mics). `hermeswire doctor` checks the same thing.
 
-**Where to put the key:** `~/.agentwire/.env` — the one place every
-agentwire secret lives ([Secrets & API keys](../security/secrets.md)).
-agentwire loads it on every startup (`load_dotenv` in `__main__.py`), so a
+**Where to put the key:** `~/.hermeswire/.env` — the one place every
+hermeswire secret lives ([Secrets & API keys](../security/secrets.md)).
+hermeswire loads it on every startup (`load_dotenv` in `__main__.py`), so a
 line like `OPENAI_API_KEY=sk-...` is all it takes. It's also covered by the
 damage-control hooks (zero-access for agents).
 
@@ -63,7 +63,7 @@ OpenAI-compatible API, `custom` = literally anything behind your own shim.
 
 ## Source
 
-- Backend: `agentwire/stt/cloud.py` (`CloudSTTBackend`)
-- Tier selection: `agentwire/stt/__init__.py::get_stt_backend`
-- Config: `agentwire/config.py::STTConfig`
+- Backend: `hermeswire/stt/cloud.py` (`CloudSTTBackend`)
+- Tier selection: `hermeswire/stt/__init__.py::get_stt_backend`
+- Config: `hermeswire/config.py::STTConfig`
 - Tests: `tests/unit/test_stt_cloud.py`

@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.9"
-# dependencies = ["agentwire-dev @ file:///Users/dotdev/projects/agentwire-dev"]
+# dependencies = ["hermeswire-dev @ file:///Users/dotdev/projects/hermeswire-dev"]
 # ///
 """Live-pane round trip for the §4b body: does the #689 heal actually fire?
 
@@ -45,8 +45,8 @@ import sys
 import time
 from pathlib import Path
 
-from agentwire import inbox, pane_manager, prompt_router, session_ready
-from agentwire.voice_layer import confirm, relay, write_tools
+from hermeswire import inbox, pane_manager, prompt_router, session_ready
+from hermeswire.voice_layer import confirm, relay, write_tools
 
 SESSION = "voice-heal-probe"
 #: Overridable so the pane-DEPENDENT half of the measurement can be re-taken at
@@ -185,7 +185,7 @@ def main() -> int:
             "okay yeah go ahead and confirm tango please thats the right one and "
             "then start on the follow up list we went through this morning",
             "a1b2c3",
-            reply_to="agentwire-dev-voice-confirm-spine",
+            reply_to="hermeswire-dev-voice-confirm-spine",
             full_path=str(relay.relay_path("a1b2c3")),
         )
         assert confirm.POINTER_LABEL in real_body, "probe must exercise the pointer"

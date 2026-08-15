@@ -1,8 +1,8 @@
-"""Tests for agentwire/council/state.py — namespaced sitting lifecycle."""
+"""Tests for hermeswire/council/state.py — namespaced sitting lifecycle."""
 
 import pytest
 
-from agentwire.council import state
+from hermeswire.council import state
 
 NAME = "proj"
 
@@ -37,7 +37,7 @@ class TestPaths:
         assert state.prompts_dir(NAME) == council_root / NAME / "prompts"
 
     def test_session_names(self):
-        assert state.orchestrator_for(NAME) == "agentwire-council-proj"
+        assert state.orchestrator_for(NAME) == "hermeswire-council-proj"
         assert state.session_for(NAME, "brain") == "council-proj-brain"
         assert state.session_for("redesign", "devils-advocate") == (
             "council-redesign-devils-advocate"
@@ -125,7 +125,7 @@ class TestPromptIds:
 
 class TestNameValidation:
     def test_valid(self):
-        for name in ["brain", "devils-advocate", "x2", "redesign", "agentwire-dev"]:
+        for name in ["brain", "devils-advocate", "x2", "redesign", "hermeswire-dev"]:
             assert state.valid_name(name)
             assert state.valid_lens(name)
 

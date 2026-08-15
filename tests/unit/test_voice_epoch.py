@@ -26,7 +26,7 @@ and nothing is deleted: the false-reject half of a rejecting epoch guard is a
 dropped utterance, which in this channel is a silent loop, and it would be paid
 on the owner's LIVE tab.
 
-The base is advanced by a whole :data:`~agentwire.voice_layer.server.MINT_SEQ_GAP`
+The base is advanced by a whole :data:`~hermeswire.voice_layer.server.MINT_SEQ_GAP`
 rather than by one, which is what makes it an epoch rather than a bump: two
 tabs minting against one bridge get non-overlapping numeric ranges, so tab A
 would have to emit a million events before it could reach into tab B's.
@@ -38,7 +38,7 @@ assumed, both found in review:
   is two acquisitions, and two concurrent mints on the bridge's threading
   server can be handed the same base — the two-interleaved-counters case, back
   inside the fix for it.
-- it is **bounded** (:data:`~agentwire.voice_layer.server.MAX_SEQ`). The number
+- it is **bounded** (:data:`~hermeswire.voice_layer.server.MAX_SEQ`). The number
   now crosses into the page's counter, where it is a double rather than an
   int: past 2**53 an increment stops advancing and every event shares a
   sequence, and past that it is ``Infinity``, whose anchors serialize as
@@ -49,7 +49,7 @@ from __future__ import annotations
 
 import pytest
 
-from agentwire.voice_layer import client, confirm, server, transcript
+from hermeswire.voice_layer import client, confirm, server, transcript
 
 
 class FakeMint:
@@ -65,7 +65,7 @@ class FakeMint:
 
 @pytest.fixture
 def bridge(monkeypatch):
-    from agentwire.voice_layer import realtime
+    from hermeswire.voice_layer import realtime
 
     monkeypatch.setattr(realtime, "mint_session", FakeMint())
     return server.BuddyBridge("buddy", "tok", runner=lambda argv: {"success": True})
@@ -118,7 +118,7 @@ class TestAReloadCannotBeApprovedByLastSessionsSpeech:
             tool="fleet_session_send",
             session="orch",
             instruction="ping",
-            argv_prefix=("agentwire", "msg", "send"),
+            argv_prefix=("hermeswire", "msg", "send"),
         )
         spine.announce(proposal.id, base + 1)
 
@@ -149,7 +149,7 @@ class TestAReloadCannotBeApprovedByLastSessionsSpeech:
             tool="fleet_session_send",
             session="orch",
             instruction="ping",
-            argv_prefix=("agentwire", "msg", "send"),
+            argv_prefix=("hermeswire", "msg", "send"),
         )
         spine.announce(proposal.id, base + 1)
         ring.speech_started("new_ok", base + 2)
@@ -179,7 +179,7 @@ class TestAReloadCannotBeApprovedByLastSessionsSpeech:
             tool="fleet_session_send",
             session="orch",
             instruction="ping",
-            argv_prefix=("agentwire", "msg", "send"),
+            argv_prefix=("hermeswire", "msg", "send"),
         )
         spine.announce(proposal.id, 1)          # a page that restarted at zero
         ring.speech_started("new_ok", 2)
@@ -256,7 +256,7 @@ class TestTheEpochIsReservedAtomically:
                 _time.sleep(0.05)
                 return value
 
-        from agentwire.voice_layer import realtime
+        from hermeswire.voice_layer import realtime
 
         monkeypatch.setattr(realtime, "mint_session", FakeMint())
         b = server.BuddyBridge("buddy", "tok")
@@ -378,7 +378,7 @@ class TestASequenceIsBoundedAtBothEnds:
         assert "seq_base" not in result
 
     def test_exhaustion_is_checked_before_the_api_key_is_spent(self, bridge, monkeypatch):
-        from agentwire.voice_layer import realtime
+        from hermeswire.voice_layer import realtime
 
         minter = FakeMint()
         monkeypatch.setattr(realtime, "mint_session", minter)
@@ -401,7 +401,7 @@ class TestAReservationIsAWholeBlock:
     what has to fit under the ceiling is ``base + gap`` — testing the base
     alone let the final reservation land exactly on it. That page mints
     successfully and then has ZERO usable sequences: every forward is refused
-    for exceeding :data:`~agentwire.voice_layer.server.MAX_SEQ`, silently, for
+    for exceeding :data:`~hermeswire.voice_layer.server.MAX_SEQ`, silently, for
     the rest of the run.
 
     Unreachable in practice — roughly 35 million mints on one bridge process —

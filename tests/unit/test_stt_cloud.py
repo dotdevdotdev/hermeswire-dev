@@ -12,8 +12,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from agentwire.stt import CloudSTTBackend, STTServerBackend, get_stt_backend
-from agentwire.stt import cloud as cloud_module
+from hermeswire.stt import CloudSTTBackend, STTServerBackend, get_stt_backend
+from hermeswire.stt import cloud as cloud_module
 
 
 def _cfg(backend: str, cloud: dict | None = None, timeout: int = 30):

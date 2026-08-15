@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
-from agentwire.config import load_config
-from agentwire.server import AgentWireServer, Session, SessionConfig
+from hermeswire.config import load_config
+from hermeswire.server import HermesWireServer, Session, SessionConfig
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -26,8 +26,8 @@ def _make_config(tmp_path, auth_token=None, allowed_origins=None):
 
 @pytest.fixture
 async def portal_client(tmp_path):
-    """Create an AgentWireServer and wrap in TestClient."""
-    server = AgentWireServer(_make_config(tmp_path))
+    """Create an HermesWireServer and wrap in TestClient."""
+    server = HermesWireServer(_make_config(tmp_path))
     async with TestClient(TestServer(server.app)) as client:
         yield client, server
 
@@ -35,7 +35,7 @@ async def portal_client(tmp_path):
 @pytest.fixture
 async def portal_client_with_token(tmp_path):
     """Portal with bearer-token auth enforced."""
-    server = AgentWireServer(_make_config(tmp_path, auth_token="testtoken123"))
+    server = HermesWireServer(_make_config(tmp_path, auth_token="testtoken123"))
     async with TestClient(TestServer(server.app)) as client:
         yield client, server
 
@@ -43,7 +43,7 @@ async def portal_client_with_token(tmp_path):
 @pytest.fixture
 async def portal_client_with_origins(tmp_path):
     """Portal with an allowed_origins entry (tunnel-domain case)."""
-    server = AgentWireServer(
+    server = HermesWireServer(
         _make_config(tmp_path, allowed_origins=["https://portal.example.com"])
     )
     async with TestClient(TestServer(server.app)) as client:
@@ -70,10 +70,10 @@ class TestHealthEndpoint:
 
     async def test_health_reports_the_real_package_version(self, portal_client):
         """server.py used to hardcode its own __version__ = "1.3.0",
-        disconnected from agentwire/__init__.py and stale since 2026-02 --
+        disconnected from hermeswire/__init__.py and stale since 2026-02 --
         /health silently lied about what was actually running. Pin against
         the real SSOT so a reintroduced hardcode fails this test."""
-        from agentwire import __version__ as real_version
+        from hermeswire import __version__ as real_version
 
         client, _ = portal_client
         resp = await client.get("/health")
@@ -111,7 +111,7 @@ class TestPwaSurface:
         assert resp.status == 400
 
     async def test_push_subscribe_and_unsubscribe(self, portal_client, tmp_path, monkeypatch):
-        from agentwire import push_store
+        from hermeswire import push_store
 
         monkeypatch.setattr(push_store, "SUBSCRIPTIONS_FILE", tmp_path / "push.json")
         client, _ = portal_client
@@ -182,7 +182,7 @@ class TestApiSessions:
 class TestApiCreateSession:
     async def test_create_minimal(self, portal_client):
         client, server = portal_client
-        with patch.object(server, "run_agentwire_cmd", new_callable=AsyncMock) as mock_cmd:
+        with patch.object(server, "run_hermeswire_cmd", new_callable=AsyncMock) as mock_cmd:
             mock_cmd.return_value = (True, {"session": "test", "path": "/p"})
             server.broadcast_dashboard = AsyncMock()
             resp = await client.post("/api/create", json={"name": "test"})
@@ -198,7 +198,7 @@ class TestApiCreateSession:
 
     async def test_create_with_posture(self, portal_client):
         client, server = portal_client
-        with patch.object(server, "run_agentwire_cmd", new_callable=AsyncMock) as mock_cmd:
+        with patch.object(server, "run_hermeswire_cmd", new_callable=AsyncMock) as mock_cmd:
             mock_cmd.return_value = (True, {"session": "test"})
             server.broadcast_dashboard = AsyncMock()
             await client.post("/api/create", json={
@@ -213,7 +213,7 @@ class TestApiCreateSession:
 
     async def test_create_remote_session(self, portal_client):
         client, server = portal_client
-        with patch.object(server, "run_agentwire_cmd", new_callable=AsyncMock) as mock_cmd:
+        with patch.object(server, "run_hermeswire_cmd", new_callable=AsyncMock) as mock_cmd:
             mock_cmd.return_value = (True, {"session": "app@gpu"})
             server.broadcast_dashboard = AsyncMock()
             resp = await client.post("/api/create", json={
@@ -224,7 +224,7 @@ class TestApiCreateSession:
 
     async def test_create_worktree(self, portal_client):
         client, server = portal_client
-        with patch.object(server, "run_agentwire_cmd", new_callable=AsyncMock) as mock_cmd:
+        with patch.object(server, "run_hermeswire_cmd", new_callable=AsyncMock) as mock_cmd:
             mock_cmd.return_value = (True, {"session": "app/feature"})
             server.broadcast_dashboard = AsyncMock()
             resp = await client.post("/api/create", json={
@@ -237,7 +237,7 @@ class TestApiCreateSession:
         import asyncio
 
         client, server = portal_client
-        with patch.object(server, "run_agentwire_cmd", new_callable=AsyncMock) as mock_cmd:
+        with patch.object(server, "run_hermeswire_cmd", new_callable=AsyncMock) as mock_cmd:
             mock_cmd.return_value = (True, {"session": "ideaproj", "path": "/p"})
             server.broadcast_dashboard = AsyncMock()
             resp = await client.post("/api/create", json={
@@ -257,7 +257,7 @@ class TestApiCreateSession:
 
     async def test_create_first_message_remote_rejected(self, portal_client):
         client, server = portal_client
-        with patch.object(server, "run_agentwire_cmd", new_callable=AsyncMock) as mock_cmd:
+        with patch.object(server, "run_hermeswire_cmd", new_callable=AsyncMock) as mock_cmd:
             resp = await client.post("/api/create", json={
                 "name": "app", "machine": "gpu", "first_message": "an idea",
             })
@@ -277,7 +277,7 @@ class TestApiCreateSession:
                 return (False, {"error": "Agent in 'ideaproj' not ready after 60s"})
             return (True, {"session": "ideaproj", "path": "/p"})
 
-        with patch.object(server, "run_agentwire_cmd", side_effect=cmd_router):
+        with patch.object(server, "run_hermeswire_cmd", side_effect=cmd_router):
             server.broadcast_dashboard = AsyncMock()
             resp = await client.post("/api/create", json={
                 "name": "ideaproj", "first_message": "an idea",
@@ -306,7 +306,7 @@ class TestApiCreateSession:
                 return (False, {"error": "Delivery not verified", "fallback": "inbox"})
             return (True, {"session": "ideaproj", "path": "/p"})
 
-        with patch.object(server, "run_agentwire_cmd", side_effect=cmd_router):
+        with patch.object(server, "run_hermeswire_cmd", side_effect=cmd_router):
             server.broadcast_dashboard = AsyncMock()
             resp = await client.post("/api/create", json={
                 "name": "ideaproj", "first_message": "an idea",
@@ -331,7 +331,7 @@ class TestApiCreateSession:
                 return (False, {"error": "Delivery not verified", "fallback": "already_delivered"})
             return (True, {"session": "ideaproj", "path": "/p"})
 
-        with patch.object(server, "run_agentwire_cmd", side_effect=cmd_router):
+        with patch.object(server, "run_hermeswire_cmd", side_effect=cmd_router):
             server.broadcast_dashboard = AsyncMock()
             resp = await client.post("/api/create", json={
                 "name": "ideaproj", "first_message": "an idea",
@@ -358,7 +358,7 @@ class TestApiCreateSession:
                 return (False, {"error": "Delivery not verified", "fallback": "inbox_stuck"})
             return (True, {"session": "ideaproj", "path": "/p"})
 
-        with patch.object(server, "run_agentwire_cmd", side_effect=cmd_router):
+        with patch.object(server, "run_hermeswire_cmd", side_effect=cmd_router):
             server.broadcast_dashboard = AsyncMock()
             resp = await client.post("/api/create", json={
                 "name": "ideaproj", "first_message": "an idea",
@@ -374,7 +374,7 @@ class TestApiCreateSession:
 
     async def test_create_without_first_message_no_background_task(self, portal_client):
         client, server = portal_client
-        with patch.object(server, "run_agentwire_cmd", new_callable=AsyncMock) as mock_cmd:
+        with patch.object(server, "run_hermeswire_cmd", new_callable=AsyncMock) as mock_cmd:
             mock_cmd.return_value = (True, {"session": "plain"})
             server.broadcast_dashboard = AsyncMock()
             resp = await client.post("/api/create", json={"name": "plain"})
@@ -392,13 +392,13 @@ class TestApiActiveSession:
     async def test_writes_shadow_file(self, portal_client, monkeypatch, tmp_path):
         client, server = portal_client
         monkeypatch.setenv("HOME", str(tmp_path))
-        resp = await client.post("/api/active-session", json={"session": "agentwire-dev"})
+        resp = await client.post("/api/active-session", json={"session": "hermeswire-dev"})
         assert resp.status == 200
         data = await resp.json()
         assert data.get("success") is True
-        assert data.get("session") == "agentwire-dev"
-        shadow = tmp_path / ".agentwire" / "active-session"
-        assert shadow.read_text().strip() == "agentwire-dev"
+        assert data.get("session") == "hermeswire-dev"
+        shadow = tmp_path / ".hermeswire" / "active-session"
+        assert shadow.read_text().strip() == "hermeswire-dev"
 
     async def test_missing_session(self, portal_client, monkeypatch, tmp_path):
         client, server = portal_client
@@ -413,10 +413,10 @@ class TestApiActiveSession:
         monkeypatch.setenv("HOME", str(tmp_path))
         await client.post("/api/active-session", json={"session": "first"})
         await client.post("/api/active-session", json={"session": "second"})
-        shadow = tmp_path / ".agentwire" / "active-session"
+        shadow = tmp_path / ".hermeswire" / "active-session"
         assert shadow.read_text().strip() == "second"
         # No leftover temp file from the atomic write.
-        assert not (tmp_path / ".agentwire" / "active-session.tmp").exists()
+        assert not (tmp_path / ".hermeswire" / "active-session.tmp").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -427,7 +427,7 @@ class TestApiActiveSession:
 class TestApiCloseSession:
     async def test_close_success(self, portal_client):
         client, server = portal_client
-        with patch.object(server, "run_agentwire_cmd", new_callable=AsyncMock) as mock_cmd:
+        with patch.object(server, "run_hermeswire_cmd", new_callable=AsyncMock) as mock_cmd:
             mock_cmd.return_value = (True, {})
             server.broadcast_dashboard = AsyncMock()
             resp = await client.delete("/api/sessions/test-session")
@@ -437,7 +437,7 @@ class TestApiCloseSession:
 
     async def test_close_cli_failure(self, portal_client):
         client, server = portal_client
-        with patch.object(server, "run_agentwire_cmd", new_callable=AsyncMock) as mock_cmd:
+        with patch.object(server, "run_hermeswire_cmd", new_callable=AsyncMock) as mock_cmd:
             mock_cmd.return_value = (False, {"error": "session not found"})
             resp = await client.delete("/api/sessions/bad-session")
         data = await resp.json()
@@ -445,11 +445,11 @@ class TestApiCloseSession:
 
     async def test_close_cleans_up(self, portal_client):
         client, server = portal_client
-        from agentwire.server import Session, SessionConfig
+        from hermeswire.server import Session, SessionConfig
         server.active_sessions["test"] = Session(
             name="test", config=SessionConfig(), output_task=None,
         )
-        with patch.object(server, "run_agentwire_cmd", new_callable=AsyncMock) as mock_cmd:
+        with patch.object(server, "run_hermeswire_cmd", new_callable=AsyncMock) as mock_cmd:
             mock_cmd.return_value = (True, {})
             server.broadcast_dashboard = AsyncMock()
             await client.delete("/api/sessions/test")
@@ -628,7 +628,7 @@ class TestApiNotify:
     async def test_accept_event(self, portal_client):
         client, server = portal_client
         server.broadcast_dashboard = AsyncMock()
-        with patch.object(server, "run_agentwire_cmd", new_callable=AsyncMock) as mock_cmd:
+        with patch.object(server, "run_hermeswire_cmd", new_callable=AsyncMock) as mock_cmd:
             mock_cmd.return_value = (True, {"sessions": []})
             resp = await client.post("/api/notify", json={
                 "event": "session_created", "session": "test",
@@ -679,7 +679,7 @@ class TestApiNotify:
         })
 
     async def test_session_created_unknown_session_has_null_parent_and_role(self, portal_client):
-        """A manually-created (non-agentwire) tmux session degrades to
+        """A manually-created (non-hermeswire) tmux session degrades to
         null/null rather than erroring — it genuinely has no topology."""
         client, server = portal_client
         server.broadcast_dashboard = AsyncMock()
@@ -727,11 +727,11 @@ class TestArtifactUrlHash:
         ("🦉", "11131011"),  # astral/surrogate-pair UTF-8
     ])
     def test_pinned_vectors(self, url, expected):
-        from agentwire.routes.desktop import _artifact_url_hash
+        from hermeswire.routes.desktop import _artifact_url_hash
         assert _artifact_url_hash(url) == expected
 
     def test_distinct_urls_that_collided_under_the_old_slug_now_differ(self):
-        from agentwire.routes.desktop import _artifact_url_hash
+        from hermeswire.routes.desktop import _artifact_url_hash
         assert _artifact_url_hash("reports/jan.html") != _artifact_url_hash("reports-jan.html")
 
 
@@ -861,7 +861,7 @@ class TestOriginValidation:
     async def test_post_without_origin_allowed(self, portal_client):
         """curl/CLI requests don't send Origin and must keep working."""
         client, server = portal_client
-        with patch.object(server, "run_agentwire_cmd", new_callable=AsyncMock) as mock_cmd:
+        with patch.object(server, "run_hermeswire_cmd", new_callable=AsyncMock) as mock_cmd:
             mock_cmd.return_value = (True, {"sessions": []})
             server.broadcast_dashboard = AsyncMock()
             resp = await client.post("/api/notify", json={"event": "x"})
@@ -871,7 +871,7 @@ class TestOriginValidation:
         client, server = portal_client
         own = f"http://{client.host}:{client.port}"
         server.broadcast_dashboard = AsyncMock()
-        with patch.object(server, "run_agentwire_cmd", new_callable=AsyncMock) as mock_cmd:
+        with patch.object(server, "run_hermeswire_cmd", new_callable=AsyncMock) as mock_cmd:
             mock_cmd.return_value = (True, {"sessions": []})
             resp = await client.post(
                 "/api/notify", json={"event": "x"}, headers={"Origin": own}
@@ -906,7 +906,7 @@ class TestOriginValidation:
     async def test_allowed_origins_entry(self, portal_client_with_origins):
         client, server = portal_client_with_origins
         server.broadcast_dashboard = AsyncMock()
-        with patch.object(server, "run_agentwire_cmd", new_callable=AsyncMock) as mock_cmd:
+        with patch.object(server, "run_hermeswire_cmd", new_callable=AsyncMock) as mock_cmd:
             mock_cmd.return_value = (True, {"sessions": []})
             resp = await client.post(
                 "/api/notify", json={"event": "x"},
@@ -939,7 +939,7 @@ class TestTokenAuth:
 
     async def test_right_token_ok(self, portal_client_with_token):
         client, server = portal_client_with_token
-        with patch.object(server, "run_agentwire_cmd", new_callable=AsyncMock) as mock_cmd:
+        with patch.object(server, "run_hermeswire_cmd", new_callable=AsyncMock) as mock_cmd:
             mock_cmd.return_value = (True, {"sessions": []})
             resp = await client.get("/api/sessions/local", headers=AUTH)
         assert resp.status == 200
@@ -961,7 +961,7 @@ class TestTokenAuth:
     async def test_no_token_configured_open(self, portal_client):
         """Loopback default: no token configured behaves as before."""
         client, server = portal_client
-        with patch.object(server, "run_agentwire_cmd", new_callable=AsyncMock) as mock_cmd:
+        with patch.object(server, "run_hermeswire_cmd", new_callable=AsyncMock) as mock_cmd:
             mock_cmd.return_value = (True, {"sessions": []})
             resp = await client.get("/api/sessions/local")
         assert resp.status == 200
@@ -1013,11 +1013,11 @@ class TestSessionStateComputation:
     """Precedence: off → needs_input → working → idle; off on any doubt."""
 
     def _compute(self, tmp_path, monkeypatch, sessions, *, agent=True, markers=None):
-        from agentwire import prompt_router
+        from hermeswire import prompt_router
 
         monkeypatch.setattr(prompt_router, "is_agent_pane", lambda s, p: agent)
         monkeypatch.setattr(prompt_router, "list_markers", lambda: markers or [])
-        server = AgentWireServer(_make_config(tmp_path))
+        server = HermesWireServer(_make_config(tmp_path))
         server._compute_session_states(sessions)
         return server
 
@@ -1037,14 +1037,14 @@ class TestSessionStateComputation:
 
     def test_off_on_classification_error(self, tmp_path, monkeypatch):
         """When in doubt show off — never a false working/idle."""
-        from agentwire import prompt_router
+        from hermeswire import prompt_router
 
         def boom(s, p):
             raise RuntimeError("tmux exploded")
 
         monkeypatch.setattr(prompt_router, "is_agent_pane", boom)
         monkeypatch.setattr(prompt_router, "list_markers", lambda: [])
-        server = AgentWireServer(_make_config(tmp_path))
+        server = HermesWireServer(_make_config(tmp_path))
         sessions = [{"name": "foo"}]
         server._compute_session_states(sessions)
         assert sessions[0]["state"] == "off"
@@ -1063,7 +1063,7 @@ class TestSessionStateComputation:
         assert sessions[0]["state_hint"] == "Claude wants to run: rm build/"
 
     def test_needs_input_from_pending_permission(self, tmp_path, monkeypatch):
-        from agentwire.server import PendingPermission, Session, SessionConfig
+        from hermeswire.server import PendingPermission, Session, SessionConfig
 
         sessions = [{"name": "foo"}]
         server = self._compute(tmp_path, monkeypatch, [])
@@ -1266,7 +1266,7 @@ class TestEnsureManagedStt:
     async def test_delegates_to_stt_start_cli(self, portal_client, monkeypatch):
         client, server = portal_client
         # Skip the post-bind settle delay.
-        monkeypatch.setattr("agentwire.server.asyncio.sleep", AsyncMock())
+        monkeypatch.setattr("hermeswire.server.asyncio.sleep", AsyncMock())
 
         calls = []
 
@@ -1274,25 +1274,25 @@ class TestEnsureManagedStt:
             calls.append((args, json_output))
             return True, {"output": "STT server starting"}
 
-        server.run_agentwire_cmd = fake_cmd
+        server.run_hermeswire_cmd = fake_cmd
         server._voice_status_cache = (12345.0, {"stale": True})
 
         await server.ensure_managed_stt()
 
         # Idempotent CLI spawn — reuses cmd_stt_start (early-returns if the
-        # agentwire-stt tmux session already exists).
+        # hermeswire-stt tmux session already exists).
         assert calls == [(["stt", "start"], False)]
         # Cache invalidated so the next voice-status poll re-probes /health.
         assert server._voice_status_cache is None
 
     async def test_cli_failure_is_soft(self, portal_client, monkeypatch):
         client, server = portal_client
-        monkeypatch.setattr("agentwire.server.asyncio.sleep", AsyncMock())
+        monkeypatch.setattr("hermeswire.server.asyncio.sleep", AsyncMock())
 
         async def fake_cmd(args, json_output=True):
             return False, {"error": "boom"}
 
-        server.run_agentwire_cmd = fake_cmd
+        server.run_hermeswire_cmd = fake_cmd
         # Must not raise — browser STT keeps working.
         await server.ensure_managed_stt()
         assert server._voice_status_cache is None
@@ -1301,7 +1301,7 @@ class TestEnsureManagedStt:
         # run_server schedules ensure_managed_stt only when
         # `config.stt.backend == "default" and moonshine_importable()`. This is
         # the gate it evaluates — proven importable in this (py<3.14) env.
-        from agentwire.stt import moonshine_importable
+        from hermeswire.stt import moonshine_importable
 
         assert moonshine_importable() is True
 
@@ -1317,7 +1317,7 @@ class TestStopManagedStt:
             calls.append((args, json_output))
             return True, {"output": "STT server stopped."}
 
-        server.run_agentwire_cmd = fake_cmd
+        server.run_hermeswire_cmd = fake_cmd
         await server.stop_managed_stt()
         assert calls == [(["stt", "stop"], False)]
 
@@ -1327,7 +1327,7 @@ class TestStopManagedStt:
         async def fake_cmd(args, json_output=True):
             return False, {"error": "STT server is not running."}
 
-        server.run_agentwire_cmd = fake_cmd
+        server.run_hermeswire_cmd = fake_cmd
         # Must not raise — nothing to stop is the common case.
         await server.stop_managed_stt()
 
@@ -1349,7 +1349,7 @@ class TestApplyCliOverrides:
         )
 
     def test_no_stt_disables_backend_and_shim_gate(self):
-        from agentwire.server import apply_cli_overrides
+        from hermeswire.server import apply_cli_overrides
 
         config = self._config()
         apply_cli_overrides(config, {"no_stt": True})
@@ -1360,7 +1360,7 @@ class TestApplyCliOverrides:
         assert not (config.stt.backend == "default")
 
     def test_no_tts_unchanged(self):
-        from agentwire.server import apply_cli_overrides
+        from hermeswire.server import apply_cli_overrides
 
         config = self._config()
         apply_cli_overrides(config, {"no_tts": True})
@@ -1368,7 +1368,7 @@ class TestApplyCliOverrides:
         assert config.stt.backend == "default"
 
     def test_both_disabled(self):
-        from agentwire.server import apply_cli_overrides
+        from hermeswire.server import apply_cli_overrides
 
         config = self._config()
         apply_cli_overrides(config, {"no_tts": True, "no_stt": True})
@@ -1376,7 +1376,7 @@ class TestApplyCliOverrides:
         assert config.stt.backend == "none"
 
     def test_no_overrides_is_noop(self):
-        from agentwire.server import apply_cli_overrides
+        from hermeswire.server import apply_cli_overrides
 
         config = self._config()
         apply_cli_overrides(config, {})
@@ -1394,7 +1394,7 @@ class TestEnsureManagedTts:
     async def test_delegates_to_kokoro_start_cli(self, portal_client, monkeypatch):
         client, server = portal_client
         # Skip the post-bind settle delay.
-        monkeypatch.setattr("agentwire.server.asyncio.sleep", AsyncMock())
+        monkeypatch.setattr("hermeswire.server.asyncio.sleep", AsyncMock())
 
         calls = []
 
@@ -1402,25 +1402,25 @@ class TestEnsureManagedTts:
             calls.append((args, json_output))
             return True, {"output": "Kokoro TTS shim starting"}
 
-        server.run_agentwire_cmd = fake_cmd
+        server.run_hermeswire_cmd = fake_cmd
         server._voice_status_cache = (12345.0, {"stale": True})
 
         await server.ensure_managed_tts()
 
         # Idempotent CLI spawn — reuses cmd_kokoro_start (early-returns if the
-        # agentwire-kokoro tmux session already exists).
+        # hermeswire-kokoro tmux session already exists).
         assert calls == [(["kokoro", "start"], False)]
         # Cache invalidated so the next voice-status poll re-probes /health.
         assert server._voice_status_cache is None
 
     async def test_cli_failure_is_soft(self, portal_client, monkeypatch):
         client, server = portal_client
-        monkeypatch.setattr("agentwire.server.asyncio.sleep", AsyncMock())
+        monkeypatch.setattr("hermeswire.server.asyncio.sleep", AsyncMock())
 
         async def fake_cmd(args, json_output=True):
             return False, {"error": "boom"}
 
-        server.run_agentwire_cmd = fake_cmd
+        server.run_hermeswire_cmd = fake_cmd
         # Must not raise — browser speechSynthesis keeps working.
         await server.ensure_managed_tts()
         assert server._voice_status_cache is None
@@ -1429,12 +1429,12 @@ class TestEnsureManagedTts:
         # run_server schedules ensure_managed_tts only when
         # `config.tts.backend == "default" and kokoro_importable()`. This is
         # the gate it evaluates — proven importable in this (py<3.14) env.
-        from agentwire.tts import kokoro_importable
+        from hermeswire.tts import kokoro_importable
 
         assert kokoro_importable() is True
 
     def test_spawn_gate_false_when_not_importable(self, monkeypatch):
-        import agentwire.stt as stt_pkg
+        import hermeswire.stt as stt_pkg
 
         monkeypatch.setattr(stt_pkg, "moonshine_importable", lambda: False)
         assert stt_pkg.moonshine_importable() is False
@@ -1522,15 +1522,15 @@ class TestPermissionRouting:
         client, server = portal_client
         server._say_to_room = AsyncMock()
         with patch(
-            "agentwire.server.prompt_router.notify_permission_request",
+            "hermeswire.server.prompt_router.notify_permission_request",
             return_value="orch",
         ) as notify, patch(
-            "agentwire.server.prompt_router.clear_marker"
+            "hermeswire.server.prompt_router.clear_marker"
         ) as clear, patch(
-            "agentwire.server.prompt_router.screen_shows_live_menu",
+            "hermeswire.server.prompt_router.screen_shows_live_menu",
             return_value=True,
         ), patch(
-            "agentwire.server.prompt_router._capture", return_value=""
+            "hermeswire.server.prompt_router._capture", return_value=""
         ):
             run = server._run_subprocess = AsyncMock(return_value=(0, "", ""))
             task, sess = await self._start_request(client, server)
@@ -1550,11 +1550,11 @@ class TestPermissionRouting:
 
             keystroke_calls = [
                 c for c in run.call_args_list
-                if c.args and c.args[0][:2] == ["agentwire", "send-keys"]
+                if c.args and c.args[0][:2] == ["hermeswire", "send-keys"]
             ]
             assert keystroke_calls, "no keystroke sent"
             assert keystroke_calls[0].args[0] == [
-                "agentwire", "send-keys", "-s", "real-sess", "--pane", "2", "1"
+                "hermeswire", "send-keys", "-s", "real-sess", "--pane", "2", "1"
             ]
             clear.assert_called()
 
@@ -1562,17 +1562,17 @@ class TestPermissionRouting:
         client, server = portal_client
         server._say_to_room = AsyncMock()
         with patch(
-            "agentwire.server.prompt_router.notify_permission_request",
+            "hermeswire.server.prompt_router.notify_permission_request",
             return_value=None,
         ), patch(
-            "agentwire.server.prompt_router.clear_marker"
+            "hermeswire.server.prompt_router.clear_marker"
         ), patch(
             # Parent (or human in the terminal) already answered: no live
             # menu on the pane — a late keystroke must NOT be sent.
-            "agentwire.server.prompt_router.screen_shows_live_menu",
+            "hermeswire.server.prompt_router.screen_shows_live_menu",
             return_value=False,
         ), patch(
-            "agentwire.server.prompt_router._capture", return_value=""
+            "hermeswire.server.prompt_router._capture", return_value=""
         ):
             run = server._run_subprocess = AsyncMock(return_value=(0, "", ""))
             task, sess = await self._start_request(client, server)
@@ -1585,7 +1585,7 @@ class TestPermissionRouting:
 
             keystroke_calls = [
                 c for c in run.call_args_list
-                if c.args and c.args[0][:2] == ["agentwire", "send-keys"]
+                if c.args and c.args[0][:2] == ["hermeswire", "send-keys"]
             ]
             assert keystroke_calls == []
 
@@ -1599,15 +1599,15 @@ class TestPermissionRouting:
 
         server._broadcast = fake_broadcast
         with patch(
-            "agentwire.server.prompt_router.notify_permission_request",
+            "hermeswire.server.prompt_router.notify_permission_request",
             return_value="orch",
         ), patch(
-            "agentwire.server.prompt_router.clear_marker"
+            "hermeswire.server.prompt_router.clear_marker"
         ), patch(
-            "agentwire.server.prompt_router.screen_shows_live_menu",
+            "hermeswire.server.prompt_router.screen_shows_live_menu",
             return_value=True,
         ), patch(
-            "agentwire.server.prompt_router._capture", return_value=""
+            "hermeswire.server.prompt_router._capture", return_value=""
         ):
             server._run_subprocess = AsyncMock(return_value=(0, "", ""))
             task, sess = await self._start_request(client, server)
@@ -1627,7 +1627,7 @@ class TestPermissionRouting:
 class TestFrozenConfigEndpoint:
     def _write_config(self, monkeypatch, tmp_path, body):
         monkeypatch.setenv("HOME", str(tmp_path))
-        cfg = tmp_path / ".agentwire" / "config.yaml"
+        cfg = tmp_path / ".hermeswire" / "config.yaml"
         cfg.parent.mkdir(parents=True, exist_ok=True)
         cfg.write_text(body)
         return cfg
@@ -1679,7 +1679,7 @@ class TestFrozenConfigEndpoint:
 
 class TestPairingEndpoint:
     async def test_pair_with_valid_code_mints_token(self, portal_client_with_token):
-        from agentwire.devices import create_pairing
+        from hermeswire.devices import create_pairing
 
         client, server = portal_client_with_token
         pairing = create_pairing("phone")
@@ -1716,14 +1716,14 @@ class TestPairingEndpoint:
 
 class TestPerDeviceAuth:
     async def test_paired_device_token_works(self, portal_client_with_token):
-        from agentwire import devices
-        from agentwire.devices import DeviceRegistry
+        from hermeswire import devices
+        from hermeswire.devices import DeviceRegistry
 
         client, server = portal_client_with_token
         reg = DeviceRegistry.load()
         device, token = reg.add("laptop")
         devices._cache.clear()
-        with patch.object(server, "run_agentwire_cmd", new_callable=AsyncMock) as mock_cmd:
+        with patch.object(server, "run_hermeswire_cmd", new_callable=AsyncMock) as mock_cmd:
             mock_cmd.return_value = (True, {"sessions": []})
             resp = await client.get(
                 "/api/sessions/local",
@@ -1732,8 +1732,8 @@ class TestPerDeviceAuth:
         assert resp.status == 200
 
     async def test_revoked_device_gets_401(self, portal_client_with_token):
-        from agentwire import devices
-        from agentwire.devices import DeviceRegistry
+        from hermeswire import devices
+        from hermeswire.devices import DeviceRegistry
 
         client, server = portal_client_with_token
         reg = DeviceRegistry.load()
@@ -1747,8 +1747,8 @@ class TestPerDeviceAuth:
         assert resp.status == 401
 
     async def test_revoke_one_keeps_other(self, portal_client_with_token):
-        from agentwire import devices
-        from agentwire.devices import DeviceRegistry
+        from hermeswire import devices
+        from hermeswire.devices import DeviceRegistry
 
         client, server = portal_client_with_token
         reg = DeviceRegistry.load()
@@ -1756,7 +1756,7 @@ class TestPerDeviceAuth:
         d2, t2 = reg.add("phone")
         reg.revoke(d1.id)
         devices._cache.clear()
-        with patch.object(server, "run_agentwire_cmd", new_callable=AsyncMock) as mock_cmd:
+        with patch.object(server, "run_hermeswire_cmd", new_callable=AsyncMock) as mock_cmd:
             mock_cmd.return_value = (True, {"sessions": []})
             assert (await client.get(
                 "/api/sessions/local", headers={"Authorization": f"Bearer {t1}"}
@@ -1844,11 +1844,11 @@ class TestStaticAssets:
 
 class TestMonitorInProcessCapture:
     """#489 — the monitor captures session output IN-PROCESS via
-    agent.get_output instead of spawning a per-session `agentwire output`
+    agent.get_output instead of spawning a per-session `hermeswire output`
     subprocess, while still broadcasting dashboard activity for every session."""
 
     def _server(self, tmp_path):
-        server = AgentWireServer(_make_config(tmp_path))
+        server = HermesWireServer(_make_config(tmp_path))
         server.agent = MagicMock()
         server.agent.get_output = MagicMock(return_value="scrollback")
         return server
@@ -1868,7 +1868,7 @@ class TestMonitorInProcessCapture:
             return_value=[{"name": "alpha"}, {"name": "beta"}]
         )
         server._list_remote_sessions = AsyncMock(return_value={})
-        server.run_agentwire_cmd = AsyncMock()
+        server.run_hermeswire_cmd = AsyncMock()
         server.broadcast_dashboard = AsyncMock()
         server.dashboard_clients.add(object())  # tick is skipped with no clients (#627)
 
@@ -1878,7 +1878,7 @@ class TestMonitorInProcessCapture:
         captured = {c.args[0] for c in server.agent.get_output.call_args_list}
         assert {"alpha", "beta"} <= captured
         # ...and NEVER via any CLI subprocess (listing or output — #627).
-        server.run_agentwire_cmd.assert_not_awaited()
+        server.run_hermeswire_cmd.assert_not_awaited()
 
     async def test_dashboard_activity_broadcast_for_all_sessions(self, tmp_path):
         """A session with fresh output gets active:true on the dashboard,
@@ -1915,7 +1915,7 @@ class TestMonitorLifecycle:
     reconciled against the live tmux list each tick."""
 
     def _server(self, tmp_path):
-        server = AgentWireServer(_make_config(tmp_path))
+        server = HermesWireServer(_make_config(tmp_path))
         server.agent = MagicMock()
         server.agent.get_output = MagicMock(return_value="scrollback")
         server._list_local_sessions = AsyncMock(return_value=[{"name": "alive"}])

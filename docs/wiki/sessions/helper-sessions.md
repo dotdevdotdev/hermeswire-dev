@@ -1,27 +1,27 @@
 # Helper sessions (no isolation)
 
-`agentwire helper <name>` creates a worker **session** that shares the caller's
+`hermeswire helper <name>` creates a worker **session** that shares the caller's
 checkout — no `git worktree add`, no branch, no directory, no registry entry.
 
 This is the one thing a worker pane could do that a worktree session couldn't
-(#838). Everything else a pane offered was a regression: no `agentwire msg`
+(#838). Everything else a pane offered was a regression: no `hermeswire msg`
 inbox (#834), no voice, a headless exit-summary instead of report-back, no
 portal visibility. A helper is a real session, so it gets all of those for free.
 
 ```bash
-agentwire helper digest --prompt "Run the full suite and tell me what fails"
-agentwire helper scout -p ~/projects/other-repo --prompt "Map the auth flow"
+hermeswire helper digest --prompt "Run the full suite and tell me what fails"
+hermeswire helper scout -p ~/projects/other-repo --prompt "Map the auth flow"
 ```
 
 ## What it is
 
-| | `agentwire worktree` | `agentwire helper` |
+| | `hermeswire worktree` | `hermeswire helper` |
 |---|---|---|
 | Directory | new, `~/worktrees/<project>/<name>/` | **the caller's own checkout** |
 | Branch | new (or `--existing` / `--ref`) | **none** |
 | Git work at creation | `fetch` + `worktree add` + `checkout -b` + seed | **none** |
 | Worktree registry | registered | **not registered** — no git resource exists |
-| Teardown | `worktree --remove` (after merge verification, #756) | `agentwire kill` |
+| Teardown | `worktree --remove` (after merge verification, #756) | `hermeswire kill` |
 | Cohort topology | `worktree` → `wait` leaves it alive | `main` → `wait` collects the report, then reaps it |
 | Role | `worker-worktree` | `worker` + `shared-checkout` |
 | msg inbox / voice / portal | yes | yes |
@@ -36,7 +36,7 @@ Two agents in one working tree is a real footgun, which is why
 `session_cli.cmd_new` has a shared-working-dir guard (#854/#857). `helper` does
 **not** weaken that guard — it *declares* past it with `allow_shared_dir=True`,
 the same posture `services.py` takes ("registering a service is explicit
-intent"). Interactive `agentwire new` is unaffected: it still refuses.
+intent"). Interactive `hermeswire new` is unaffected: it still refuses.
 
 What makes the sharing safe is the constraint the `shared-checkout` role puts on
 the agent:
@@ -60,12 +60,12 @@ state" corrects `worker.md`'s "commit your work" by recency weight. Your
 `--roles` stack on top of both; they never replace either.
 
 **If the task needs a commit, a branch, or a PR, it's the wrong session shape** —
-use `agentwire worktree <name>`.
+use `hermeswire worktree <name>`.
 
 ## Why nothing is written to the worktree registry
 
 The registry exists to catch one failure: a directory and a branch left on disk
-that nothing tracks (#837). A helper creates neither, and `agentwire kill`
+that nothing tracks (#837). A helper creates neither, and `hermeswire kill`
 reclaims 100% of it.
 
 An entry pointing at the repo's own checkout would be a resource that doesn't
@@ -74,15 +74,15 @@ through `find_git_worktree`, which deliberately never returns the main checkout
 (#855/#862), so it could never resolve; `--prune` drops entries whose path is
 gone, and the main checkout never is, so the entry would accumulate forever.
 
-Helpers are visible where sessions are visible — `agentwire sessions`, the
+Helpers are visible where sessions are visible — `hermeswire sessions`, the
 portal sidebar, `session_created` events. That's the session list; the worktree
 registry is not the session list.
 
 ## Cost
 
-Measured on `agentwire-dev` (555 tracked files), warm:
+Measured on `hermeswire-dev` (555 tracked files), warm:
 
-| | `agentwire worktree` | `agentwire helper` |
+| | `hermeswire worktree` | `hermeswire helper` |
 |---|---|---|
 | `git fetch origin <base>` | ~750–900 ms (network) | — |
 | `git worktree add` | ~500–550 ms | — |

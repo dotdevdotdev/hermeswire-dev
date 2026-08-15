@@ -10,30 +10,30 @@ Reliable headless task execution for unattended and automated agent workflows.
 
 Two paths for running scheduled work, picked per task:
 
-1. **`agentwire ensure` tasks** — Reliable session management + task execution with lifecycle hooks. A full Hermes Agent session runs a single prompt from `.agentwire.tasks.yml`. Best for multi-step agent work that needs its own branch / PR / MCP tools.
-2. **Tasks in `.agentwire.tasks.yml`** — Named tasks with pre/prompt/post phases and branch management — the substrate for path #1.
+1. **`hermeswire ensure` tasks** — Reliable session management + task execution with lifecycle hooks. A full Hermes Agent session runs a single prompt from `.hermeswire.tasks.yml`. Best for multi-step agent work that needs its own branch / PR / MCP tools.
+2. **Tasks in `.hermeswire.tasks.yml`** — Named tasks with pre/prompt/post phases and branch management — the substrate for path #1.
 
-Both are orchestrated by `~/.agentwire/scheduler.yaml` and the AgentWire scheduler daemon.
+Both are orchestrated by `~/.hermeswire/scheduler.yaml` and the HermesWire scheduler daemon.
 
 ---
 
 ## Task Definition Schema
 
-Define tasks in `.agentwire.tasks.yml` (a sibling of `.agentwire.yml`, split out in #720) — **keep that file gitignored**. Worktree-dispatched runs check out HEAD, so if the file is tracked, uncommitted live edits to a task prompt are silently ignored and the run executes the stale committed version. Gitignored, the live file is seeded into every worktree via `projects.worktrees.copy_files` (default `[".env", ".agentwire.yml", ".agentwire.tasks.yml"]`) and always wins. See the `agentwire-project-config` skill.
+Define tasks in `.hermeswire.tasks.yml` (a sibling of `.hermeswire.yml`, split out in #720) — **keep that file gitignored**. Worktree-dispatched runs check out HEAD, so if the file is tracked, uncommitted live edits to a task prompt are silently ignored and the run executes the stale committed version. Gitignored, the live file is seeded into every worktree via `projects.worktrees.copy_files` (default `[".env", ".hermeswire.yml", ".hermeswire.tasks.yml"]`) and always wins. See the `hermeswire-project-config` skill.
 
-`.agentwire.tasks.yml` is **protected control-plane** — a policed agent can't write it directly. Authoring it is propose-and-promote: draft to `.agentwire.tasks.proposed.yml`, then a human runs `agentwire tasks review` and `agentwire tasks promote`. See [Damage control](../internals/damage-control.md#task-execution-config-split-agentwiretasksyml-720).
+`.hermeswire.tasks.yml` is **protected control-plane** — a policed agent can't write it directly. Authoring it is propose-and-promote: draft to `.hermeswire.tasks.proposed.yml`, then a human runs `hermeswire tasks review` and `hermeswire tasks promote`. See [Damage control](../internals/damage-control.md#task-execution-config-split-hermeswiretasksyml-720).
 
-**Legacy inline tasks are dead weight (#736).** Tasks that predate the #720/#721 split still living under a `tasks:` key in `.agentwire.yml` do **not** run — the executor reads only `.agentwire.tasks.yml`, with no runtime fallback. Migrate once: `agentwire tasks migrate` stages the inline block to `.agentwire.tasks.proposed.yml`, then `agentwire tasks review` + `agentwire tasks promote` lands it; finally delete the dead `tasks:` block from `.agentwire.yml`. `agentwire doctor` flags any project still in the un-migrated state.
+**Legacy inline tasks are dead weight (#736).** Tasks that predate the #720/#721 split still living under a `tasks:` key in `.hermeswire.yml` do **not** run — the executor reads only `.hermeswire.tasks.yml`, with no runtime fallback. Migrate once: `hermeswire tasks migrate` stages the inline block to `.hermeswire.tasks.proposed.yml`, then `hermeswire tasks review` + `hermeswire tasks promote` lands it; finally delete the dead `tasks:` block from `.hermeswire.yml`. `hermeswire doctor` flags any project still in the un-migrated state.
 
 ```yaml
-# .agentwire.yml — declarative session config
+# .hermeswire.yml — declarative session config
 posture: auto    # Recommended for unattended work — see auto below
 roles:
   - task-runner
 ```
 
 ```yaml
-# .agentwire.tasks.yml — task-execution config
+# .hermeswire.tasks.yml — task-execution config
 shell: /bin/sh       # Default shell for task commands
 
 tasks:
@@ -120,7 +120,7 @@ When `starting_ref` is set, the task lifecycle handles all git plumbing automati
 
 ### Sharing a working dir with a live session (#854)
 
-`agentwire new` refuses to attach a session to a directory that is already some
+`hermeswire new` refuses to attach a session to a directory that is already some
 other live session's working dir — two agents in one tree means dirty state
 bleeding across and branches mixing. That guard is written for the *accidental*
 case; a scheduled dispatch is declared intent (the task config names the
@@ -227,10 +227,10 @@ Environment variables use `${ENV_VAR}` syntax (expanded at runtime).
 ## `ensure` Command
 
 ```bash
-agentwire ensure -s session --task name                        # Run named task
-agentwire ensure -s session --task name --lock-timeout 600      # Custom lock-wait timeout
-agentwire ensure -s session --task name --wait-lock             # Wait if locked
-agentwire ensure -s session --task name --dry-run               # Preview without executing
+hermeswire ensure -s session --task name                        # Run named task
+hermeswire ensure -s session --task name --lock-timeout 600      # Custom lock-wait timeout
+hermeswire ensure -s session --task name --wait-lock             # Wait if locked
+hermeswire ensure -s session --task name --dry-run               # Preview without executing
 ```
 
 **Lifecycle:**
@@ -243,7 +243,7 @@ agentwire ensure -s session --task name --dry-run               # Preview withou
 7. Run pre-commands, validate outputs
 8. Send templated prompt
 9. Agent works → goes idle → system sends summary prompt
-10. Agent writes `.agentwire/task-summary-{session}-{task}-{datetime}.md`
+10. Agent writes `.hermeswire/task-summary-{session}-{task}-{datetime}.md`
 11. If `on_task_end` defined: send user's final prompt, wait for idle
 12. If `starting_ref` set: commit changes, push, open PR
 13. Run post-commands with `{{ status }}`, `{{ pr_url }}`, etc.
@@ -256,11 +256,11 @@ agentwire ensure -s session --task name --dry-run               # Preview withou
 > **`scheduler.yaml` holds your task definitions only.** The daemon treats it
 > as read-only and never writes to it. Run-state (last run, status, summaries,
 > gate commits, worktree/PR tracking) is persisted to a separate
-> `~/.agentwire/scheduler-state.yaml`, written atomically with rotated backups
+> `~/.hermeswire/scheduler-state.yaml`, written atomically with rotated backups
 > (`scheduler-state.yaml.bak1..bak5`). This keeps machine-written state from
 > ever corrupting hand-authored tasks.
 
-Schedule tasks in `~/.agentwire/scheduler.yaml`:
+Schedule tasks in `~/.hermeswire/scheduler.yaml`:
 
 ```yaml
 tasks:
@@ -293,7 +293,7 @@ tasks:
       after: [nightly-tests, nightly-lint]
       delay: 5m
     post:
-      - "agentwire scheduler report --since 12h --artifact"
+      - "hermeswire scheduler report --since 12h --artifact"
 ```
 
 ### One-Time and Limited Tasks
@@ -318,7 +318,7 @@ tasks:
 
 - `once: true` — shorthand for `max_runs: 1`
 - `max_runs: N` — auto-disables after N dispatches, logs `task_disabled` event
-- Re-enable with `agentwire scheduler enable <task-name>`
+- Re-enable with `hermeswire scheduler enable <task-name>`
 
 ---
 
@@ -327,8 +327,8 @@ tasks:
 After unattended tasks run, generate a summary report:
 
 ```bash
-agentwire scheduler report --since 8h           # Print summary + artifact path
-agentwire scheduler report --since 8h --artifact  # Also open in portal
+hermeswire scheduler report --since 8h           # Print summary + artifact path
+hermeswire scheduler report --since 8h --artifact  # Also open in portal
 ```
 
 The HTML report includes: task name, status badge, branch, PR link, duration, and one-line summary. PR URLs are populated automatically when tasks use `starting_ref` + `work_branch`.
@@ -340,13 +340,13 @@ The HTML report includes: task name, status badge, branch, PR link, duration, an
 For unattended work, use `auto` instead of `bypass`:
 
 ```yaml
-# .agentwire.yml
+# .hermeswire.yml
 posture: auto
 ```
 
 Both `auto` and `bypass` map to `--yolo` on Hermes — there is no Auto Mode classifier. Safety comes from the damage-control `pre_tool_call` hooks (300+ rules), Hermes's HARDLINE blocklist, and the `--checkpoints` rollback flag layered on top. Dangerous actions (force push to main, mass deletion, credential exfiltration) are blocked by the hooks; HARDLINE patterns fire even under `--yolo`.
 
-`bypass` has no *additional* safety checks. `auto` and `bypass` currently enforce the identical hook-and-blocklist layer; keep the distinction in `.agentwire.yml` for clarity and future fidelity.
+`bypass` has no *additional* safety checks. `auto` and `bypass` currently enforce the identical hook-and-blocklist layer; keep the distinction in `.hermeswire.yml` for clarity and future fidelity.
 
 See `../sessions/hermes-safety-posture.md` for the full posture, approval configuration, and constraints.
 
@@ -355,14 +355,14 @@ See `../sessions/hermes-safety-posture.md` for the full posture, approval config
 ## Full Unattended Workflow Example
 
 ```yaml
-# ~/projects/piinpoint/.agentwire.yml
+# ~/projects/piinpoint/.hermeswire.yml
 posture: auto
 roles:
   - task-runner
 ```
 
 ```yaml
-# ~/projects/piinpoint/.agentwire.tasks.yml
+# ~/projects/piinpoint/.hermeswire.tasks.yml
 tasks:
   write-tests:
     prompt: "Write missing unit tests for recent changes in the payments module. Focus on edge cases."
@@ -385,7 +385,7 @@ tasks:
   morning-report:
     prompt: "Summarize what was accomplished. Check the PRs that were opened."
     post:
-      - "agentwire scheduler report --since 12h --artifact"
+      - "hermeswire scheduler report --since 12h --artifact"
     exit_on_complete: true
 ```
 
@@ -396,10 +396,10 @@ tasks:
 | Workflow | Tool | Best For |
 |----------|------|----------|
 | Predefined recurring tasks | **Scheduler** | Nightly tests, lint, reports |
-| Quick one-off tasks | **`agentwire ensure`** | Ad-hoc task execution |
+| Quick one-off tasks | **`hermeswire ensure`** | Ad-hoc task execution |
 
 ```yaml
-# ~/.agentwire/scheduler.yaml
+# ~/.hermeswire/scheduler.yaml
 tasks:
   nightly-tests:
     project: ~/projects/piinpoint
@@ -437,31 +437,31 @@ Each night: tests task and lint task each fork their own branch, do their work, 
 
 ## Daemon Liveness and the Single-Dispatcher Rule (#873)
 
-**One board, one dispatcher.** Two `agentwire scheduler serve` processes against
+**One board, one dispatcher.** Two `hermeswire scheduler serve` processes against
 the same `scheduler.yaml` double-dispatch tasks: the same task fires twice, the
 first attempt usually times out, a later one completes, and the board shows both.
 
 Liveness is determined from the daemon's own live-state file
-(`~/.agentwire/scheduler-live.json`), which records the writing process's `pid`
-on every loop tick. `live_daemon_state()` (`agentwire/scheduler/report.py`) is
+(`~/.hermeswire/scheduler-live.json`), which records the writing process's `pid`
+on every loop tick. `live_daemon_state()` (`hermeswire/scheduler/report.py`) is
 the single source of truth: it returns the state only when that PID is alive
 *and* its `ps` argv contains both `scheduler` and `serve` as whole words. A
 leftover file from a stopped daemon therefore reads as not-running, and a
 recycled PID can't masquerade as one.
 
 The whole-word test on **both** words is load-bearing, not fussiness. A
-recycled PID is quite likely to be another agentwire command: `agentwire
+recycled PID is quite likely to be another hermeswire command: `hermeswire
 scheduler live --watch` is not a dispatcher, but a substring test for
 `scheduler` accepts it — which would misreport liveness *and* make `serve`,
 `start`, and portal autostart all refuse, leaving the board with **no**
 dispatcher. Only `scheduler serve` dispatches.
 
-This replaced `tmux_session_exists("agentwire-scheduler")`, which only ever knew
+This replaced `tmux_session_exists("hermeswire-scheduler")`, which only ever knew
 about daemons tmux itself hosts. A daemon under an external supervisor (launchd
 `RunAtLoad` + `KeepAlive`) has no tmux session, so it:
 
 - reported as `stopped` while it was actively dispatching, and
-- caused `agentwire doctor` to **skip** the daemon-staleness check — the
+- caused `hermeswire doctor` to **skip** the daemon-staleness check — the
   diagnostic that catches a wedged daemon — exactly where it was most needed.
 
 Everything that asks "is the scheduler running" now routes through the same
@@ -469,11 +469,11 @@ check:
 
 | Surface | Behavior |
 |---|---|
-| `agentwire scheduler status` | Reports `running (pid N, tmux \| external supervisor)` |
-| `agentwire scheduler serve` | **Refuses to start** if a daemon is already live (`--force` overrides) |
-| `agentwire scheduler start` | Refuses when a daemon is live outside tmux |
-| `agentwire scheduler stop` | Says "running outside tmux — stop it through its supervisor" instead of the false "not running" |
-| `agentwire doctor` | Runs the staleness check for tmux and non-tmux daemons alike |
+| `hermeswire scheduler status` | Reports `running (pid N, tmux \| external supervisor)` |
+| `hermeswire scheduler serve` | **Refuses to start** if a daemon is already live (`--force` overrides) |
+| `hermeswire scheduler start` | Refuses when a daemon is live outside tmux |
+| `hermeswire scheduler stop` | Says "running outside tmux — stop it through its supervisor" instead of the false "not running" |
+| `hermeswire doctor` | Runs the staleness check for tmux and non-tmux daemons alike |
 | Portal autostart (`scheduler.autostart`) | Skips with a logged notice when any daemon is live, not just a tmux one |
 
 `scheduler.autostart` still defaults to `true`. With the guard in place that is
@@ -510,19 +510,19 @@ running until the scheduler's 4h `dispatch_max_runtime` process-group kill.
 
 **It is a wall clock, not an idle timer.** It cannot distinguish a wedged agent
 from a slow one, so a task that legitimately runs long should set it generously
-or leave it at `0`. `idle_timeout` is *not* an equivalent bound: agentwire does
+or leave it at `0`. `idle_timeout` is *not* an equivalent bound: hermeswire does
 not control the harness's idle threshold, so that field configures the summary
 handoff, not a ceiling on the run.
 
-### Keys agentwire doesn't read are now reported
+### Keys hermeswire doesn't read are now reported
 
-`max_duration` existed in `.agentwire.tasks.yml` files across the fleet long
+`max_duration` existed in `.hermeswire.tasks.yml` files across the fleet long
 before anything read it — a task that looked bounded at 30 minutes was in fact
-unbounded. Unknown keys in a task block are now surfaced by `agentwire task
+unbounded. Unknown keys in a task block are now surfaced by `hermeswire task
 show` / `task validate` / `tasks review`, and warned about at dispatch:
 
 ```
-Warning: task 'memory-manager' sets keys agentwire ignores: max_durationn
+Warning: task 'memory-manager' sets keys hermeswire ignores: max_durationn
 ```
 
 Reported, never fatal: a typo must not break a 04:00 dispatch. `description` is
@@ -533,7 +533,7 @@ allowed as a deliberate no-op annotation.
 ## Prompt Delivery Is Verified, and Its Result Acted On (#889)
 
 A scheduled dispatch's prompt is pasted with `session_ready.send_verified` — the
-same call `agentwire send`, `prompt_router`, `council`, `session_cli` and the
+same call `hermeswire send`, `prompt_router`, `council`, `session_cli` and the
 `msg` drain all make — and **`ensure` fails the attempt when it can't be
 confirmed.**
 

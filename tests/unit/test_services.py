@@ -1,18 +1,18 @@
-"""Tests for agentwire/services.py — registry, healthchecks, watchdog policy (#214)."""
+"""Tests for hermeswire/services.py — registry, healthchecks, watchdog policy (#214)."""
 
 import json
 
 import pytest
 
-from agentwire import services
-from agentwire.config import (
+from hermeswire import services
+from hermeswire.config import (
     Config,
     CustomServiceConfig,
     HealthcheckConfig,
     ServicesConfig,
     _dict_to_config,
 )
-from agentwire.services import BACKOFF_BASE, BACKOFF_CAP, WatchdogState
+from hermeswire.services import BACKOFF_BASE, BACKOFF_CAP, WatchdogState
 
 
 @pytest.fixture
@@ -74,24 +74,24 @@ class TestRegistry:
 
     def test_builtin_notifications_synthesized(self, monkeypatch):
         monkeypatch.setattr(services, "notifications_session_name",
-                            lambda: "agentwire-notifications")
+                            lambda: "hermeswire-notifications")
         reg = services.registry(self._cfg([]))
-        assert reg[0].name == "agentwire-notifications"
+        assert reg[0].name == "hermeswire-notifications"
         assert reg[0].roles == "notifications"
         assert reg[0].posture == "bypass"
         assert reg[0].restart == "on-failure"
 
     def test_user_services_appended(self, monkeypatch):
         monkeypatch.setattr(services, "notifications_session_name",
-                            lambda: "agentwire-notifications")
+                            lambda: "hermeswire-notifications")
         user = CustomServiceConfig(name="tracker")
         reg = services.registry(self._cfg([user]))
-        assert [s.name for s in reg] == ["agentwire-notifications", "tracker"]
+        assert [s.name for s in reg] == ["hermeswire-notifications", "tracker"]
 
     def test_user_override_replaces_builtin(self, monkeypatch):
         monkeypatch.setattr(services, "notifications_session_name",
-                            lambda: "agentwire-notifications")
-        override = CustomServiceConfig(name="agentwire-notifications", restart="never")
+                            lambda: "hermeswire-notifications")
+        override = CustomServiceConfig(name="hermeswire-notifications", restart="never")
         reg = services.registry(self._cfg([override]))
         assert len(reg) == 1
         assert reg[0].restart == "never"
@@ -246,11 +246,11 @@ class TestServicesCLI:
 
     @pytest.fixture
     def cli(self, state_file, monkeypatch):
-        from agentwire import system_cli as main_mod
+        from hermeswire import system_cli as main_mod
         monkeypatch.setattr(services, "notifications_session_name", lambda: "notif")
         monkeypatch.setattr(services, "_source_dir", lambda: "/tmp/src")
         cfg = Config(services=ServicesConfig(custom=[CustomServiceConfig(name="tracker")]))
-        monkeypatch.setattr("agentwire.config.load_config", lambda *a, **k: cfg)
+        monkeypatch.setattr("hermeswire.config.load_config", lambda *a, **k: cfg)
         return main_mod
 
     def _args(self, **kw):

@@ -40,7 +40,7 @@ jobs:
       - name: Run test suite (tmux-dependent tests deselected) + coverage
         run: >
           uv run --no-sync pytest -q -m "not requires_tmux"
-          --cov=agentwire --cov-report=term-missing --cov-report=xml
+          --cov=hermeswire --cov-report=term-missing --cov-report=xml
 
       - name: Publish coverage summary (report-only)
         if: always()

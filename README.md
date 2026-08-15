@@ -1,7 +1,7 @@
 # HermesWire
 
 <p align="center">
-  <img src="https://agentwire.dev/images/echo-banner.png" alt="HermesWire" width="600">
+  <img src="https://hermeswire.dev/images/echo-banner.png" alt="HermesWire" width="600">
 </p>
 
 <p align="center">
@@ -13,11 +13,11 @@
 </p>
 
 <p align="center">
-  <a href="https://pypi.org/project/agentwire-dev/"><img src="https://img.shields.io/pypi/v/agentwire-dev?color=green" alt="PyPI"></a>
-  <a href="https://pypistats.org/packages/agentwire-dev"><img src="https://img.shields.io/pypi/dm/agentwire-dev?color=00ff88&label=installs" alt="PyPI Downloads"></a>
-  <a href="https://github.com/dotdevdotdev/agentwire-dev/stargazers"><img src="https://img.shields.io/github/stars/dotdevdotdev/agentwire-dev?style=flat&logo=github&color=00d4ff" alt="GitHub Stars"></a>
-  <a href="https://pypi.org/project/agentwire-dev/"><img src="https://img.shields.io/pypi/pyversions/agentwire-dev" alt="Python"></a>
-  <a href="https://github.com/dotdevdotdev/agentwire-dev/blob/main/LICENSE"><img src="https://img.shields.io/github/license/dotdevdotdev/agentwire-dev" alt="License"></a>
+  <a href="https://pypi.org/project/hermeswire-dev/"><img src="https://img.shields.io/pypi/v/hermeswire-dev?color=green" alt="PyPI"></a>
+  <a href="https://pypistats.org/packages/hermeswire-dev"><img src="https://img.shields.io/pypi/dm/hermeswire-dev?color=00ff88&label=installs" alt="PyPI Downloads"></a>
+  <a href="https://github.com/dotdevdotdev/hermeswire-dev/stargazers"><img src="https://img.shields.io/github/stars/dotdevdotdev/hermeswire-dev?style=flat&logo=github&color=00d4ff" alt="GitHub Stars"></a>
+  <a href="https://pypi.org/project/hermeswire-dev/"><img src="https://img.shields.io/pypi/pyversions/hermeswire-dev" alt="Python"></a>
+  <a href="https://github.com/dotdevdotdev/hermeswire-dev/blob/main/LICENSE"><img src="https://img.shields.io/github/license/dotdevdotdev/hermeswire-dev" alt="License"></a>
 </p>
 
 ---
@@ -76,20 +76,20 @@ session to commanding many.
 
 ```bash
 # Install (isolated tool env — works on any Python, including Homebrew/Debian PEP 668 setups)
-uv tool install agentwire-dev
+uv tool install hermeswire-dev
 
 # Setup (interactive)
-agentwire init
+hermeswire init
 
 # Run
-agentwire portal start
+hermeswire portal start
 # Open http://127.0.0.1:8765 in Chrome — your cockpit is live (voice works immediately too)
 
 # Start your first agent session
-agentwire new -s hello -p ~/projects/hello
+hermeswire new -s hello -p ~/projects/hello
 ```
 
-> **Optional:** clone this repo (`git clone https://github.com/dotdevdotdev/agentwire-dev ~/projects/agentwire-dev`) and `agentwire dev` opens a guided helper session inside it — setup walkthrough, project wiring, issue filing, forking. It requires the source checkout; everything above works without one.
+> **Optional:** clone this repo (`git clone https://github.com/dotdevdotdev/hermeswire-dev ~/projects/hermeswire-dev`) and `hermeswire dev` opens a guided helper session inside it — setup walkthrough, project wiring, issue filing, forking. It requires the source checkout; everything above works without one.
 
 **Requirements:** Python 3.10+, tmux, Hermes Agent (`hermes --version`). Optional: ffmpeg (only for host-mic push-to-talk capture — browser voice input works without it).
 
@@ -101,12 +101,12 @@ The portal binds to loopback (`127.0.0.1`) by default. To access the portal from
 
 1. **Generate SSL certificates** (required for microphone access over non-loopback connections):
    ```bash
-   agentwire generate-certs
+   hermeswire generate-certs
    ```
-2. **Enable LAN access**: set `server.host: 0.0.0.0` in `~/.agentwire/config.yaml`.
+2. **Enable LAN access**: set `server.host: 0.0.0.0` in `~/.hermeswire/config.yaml`.
 3. **Get your auth token**: non-loopback connections require a bearer token. Print it with:
    ```bash
-   agentwire portal token
+   hermeswire portal token
    ```
 4. **Connect**: Open `https://<your-machine-ip>:8765` on your phone and enter the token when prompted.
 
@@ -118,25 +118,25 @@ Origin checks reject cross-site browser requests on every bind. Keep the portal 
 **macOS:**
 ```bash
 brew install tmux uv        # ffmpeg optional: only for host-mic PTT
-uv tool install agentwire-dev
+uv tool install hermeswire-dev
 ```
 
-> Bare `pip install agentwire-dev` fails on Homebrew Python 3.12+ with `error: externally-managed-environment` (PEP 668). `uv tool install` (or `pipx install agentwire-dev`) sidesteps that by installing into its own isolated environment.
+> Bare `pip install hermeswire-dev` fails on Homebrew Python 3.12+ with `error: externally-managed-environment` (PEP 668). `uv tool install` (or `pipx install hermeswire-dev`) sidesteps that by installing into its own isolated environment.
 
 **Ubuntu/Debian:**
 ```bash
 sudo apt install tmux       # ffmpeg optional: only for host-mic PTT
 curl -LsSf https://astral.sh/uv/install.sh | sh
-uv tool install agentwire-dev
+uv tool install hermeswire-dev
 ```
 
-`pipx install agentwire-dev` works everywhere too. Prefer plain pip? Use a venv: `python3 -m venv ~/.agentwire-venv && source ~/.agentwire-venv/bin/activate && pip install agentwire-dev`.
+`pipx install hermeswire-dev` works everywhere too. Prefer plain pip? Use a venv: `python3 -m venv ~/.hermeswire-venv && source ~/.hermeswire-venv/bin/activate && pip install hermeswire-dev`.
 
 **WSL2:** Same as Ubuntu. Audio is limited; use as remote worker with portal on Windows host.
 
 </details>
 
-> **tmux config matters.** Default tmux has no mouse scroll, a tiny scrollback, and broken copy UX — see [Recommended tmux config](docs/wiki/quickstart.md#recommended-tmux-config), or let `agentwire init` install it for you.
+> **tmux config matters.** Default tmux has no mouse scroll, a tiny scrollback, and broken copy UX — see [Recommended tmux config](docs/wiki/quickstart.md#recommended-tmux-config), or let `hermeswire init` install it for you.
 
 ---
 
@@ -165,7 +165,7 @@ The cockpit, then the layers that stack on it:
 
 **1. Create a session:**
 ```bash
-agentwire new -s myproject -p ~/projects/myproject
+hermeswire new -s myproject -p ~/projects/myproject
 ```
 
 **2. Open the portal:**
@@ -184,18 +184,18 @@ Hold the mic to speak (in instant mode the transcript appears for a quick glance
 HermesWire supports orchestrator/worker patterns for complex tasks:
 
 ```yaml
-# .agentwire.yml in your project (keep it gitignored — it's personal config,
-# and tracked copies break worktree dispatch; agentwire adds it to .gitignore for you)
+# .hermeswire.yml in your project (keep it gitignored — it's personal config,
+# and tracked copies break worktree dispatch; hermeswire adds it to .gitignore for you)
 posture: bypass
 roles:
-  - agentwire
+  - hermeswire
   - voice
 ```
 
 **Sessions** can spawn workers:
 ```bash
-agentwire spawn --roles worker  # Creates a worker pane
-agentwire send --pane 1 "Implement the auth module"
+hermeswire spawn --roles worker  # Creates a worker pane
+hermeswire send --pane 1 "Implement the auth module"
 ```
 
 Workers execute tasks autonomously while the orchestrator coordinates.
@@ -212,10 +212,10 @@ HermesWire blocks dangerous operations before they execute:
 - Sensitive file access (.env, SSH keys, credentials)
 
 ```bash
-agentwire safety check "rm -rf /"
+hermeswire safety check "rm -rf /"
 # → ✗ BLOCKED: rm with recursive or force flags
 
-agentwire safety status
+hermeswire safety status
 # → 312 patterns loaded, 47 blocks today
 ```
 
@@ -232,18 +232,18 @@ Two tiers, both sides:
 **`custom` (bring your own model):** any HTTP shim implementing the [voice shim contract](docs/wiki/voice/shim-contract.md) — ~30 lines wraps anything (Deepgram, whisper.cpp, an expressive emotion-tag model). Voice cloning, GPU engines, emotion control live here. The bundled servers are reference shims:
 
 ```yaml
-# ~/.agentwire/config.yaml
+# ~/.hermeswire/config.yaml
 tts:
   backend: "custom"
-  url: "http://localhost:8100"     # agentwire tts start (kokoro CPU / chatterbox GPU / zonos)
+  url: "http://localhost:8100"     # hermeswire tts start (kokoro CPU / chatterbox GPU / zonos)
   options:
     backend: kokoro
 stt:
   backend: "custom"
-  url: "http://localhost:8101"     # agentwire stt start (moonshine ONNX, CPU)
+  url: "http://localhost:8101"     # hermeswire stt start (moonshine ONNX, CPU)
 ```
 
-Shims can declare capabilities (emotion tags, style instructions) via `GET /capabilities` — agentwire injects the shim's `tool_prompt` into the agent's `say` tooldef so agents actually use them.
+Shims can declare capabilities (emotion tags, style instructions) via `GET /capabilities` — hermeswire injects the shim's `tool_prompt` into the agent's `say` tooldef so agents actually use them.
 
 <details>
 <summary><strong>Prefer text-only?</strong></summary>
@@ -263,11 +263,11 @@ system level).
 <summary><strong>Session Management</strong></summary>
 
 ```bash
-agentwire list                    # List sessions
-agentwire new -s <name> -p <path> # Create session
-agentwire kill -s <name>          # Kill session
-agentwire send -s <name> "prompt" # Send to session
-agentwire output -s <name>        # Read output
+hermeswire list                    # List sessions
+hermeswire new -s <name> -p <path> # Create session
+hermeswire kill -s <name>          # Kill session
+hermeswire send -s <name> "prompt" # Send to session
+hermeswire output -s <name>        # Read output
 ```
 
 </details>
@@ -276,10 +276,10 @@ agentwire output -s <name>        # Read output
 <summary><strong>Worker Panes</strong></summary>
 
 ```bash
-agentwire spawn --roles worker    # Spawn worker in current session
-agentwire send --pane 1 "task"    # Send to worker
-agentwire output --pane 1         # Read worker output
-agentwire kill --pane 1           # Kill worker
+hermeswire spawn --roles worker    # Spawn worker in current session
+hermeswire send --pane 1 "task"    # Send to worker
+hermeswire output --pane 1         # Read worker output
+hermeswire kill --pane 1           # Kill worker
 ```
 
 </details>
@@ -288,10 +288,10 @@ agentwire kill --pane 1           # Kill worker
 <summary><strong>Voice Commands</strong></summary>
 
 ```bash
-agentwire say "Hello"             # TTS (auto-routes to browser)
-agentwire send -s NAME "Done"     # Inject text into a session
-agentwire listen start/stop       # Voice recording
-agentwire tts voices              # List available voices
+hermeswire say "Hello"             # TTS (auto-routes to browser)
+hermeswire send -s NAME "Done"     # Inject text into a session
+hermeswire listen start/stop       # Voice recording
+hermeswire tts voices              # List available voices
 ```
 
 </details>
@@ -300,9 +300,9 @@ agentwire tts voices              # List available voices
 <summary><strong>Remote Machines</strong></summary>
 
 ```bash
-agentwire machine add gpu --host 10.0.0.5 --user dev
-agentwire new -s ml@gpu           # Create session on remote
-agentwire tunnels up              # SSH tunnels for services
+hermeswire machine add gpu --host 10.0.0.5 --user dev
+hermeswire new -s ml@gpu           # Create session on remote
+hermeswire tunnels up              # SSH tunnels for services
 ```
 
 </details>
@@ -311,10 +311,10 @@ agentwire tunnels up              # SSH tunnels for services
 <summary><strong>Safety & Diagnostics</strong></summary>
 
 ```bash
-agentwire doctor                  # Auto-diagnose issues
-agentwire safety status           # Check protection status
-agentwire hooks install           # Install Hermes Agent hooks
-agentwire network status          # Service health check
+hermeswire doctor                  # Auto-diagnose issues
+hermeswire safety status           # Check protection status
+hermeswire hooks install           # Install Hermes Agent hooks
+hermeswire network status          # Service health check
 ```
 
 </details>
@@ -336,8 +336,8 @@ Quick links:
 
 ## Community
 
-- [Issues](https://github.com/dotdevdotdev/agentwire-dev/issues) - Bug reports
-- [Website](https://agentwire.dev) - Docs and demos
+- [Issues](https://github.com/dotdevdotdev/hermeswire-dev/issues) - Bug reports
+- [Website](https://hermeswire.dev) - Docs and demos
 
 ---
 

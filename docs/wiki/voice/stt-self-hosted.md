@@ -3,11 +3,11 @@
 > Living document. Update this, don't create new versions.
 
 **Moonshine is the default STT — bundled and portal-managed, zero setup.** A fresh
-`pip install agentwire` + `agentwire portal start` gives you working host
-transcription with no extra install and no manual `agentwire stt start`. Since
+`pip install hermeswire` + `hermeswire portal start` gives you working host
+transcription with no extra install and no manual `hermeswire stt start`. Since
 the same shim-subprocess model was adopted for STT (mirroring the default-tier
 Kokoro voice), the portal auto-manages a Moonshine shim subprocess (tmux
-`agentwire-stt`, `:8101`) via `ensure_managed_stt()`: on first boot it downloads
+`hermeswire-stt`, `:8101`) via `ensure_managed_stt()`: on first boot it downloads
 the model (~200 MB, one-time) and warms up (~19s ONNX load) in that isolated
 process, off the portal's event loop; until the shim's `/health` reports ready,
 push-to-talk falls back to browser SpeechRecognition, then silently switches to
@@ -23,21 +23,21 @@ backend.
 | | Detail |
 |---|---|
 | Package | `useful-moonshine-onnx` — in the **base** install (`pyproject.toml` `dependencies[]`), CPU ONNX, torch-free, alongside `kokoro-onnx`. |
-| Lifecycle | `agentwire/stt/local.py::moonshine_importable()` gates whether the portal spawns the shim at all (py3.14+ has no onnxruntime wheel → stays on browser). The actual load/warm-up lifecycle runs inside the standalone `stt_server.py` process, not in-process in the portal. |
-| Process | The portal calls `ensure_managed_stt()` on boot, which shells out to `agentwire stt start` (idempotent — reuses a live shim, self-heals a dead one per #734). |
+| Lifecycle | `hermeswire/stt/local.py::moonshine_importable()` gates whether the portal spawns the shim at all (py3.14+ has no onnxruntime wheel → stays on browser). The actual load/warm-up lifecycle runs inside the standalone `stt_server.py` process, not in-process in the portal. |
+| Process | The portal calls `ensure_managed_stt()` on boot, which shells out to `hermeswire stt start` (idempotent — reuses a live shim, self-heals a dead one per #734). |
 | Model | `moonshine/base` by default (`MOONSHINE_MODEL=moonshine/tiny` env for the faster/lighter variant), cached in `~/.cache/huggingface/`. |
 | Fallback | py3.14+ (no onnxruntime wheel) or any load failure → browser SpeechRecognition, exactly as before. Nothing to configure. |
 | Client switch | `/api/voice-status` reports `stt.server_transcribe` — `false` while warming up (browser), `true` once ready (the client uploads to `/transcribe`). |
 
-The default and `custom` tiers run the **same** shim (`agentwire stt start`,
+The default and `custom` tiers run the **same** shim (`hermeswire stt start`,
 `stt_server.py` on `:8101`) — the only difference is who starts it. Default:
 the portal auto-manages it via `ensure_managed_stt()`. Custom: the operator
-starts/stops it by hand. `agentwire listen` (host CLI recording, below) talks
+starts/stops it by hand. `hermeswire listen` (host CLI recording, below) talks
 to whichever shim is already running.
 
-## Shim engines (`custom` tier / `agentwire listen`)
+## Shim engines (`custom` tier / `hermeswire listen`)
 
-The standalone shim (`agentwire stt start`) loads one of these engines. Moonshine
+The standalone shim (`hermeswire stt start`) loads one of these engines. Moonshine
 ships in the base install; the others need the `[stt]` extra.
 
 | Engine | Model | Where it runs | Notes |
@@ -46,24 +46,24 @@ ships in the base install; the others need the `[stt]` extra.
 | `faster-whisper` | `tiny` → `large-v3` | CPU or CUDA | Higher accuracy, slower cold start. |
 | `openai-whisper` | `tiny` → `large` | CPU or CUDA | Fallback when neither of the above is installed. |
 
-Pick an engine via the config key `stt.engine: auto|moonshine|whisper` (default `auto` — moonshine first, whisper fallback). This is **orthogonal to `stt.backend`**, which is the portal *tier* (`default|cloud|custom`): the tier decides *where* transcription happens, the engine decides *which model* the self-hosted shim loads. So `stt: {backend: custom, engine: moonshine}` boots the host shim on `:8101` **and** runs Moonshine ONNX; swap `engine: whisper` to run faster-whisper instead. Equivalent overrides for ad-hoc use: `STT_BACKEND=moonshine|whisper` env or `agentwire stt start --backend ...`.
+Pick an engine via the config key `stt.engine: auto|moonshine|whisper` (default `auto` — moonshine first, whisper fallback). This is **orthogonal to `stt.backend`**, which is the portal *tier* (`default|cloud|custom`): the tier decides *where* transcription happens, the engine decides *which model* the self-hosted shim loads. So `stt: {backend: custom, engine: moonshine}` boots the host shim on `:8101` **and** runs Moonshine ONNX; swap `engine: whisper` to run faster-whisper instead. Equivalent overrides for ad-hoc use: `STT_BACKEND=moonshine|whisper` env or `hermeswire stt start --backend ...`.
 
 Model name comes from the engine-specific config key:
 
-- **moonshine** → `stt.moonshine_model` (default `moonshine/base`; `moonshine/tiny` is faster, slightly less accurate). Env/flag override: `MOONSHINE_MODEL=...` or `agentwire stt start --model ...`.
+- **moonshine** → `stt.moonshine_model` (default `moonshine/base`; `moonshine/tiny` is faster, slightly less accurate). Env/flag override: `MOONSHINE_MODEL=...` or `hermeswire stt start --model ...`.
 - **whisper** → `stt.model` (default `base`, `tiny` → `large-v3`). Env override: `WHISPER_MODEL=...`.
 
-`agentwire stt start` reads these and env-passes them to the server, which always listens on `:8101` (`--port` to override). The host shim is what `agentwire listen` records into — see [Host recording](#host-recording-agentwire-listen) below.
+`hermeswire stt start` reads these and env-passes them to the server, which always listens on `:8101` (`--port` to override). The host shim is what `hermeswire listen` records into — see [Host recording](#host-recording-hermeswire-listen) below.
 
 Don't want to run local models at all? That's not a shim concern — use the
 portal's [`stt.backend: cloud` tier](stt-cloud.md) (hosted transcription API,
 no shim process needed).
 
-Backend selection logic lives in `agentwire/stt/engine.py` (FastAPI-free, unit-tested in `tests/unit/test_stt_engine.py`); `stt_server.py` is the HTTP wrapper.
+Backend selection logic lives in `hermeswire/stt/engine.py` (FastAPI-free, unit-tested in `tests/unit/test_stt_engine.py`); `stt_server.py` is the HTTP wrapper.
 
 ## Quick Start (custom shim tier)
 
-You only need this for the `custom` tier or `agentwire listen` — the **default
+You only need this for the `custom` tier or `hermeswire listen` — the **default
 tier needs no setup** (see above). Moonshine itself is already in the base
 install; the `[stt]` extra adds the shim's FastAPI wrapper + `soundfile` (and
 `faster-whisper` for the higher-accuracy engine).
@@ -73,10 +73,10 @@ install; the `[stt]` extra adds the shim's FastAPI wrapper + `soundfile` (and
 uv pip install -e '.[stt]'
 
 # 2. Start the server (defaults to moonshine/base on a Mac)
-agentwire stt start
+hermeswire stt start
 
 # 3. Point the portal at it
-# ~/.agentwire/config.yaml
+# ~/.hermeswire/config.yaml
 stt:
   backend: custom
   url: "http://localhost:8101"
@@ -148,32 +148,32 @@ for i in 1 2 3 4 5; do
 done
 ```
 
-## Host recording (`agentwire listen`)
+## Host recording (`hermeswire listen`)
 
-The portal records in the browser, but `agentwire listen` records **on the host**
+The portal records in the browser, but `hermeswire listen` records **on the host**
 (via `ffmpeg`) and POSTs the audio straight to the `:8101` shim — so it requires
 `stt.backend: custom` and a reachable `stt.url` (default `http://localhost:8101`).
 The default tier transcribes in the browser and is unreachable from the CLI, so
 `listen` refuses to run without the custom shim.
 
 ```bash
-agentwire listen start        # begin recording (ffmpeg)
-agentwire listen stop         # stop, transcribe, send to a tmux session (default "agentwire")
-agentwire listen cancel       # abandon the recording
-agentwire listen              # no subcommand = toggle (start if idle, stop if recording)
+hermeswire listen start        # begin recording (ffmpeg)
+hermeswire listen stop         # stop, transcribe, send to a tmux session (default "hermeswire")
+hermeswire listen cancel       # abandon the recording
+hermeswire listen              # no subcommand = toggle (start if idle, stop if recording)
 ```
 
 `listen stop` has three mutually exclusive output modes:
 
 | Flag | What it does with the transcript |
 |------|----------------------------------|
-| *(none)* | `agentwire send` it to the target tmux session (`-s`, default `agentwire`). |
+| *(none)* | `hermeswire send` it to the target tmux session (`-s`, default `hermeswire`). |
 | `--type` | Type it at the cursor via Hammerspoon (clipboard paste + Enter). |
 | `--stdout` | Print the **raw transcript to stdout** and exit `0` — no paste, no tmux send. |
 
 `--stdout` is the scripting hook: stdout carries only the transcript (debug logging
 goes to the listen debug file; beeps/notifications are out-of-band), so a wrapper can
-capture it with `text=$(agentwire listen stop --stdout)`. This is what a Hammerspoon
+capture it with `text=$(hermeswire listen stop --stdout)`. This is what a Hammerspoon
 binding uses to grab a transcript without committing to paste-at-cursor. It's a
 **stop-only** flag — the no-subcommand toggle always sends to the session.
 
@@ -189,7 +189,7 @@ places**. Symptom: push-to-talk produces no transcription and no visible error
 
 **The failure chain:**
 
-1. The STT server (`agentwire-stt` tmux session on `:8101`) **crashes on startup** —
+1. The STT server (`hermeswire-stt` tmux session on `:8101`) **crashes on startup** —
    most commonly `ModuleNotFoundError: No module named 'fastapi'` (or `moonshine_onnx`)
    because the project `.venv` is missing the STT deps. The crash is only visible in
    the tmux pane; the session stays alive at a shell prompt, so it *looks* started.
@@ -201,10 +201,10 @@ places**. Symptom: push-to-talk produces no transcription and no visible error
 **Diagnose (in order):**
 
 ```bash
-agentwire doctor                                   # now prints [!!] STT process if :8101 is down
+hermeswire doctor                                   # now prints [!!] STT process if :8101 is down
 curl -s http://localhost:8101/health               # {"status":"ok","model":{"backend":"moonshine",...}}
-tmux capture-pane -pt agentwire-stt -S -50         # shows the real crash (missing import)
-tmux capture-pane -pt agentwire-portal -S -200 | grep -i stt   # "Using STT shim" + backend name
+tmux capture-pane -pt hermeswire-stt -S -50         # shows the real crash (missing import)
+tmux capture-pane -pt hermeswire-portal -S -200 | grep -i stt   # "Using STT shim" + backend name
 ```
 
 The portal log line at startup is the tell — both tiers run the same
@@ -222,13 +222,13 @@ the backend at startup):
 
 ```bash
 uv pip install --python .venv/bin/python -e '.[stt]'   # shim deps: soundfile + fastapi (moonshine is in the base install)
-agentwire stt stop && agentwire stt start              # wait for "Moonshine ONNX loaded"
-agentwire portal restart --dev                         # re-runs get_stt_backend()
+hermeswire stt stop && hermeswire stt start              # wait for "Moonshine ONNX loaded"
+hermeswire portal restart --dev                         # re-runs get_stt_backend()
 ```
 
 **Why it stayed hidden historically:** an old WhisperKit fallback swallowed the
 failure until request time. The two-tier model removed it — custom tier now fails
-loudly at request time, and `agentwire doctor` health-checks `:8101` directly.
+loudly at request time, and `hermeswire doctor` health-checks `:8101` directly.
 
 **Tablet note:** if the mic does nothing on a phone/tablet *before* audio ever reaches
 `/transcribe`, that's a different problem — a non-secure browser context. Reaching the
@@ -241,5 +241,5 @@ origin via `chrome://flags/#unsafely-treat-insecure-origin-as-secure`.
 
 - Portal endpoint: `POST /transcribe` — multipart `file=@audio.webm`. Returns `{"text": "..."}`.
 - STT server endpoint: `POST /transcribe` on port 8101 — accepts WAV, MP3, M4A, WEBM (any format libav can decode).
-- Source: `agentwire/routes/voice.py::handle_transcribe`, `agentwire/routes/voice.py::_decode_audio_to_wav`, `agentwire/stt/stt_server.py`.
-- Config: `agentwire/config.py::STTConfig`.
+- Source: `hermeswire/routes/voice.py::handle_transcribe`, `hermeswire/routes/voice.py::_decode_audio_to_wav`, `hermeswire/stt/stt_server.py`.
+- Config: `hermeswire/config.py::STTConfig`.

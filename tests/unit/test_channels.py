@@ -1,4 +1,4 @@
-"""Tests for agentwire/channels/ — registry, base classes, email, quo."""
+"""Tests for hermeswire/channels/ — registry, base classes, email, quo."""
 
 import json
 from unittest.mock import MagicMock, patch
@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import yaml
 
-from agentwire.channels.base import (
+from hermeswire.channels.base import (
     Channel,
     ChannelRegistry,
     ChannelResult,
@@ -40,8 +40,8 @@ class TestChannelRegistry:
     @pytest.mark.parametrize(
         "module,cls_name,expected_name,expected_type,expected_config_key",
         [
-            ("agentwire.channels.email", "EmailChannel", "email", "send_only", "email"),
-            ("agentwire.channels.quo", "QuoChannel", "quo", "send_only", "quo"),
+            ("hermeswire.channels.email", "EmailChannel", "email", "send_only", "email"),
+            ("hermeswire.channels.quo", "QuoChannel", "quo", "send_only", "quo"),
         ],
     )
     def test_channel_class_metadata(
@@ -92,13 +92,13 @@ class TestBaseChannel:
 class TestEmailChannel:
     def test_email_config_key_from_env(self, monkeypatch):
         monkeypatch.setenv("RESEND_API_KEY", "env-key-123")
-        from agentwire.channels.email import EmailConfig
+        from hermeswire.channels.email import EmailConfig
         config = EmailConfig()
         assert config.api_key == "env-key-123"
 
     def test_email_config_rejects_explicit_key(self):
-        """Keys are env-only (~/.agentwire/.env) — not a config field."""
-        from agentwire.channels.email import EmailConfig
+        """Keys are env-only (~/.hermeswire/.env) — not a config field."""
+        from hermeswire.channels.email import EmailConfig
         with pytest.raises(TypeError):
             EmailConfig(api_key="explicit-key")
 
@@ -112,14 +112,14 @@ class TestEmailChannel:
         config_path = tmp_path / "config.yaml"
         config_path.write_text(yaml.safe_dump(config_data))
 
-        from agentwire.config import load_config
+        from hermeswire.config import load_config
         config = load_config(config_path)
         assert config.channels["email"].api_key == "env-key"
         assert config.channels["email"].from_address == "x@y.com"
         assert "api_key" in capsys.readouterr().err
 
     def test_is_html_content(self):
-        from agentwire.channels.email import _is_html_content
+        from hermeswire.channels.email import _is_html_content
         assert _is_html_content("<h1>Hello</h1>") is True
         assert _is_html_content("<div style='color:red'>") is True
         assert _is_html_content("<!DOCTYPE html>") is True
@@ -127,12 +127,12 @@ class TestEmailChannel:
         assert _is_html_content("") is False
 
     def test_markdown_to_html(self):
-        from agentwire.channels.email import _markdown_to_html
+        from hermeswire.channels.email import _markdown_to_html
         result = _markdown_to_html("**bold**")
         assert "<strong>bold</strong>" in result
 
     def test_markdown_passthrough_html(self):
-        from agentwire.channels.email import _markdown_to_html
+        from hermeswire.channels.email import _markdown_to_html
         html = "<h1>Already HTML</h1>"
         assert _markdown_to_html(html) == html
 
@@ -142,12 +142,12 @@ class TestEmailChannel:
         config_path = tmp_path / "config.yaml"
         config_path.write_text(yaml.safe_dump(config_data))
 
-        import agentwire.config as config_mod
-        from agentwire.config import load_config
+        import hermeswire.config as config_mod
+        from hermeswire.config import load_config
         old = config_mod._config
         config_mod._config = load_config(config_path)
 
-        from agentwire.channels.email import EmailConfigError, send_email
+        from hermeswire.channels.email import EmailConfigError, send_email
         try:
             with pytest.raises(EmailConfigError, match="API key"):
                 send_email(body="test")
@@ -169,25 +169,25 @@ class TestEmailChannel:
         ],
     )
     def test_normalize_recipients(self, raw, default, expected):
-        from agentwire.channels.email import _normalize_recipients
+        from hermeswire.channels.email import _normalize_recipients
         assert _normalize_recipients(raw, default) == expected
 
 
 class TestQuoChannel:
     def test_quo_config_key_from_env(self, monkeypatch):
         monkeypatch.setenv("QUO_API_KEY", "quo-key-123")
-        from agentwire.channels.quo import QuoConfig
+        from hermeswire.channels.quo import QuoConfig
         config = QuoConfig()
         assert config.api_key == "quo-key-123"
 
     def test_quo_config_rejects_explicit_key(self):
-        """Keys are env-only (~/.agentwire/.env) — not a config field."""
-        from agentwire.channels.quo import QuoConfig
+        """Keys are env-only (~/.hermeswire/.env) — not a config field."""
+        from hermeswire.channels.quo import QuoConfig
         with pytest.raises(TypeError):
             QuoConfig(api_key="k")
 
     def test_quo_config_defaults(self):
-        from agentwire.channels.quo import QuoConfig
+        from hermeswire.channels.quo import QuoConfig
         config = QuoConfig()
         assert config.from_number == ""
         assert config.default_to == ""
@@ -198,12 +198,12 @@ class TestQuoChannel:
         config_path = tmp_path / "config.yaml"
         config_path.write_text(yaml.safe_dump(config_data))
 
-        import agentwire.config as config_mod
-        from agentwire.config import load_config
+        import hermeswire.config as config_mod
+        from hermeswire.config import load_config
         old = config_mod._config
         config_mod._config = load_config(config_path)
 
-        from agentwire.channels.quo import QuoConfigError, send_quo_sms
+        from hermeswire.channels.quo import QuoConfigError, send_quo_sms
         try:
             with pytest.raises(QuoConfigError):
                 send_quo_sms(body="test")
@@ -213,9 +213,9 @@ class TestQuoChannel:
 
 @pytest.fixture
 def _mock_config():
-    """Swap agentwire config for tests, restore on teardown."""
-    import agentwire.config as config_mod
-    from agentwire.config import load_config
+    """Swap hermeswire config for tests, restore on teardown."""
+    import hermeswire.config as config_mod
+    from hermeswire.config import load_config
 
     original = config_mod._config
 
@@ -238,9 +238,9 @@ class TestSendEmailSuccess:
             "default_to": "user@example.com",
         }}}, tmp_path)
 
-        from agentwire.channels.email import send_email
+        from hermeswire.channels.email import send_email
 
-        with patch("agentwire.channels.email.resend") as mock_resend:
+        with patch("hermeswire.channels.email.resend") as mock_resend:
             mock_resend.Emails.send.return_value = {"id": "msg-abc123"}
             result = send_email(body="Hello world", subject="Test")
 
@@ -256,9 +256,9 @@ class TestSendEmailSuccess:
             "default_to": "default@example.com",
         }}}, tmp_path)
 
-        from agentwire.channels.email import send_email
+        from hermeswire.channels.email import send_email
 
-        with patch("agentwire.channels.email.resend") as mock_resend:
+        with patch("hermeswire.channels.email.resend") as mock_resend:
             mock_resend.Emails.send.return_value = {"id": "msg-xyz"}
             result = send_email(body="Hello", to="override@example.com")
 
@@ -276,7 +276,7 @@ class TestSendQuoSuccess:
             "default_to": "+15559876543",
         }}}, tmp_path)
 
-        from agentwire.channels.quo import send_quo_sms
+        from hermeswire.channels.quo import send_quo_sms
 
         mock_resp = MagicMock()
         mock_resp.read.return_value = json.dumps({

@@ -28,7 +28,7 @@ from unittest.mock import patch
 
 import pytest
 
-from agentwire import auth_expired
+from hermeswire import auth_expired
 
 # The shape of a hard Hermes auth failure on `hermes -z` stderr (exit 1).
 AUTH_ERROR_STDERR = (
@@ -49,14 +49,14 @@ OVERLOADED_STDERR = "hermes -z: agent failed: provider returned 500 (overloaded)
 @pytest.fixture
 def env(tmp_path, monkeypatch):
     """Isolate CONFIG_DIR into tmp_path (the auth-expired state lives there)."""
-    monkeypatch.setattr("agentwire.core.CONFIG_DIR", tmp_path / "agentwire")
+    monkeypatch.setattr("hermeswire.core.CONFIG_DIR", tmp_path / "hermeswire")
     return tmp_path
 
 
 @pytest.fixture
 def ok_email():
     ok = SimpleNamespace(success=True, error=None)
-    with patch("agentwire.channels.email.send_email", return_value=ok):
+    with patch("hermeswire.channels.email.send_email", return_value=ok):
         yield
 
 
@@ -154,7 +154,7 @@ class TestParseAuthError:
 
 class TestProbeProviderAuth:
     def _probe(self, stdout, returncode=0):
-        with patch("agentwire.auth_expired.subprocess.run",
+        with patch("hermeswire.auth_expired.subprocess.run",
                    return_value=SimpleNamespace(stdout=stdout, stderr="",
                                                 returncode=returncode)):
             result = auth_expired.probe_provider_auth("nous")
@@ -186,7 +186,7 @@ class TestProbeProviderAuth:
         assert self._probe("not json") is None
 
     def test_subprocess_failure_is_none(self):
-        with patch("agentwire.auth_expired.subprocess.run",
+        with patch("hermeswire.auth_expired.subprocess.run",
                    side_effect=OSError("no hermes")):
             assert auth_expired.probe_provider_auth("nous") is None
 
@@ -209,14 +209,14 @@ class TestDetect:
 
     def test_transient_stderr_falls_through_to_preflight(self):
         # Transient stderr + hard pre-flight → pre-flight decides.
-        with patch("agentwire.auth_expired.probe_provider_auth",
+        with patch("hermeswire.auth_expired.probe_provider_auth",
                    return_value={"provider": "nous", "code": "account_missing"}):
             detail = auth_expired.detect("s", stderr=TRANSIENT_STDERR, provider="nous")
         assert detail is not None
         assert detail["source"] == "preflight"
 
     def test_preflight_only(self):
-        with patch("agentwire.auth_expired.probe_provider_auth",
+        with patch("hermeswire.auth_expired.probe_provider_auth",
                    return_value={"provider": "nous", "code": "account_missing"}):
             detail = auth_expired.detect("s", provider="nous")
         assert detail == {"session": "s", "source": "preflight",
@@ -227,7 +227,7 @@ class TestDetect:
 
     def test_no_provider_skips_subprocess(self):
         # The polling path passes no provider: no `hermes auth status` call.
-        with patch("agentwire.auth_expired.probe_provider_auth") as probe:
+        with patch("hermeswire.auth_expired.probe_provider_auth") as probe:
             auth_expired.detect("s", stderr=None, provider=None)
         probe.assert_not_called()
 
@@ -239,7 +239,7 @@ class TestDetect:
 
 class TestActiveProvider:
     def test_env_override_wins(self, monkeypatch):
-        monkeypatch.setenv("AGENTWIRE_PROVIDER", "openrouter")
+        monkeypatch.setenv("HERMESWIRE_PROVIDER", "openrouter")
         assert auth_expired._active_provider() == "openrouter"
 
     def test_reads_auth_json(self, tmp_path, monkeypatch):
@@ -272,7 +272,7 @@ class TestOutageState:
         assert state["code"] == "subscription_expired"
 
     def test_escalation_resumes_after_the_ttl(self, env, ok_email):
-        with patch("agentwire.channels.email.send_email",
+        with patch("hermeswire.channels.email.send_email",
                    return_value=SimpleNamespace(success=True, error=None)) as mail:
             auth_expired.record_outage({"session": "a"})
             state = auth_expired.read_state()
@@ -288,7 +288,7 @@ class TestOutageState:
         assert auth_expired.read_state()["detected_at"] == first["detected_at"]
 
     def test_a_failing_escalation_still_records_the_outage(self, env):
-        with patch("agentwire.channels.email.send_email",
+        with patch("hermeswire.channels.email.send_email",
                    side_effect=RuntimeError("no key")):
             auth_expired.record_outage({"session": "a"})
         assert auth_expired.read_state() is not None
@@ -339,7 +339,7 @@ class TestCopy:
         assert "login expired" in line
 
     def test_no_claude_login_strings_remain(self):
-        import agentwire.auth_expired as mod
+        import hermeswire.auth_expired as mod
 
         source = Path(mod.__file__).read_text()
         for banned in ("authentication_failed", "/login", "Login expired",

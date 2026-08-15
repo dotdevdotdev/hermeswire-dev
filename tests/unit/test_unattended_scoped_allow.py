@@ -19,8 +19,8 @@ from pathlib import Path
 
 import pytest
 
-from agentwire.safety import _core
-from agentwire.safety._core import (
+from hermeswire.safety import _core
+from hermeswire.safety._core import (
     DEFAULT_UNATTENDED_ALLOW,
     command_scope_dirs,
     encode_unattended_allow,
@@ -45,7 +45,7 @@ def store(tmp_path):
     """A stand-in memory store, plus an out-of-scope repo beside it."""
     s = tmp_path / "projects" / "proj-a" / "memory"
     s.mkdir(parents=True)
-    other = tmp_path / "elsewhere" / "agentwire-dev"
+    other = tmp_path / "elsewhere" / "hermeswire-dev"
     other.mkdir(parents=True)
     return s, other, f"{tmp_path}/projects/*/memory/"
 
@@ -58,8 +58,8 @@ def store(tmp_path):
 class TestParseUnattendedAllow:
     def test_bare_string_form_still_works(self):
         """The deployed form. Breaking it breaks every live task."""
-        grants, errors = parse_unattended_allow(["outbound.agentwire-email"])
-        assert grants == {"outbound.agentwire-email": [[]]}
+        grants, errors = parse_unattended_allow(["outbound.hermeswire-email"])
+        assert grants == {"outbound.hermeswire-email": [[]]}
         assert errors == []
 
     def test_scoped_form(self):
@@ -120,7 +120,7 @@ class TestParseUnattendedAllow:
         binds it whether or not the entry parses."""
         assert "git.commit" in DEFAULT_UNATTENDED_ALLOW
         monkeypatch.setenv(
-            "AGENTWIRE_UNATTENDED_ALLOW",
+            "HERMESWIRE_UNATTENDED_ALLOW",
             json.dumps([{"id": "git.commit", "paths": ["relative/dir"]}]),
         )
         grants = resolve_unattended_grants({})
@@ -155,12 +155,12 @@ class TestWireFormat:
         """THE inheritance property: what a child inherits must be the same
         grant the host wrote, scope included. Flattening to a bare id here
         hands every child in a fan-out the unscoped version."""
-        monkeypatch.setenv("AGENTWIRE_UNATTENDED_ALLOW", encode_unattended_allow(entries))
+        monkeypatch.setenv("HERMESWIRE_UNATTENDED_ALLOW", encode_unattended_allow(entries))
         assert parse_unattended_allow(_core._env_unattended_allow())[0] == \
             parse_unattended_allow(entries)[0]
 
     def test_undecodable_json_grants_nothing(self, monkeypatch):
-        monkeypatch.setenv("AGENTWIRE_UNATTENDED_ALLOW", '[{"id": "a.b"')
+        monkeypatch.setenv("HERMESWIRE_UNATTENDED_ALLOW", '[{"id": "a.b"')
         assert _core._env_unattended_allow() == []
 
 
@@ -176,26 +176,26 @@ class TestPrecedence:
     def test_task_scope_overrides_unscoped_default(self, monkeypatch):
         assert "git.commit" in DEFAULT_UNATTENDED_ALLOW
         monkeypatch.setenv(
-            "AGENTWIRE_UNATTENDED_ALLOW",
+            "HERMESWIRE_UNATTENDED_ALLOW",
             encode_unattended_allow([{"id": "git.commit", "paths": ["/only/here"]}]),
         )
         grants = resolve_unattended_grants({})
         assert grants["git.commit"] == [["/only/here"]]
 
     def test_default_survives_when_task_does_not_name_it(self, monkeypatch):
-        monkeypatch.setenv("AGENTWIRE_UNATTENDED_ALLOW", "some.other-rule")
+        monkeypatch.setenv("HERMESWIRE_UNATTENDED_ALLOW", "some.other-rule")
         grants = resolve_unattended_grants({})
         assert grants["git.commit"] == [[]]
 
     def test_host_config_layer_overrides_default(self, monkeypatch):
-        monkeypatch.delenv("AGENTWIRE_UNATTENDED_ALLOW", raising=False)
+        monkeypatch.delenv("HERMESWIRE_UNATTENDED_ALLOW", raising=False)
         grants = resolve_unattended_grants(
             {"safety": {"unattended_allow": [{"id": "git.push", "paths": ["/repos"]}]}}
         )
         assert grants["git.push"] == [["/repos"]]
 
     def test_env_layer_overrides_host_config(self, monkeypatch):
-        monkeypatch.setenv("AGENTWIRE_UNATTENDED_ALLOW", "git.push")
+        monkeypatch.setenv("HERMESWIRE_UNATTENDED_ALLOW", "git.push")
         grants = resolve_unattended_grants(
             {"safety": {"unattended_allow": [{"id": "git.push", "paths": ["/repos"]}]}}
         )
@@ -463,13 +463,13 @@ class TestGrantDecision:
         assert "not on the unattended allowlist" in why
 
     def test_scoped_grant_refuses_when_there_is_no_filesystem_target(self, store):
-        """The MCP hook's synthesized `agentwire email --to …` names no
+        """The MCP hook's synthesized `hermeswire email --to …` names no
         directory. Measuring a path scope against the session cwd there would
         allow on a coincidence."""
         s, _, scope = store
         ok, why = unattended_grant_allows(
-            "outbound.agentwire-email", "agentwire email --to a@b.c",
-            {"outbound.agentwire-email": [[scope]]}, str(s), scopeable=False,
+            "outbound.hermeswire-email", "hermeswire email --to a@b.c",
+            {"outbound.hermeswire-email": [[scope]]}, str(s), scopeable=False,
         )
         assert not ok
         assert "no filesystem target" in why
@@ -590,11 +590,11 @@ class TestAgainstBundledRules:
         """The four missing `id:` lines behind #914's motivating failure. If
         these ever drop out of the bundled copy again, five of six built-in
         grants go silently inert."""
-        from agentwire.safety.lint import unattended_defaults_missing
+        from hermeswire.safety.lint import unattended_defaults_missing
         assert unattended_defaults_missing(bundled_config) == []
 
     def test_git_commit_is_ask_tier_here(self, bundled_config):
-        from agentwire.safety._core import check_command
+        from hermeswire.safety._core import check_command
         result = check_command("git commit -m 'x'", bundled_config)
         assert result["decision"] == "ask"
         assert result["id"] == "git.commit"
@@ -602,7 +602,7 @@ class TestAgainstBundledRules:
     def test_scoped_grant_end_to_end(self, bundled_config, store):
         """Real rule id, real pattern, real decision — in-scope allowed and the
         identical command out of scope refused."""
-        from agentwire.safety._core import check_command
+        from hermeswire.safety._core import check_command
         s, other, scope = store
         result = check_command("git commit -m 'x'", bundled_config)
         grants = {"git.commit": [[scope]]}
@@ -643,7 +643,7 @@ class TestAgainstBundledRules:
         from here on. They were asserted BOTH ways precisely so this flip would
         be forced by a red test rather than remembered.
         """
-        from agentwire.safety._core import check_command
+        from hermeswire.safety._core import check_command
         s, other, scope = store
         grants = {"git.commit": [[scope]]}
 
@@ -690,7 +690,7 @@ class TestAgainstBundledRules:
         catches it: any hard-block rule, or none at all plus a different
         failure, could produce that verdict.
         """
-        from agentwire.safety._core import check_command
+        from hermeswire.safety._core import check_command
         result = check_command("git -C /repo push --force origin main", bundled_config)
         assert result["decision"] == "block"
         assert result["id"] == "git.git-push-force-use-force-with-lease"
@@ -734,7 +734,7 @@ class TestAgainstBundledRules:
 
     def test_hard_block_rules_are_untouched_by_any_grant(self, bundled_config, store):
         """A grant resolves the `ask` tier only. `block` never reaches it."""
-        from agentwire.safety._core import check_command
+        from hermeswire.safety._core import check_command
         s, _, _ = store
         for command in ("rm -rf /tmp/x", "git push --force origin main",
                         "git reset --hard origin/main"):

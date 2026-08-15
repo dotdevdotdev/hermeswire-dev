@@ -7,7 +7,7 @@ it, the PR just dangles. This scans registered worktree entries for exactly
 that shape: LIVE worker session, OPEN PR, no live recorded parent.
 
 Deliberately a shallow "has any live recorded parent" check (recorded
-creator, or the `.agentwire.yml parent:` fallback via `_display_parent` —
+creator, or the `.hermeswire.yml parent:` fallback via `_display_parent` —
 the same precedence prompt-routing already uses), not a full
 orchestrator-role verification of that parent (out of scope — see #716's
 deferred merge-authority-per-edge north star). Orchestrator-kind entries are
@@ -19,7 +19,7 @@ not dangling.
 import json
 from unittest.mock import MagicMock
 
-from agentwire.session_cli import scan_dangling_worktrees
+from hermeswire.session_cli import scan_dangling_worktrees
 
 
 def _rows(**overrides):
@@ -31,14 +31,14 @@ def _rows(**overrides):
 
 class TestScanDanglingWorktrees:
     def test_no_gh_means_no_scan(self, monkeypatch):
-        import agentwire.session_cli as m
+        import hermeswire.session_cli as m
         monkeypatch.setattr(m.shutil, "which", lambda *_: None)
         assert scan_dangling_worktrees(_rows()) == []
 
     def test_orchestrator_kind_is_never_scanned(self, monkeypatch):
         # #716 regression: a durable, self-rooted orchestrator with an open
         # PR is its normal healthy lifecycle, not a dangling failure.
-        import agentwire.session_cli as m
+        import hermeswire.session_cli as m
         monkeypatch.setattr(m.shutil, "which", lambda *_: "/usr/bin/gh")
         monkeypatch.setattr(m, "tmux_session_exists", lambda s: True)
         run_calls = []
@@ -47,7 +47,7 @@ class TestScanDanglingWorktrees:
         assert run_calls == []  # skipped before even reaching the gh call
 
     def test_dead_session_is_skipped(self, monkeypatch):
-        import agentwire.session_cli as m
+        import hermeswire.session_cli as m
         monkeypatch.setattr(m.shutil, "which", lambda *_: "/usr/bin/gh")
         monkeypatch.setattr(m, "tmux_session_exists", lambda s: False)
         run_calls = []
@@ -56,13 +56,13 @@ class TestScanDanglingWorktrees:
         assert run_calls == []  # never even shells out to gh for a dead session
 
     def test_entry_without_branch_is_skipped(self, monkeypatch):
-        import agentwire.session_cli as m
+        import hermeswire.session_cli as m
         monkeypatch.setattr(m.shutil, "which", lambda *_: "/usr/bin/gh")
         monkeypatch.setattr(m, "tmux_session_exists", lambda s: True)
         assert scan_dangling_worktrees(_rows(branch=None)) == []
 
     def test_live_open_pr_no_parent_is_dangling(self, monkeypatch):
-        import agentwire.session_cli as m
+        import hermeswire.session_cli as m
         monkeypatch.setattr(m.shutil, "which", lambda *_: "/usr/bin/gh")
         monkeypatch.setattr(m, "tmux_session_exists", lambda s: True)
         monkeypatch.setattr(
@@ -77,7 +77,7 @@ class TestScanDanglingWorktrees:
         assert out[0]["reason"] == "no recorded parent"
 
     def test_live_open_pr_dead_parent_is_dangling(self, monkeypatch):
-        import agentwire.session_cli as m
+        import hermeswire.session_cli as m
         monkeypatch.setattr(m.shutil, "which", lambda *_: "/usr/bin/gh")
 
         def alive(s):
@@ -95,7 +95,7 @@ class TestScanDanglingWorktrees:
         assert out[0]["created_by"] == "dead-orchestrator"
 
     def test_live_open_pr_with_live_parent_is_not_dangling(self, monkeypatch):
-        import agentwire.session_cli as m
+        import hermeswire.session_cli as m
         monkeypatch.setattr(m.shutil, "which", lambda *_: "/usr/bin/gh")
         monkeypatch.setattr(m, "tmux_session_exists", lambda s: True)
         monkeypatch.setattr(
@@ -107,12 +107,12 @@ class TestScanDanglingWorktrees:
 
     def test_live_open_pr_with_config_parent_fallback_is_not_dangling(self, monkeypatch):
         # #716 review finding: no RECORDED created_by, but a live parent
-        # resolvable via the .agentwire.yml `parent:` fallback (the same
+        # resolvable via the .hermeswire.yml `parent:` fallback (the same
         # precedence prompt-routing's resolve_parent uses) must still count
         # as "has a parent" — _display_parent already implements exactly
         # that fallback, which is why scan_dangling_worktrees calls it
         # instead of reading session metadata directly.
-        import agentwire.session_cli as m
+        import hermeswire.session_cli as m
         monkeypatch.setattr(m.shutil, "which", lambda *_: "/usr/bin/gh")
         monkeypatch.setattr(m, "tmux_session_exists", lambda s: True)
         monkeypatch.setattr(
@@ -123,7 +123,7 @@ class TestScanDanglingWorktrees:
         assert scan_dangling_worktrees(_rows()) == []
 
     def test_merged_pr_is_not_dangling(self, monkeypatch):
-        import agentwire.session_cli as m
+        import hermeswire.session_cli as m
         monkeypatch.setattr(m.shutil, "which", lambda *_: "/usr/bin/gh")
         monkeypatch.setattr(m, "tmux_session_exists", lambda s: True)
         monkeypatch.setattr(
@@ -134,7 +134,7 @@ class TestScanDanglingWorktrees:
         assert scan_dangling_worktrees(_rows()) == []
 
     def test_no_pr_at_all_is_not_dangling(self, monkeypatch):
-        import agentwire.session_cli as m
+        import hermeswire.session_cli as m
         monkeypatch.setattr(m.shutil, "which", lambda *_: "/usr/bin/gh")
         monkeypatch.setattr(m, "tmux_session_exists", lambda s: True)
         monkeypatch.setattr(m.subprocess, "run", lambda *a, **k: MagicMock(returncode=1, stdout=""))

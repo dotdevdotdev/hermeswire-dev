@@ -11,38 +11,38 @@ import os
 
 import pytest
 
-from agentwire.safety._core import (
+from hermeswire.safety._core import (
     check_command,
     check_path,
     is_protected_control_plane,
     load_allowed_paths,
     load_safety_config,
 )
-from agentwire.safety_commands import load_patterns
+from hermeswire.safety_commands import load_patterns
 
 # This module is *about* the real control plane: it asserts that the owner's
-# actual `~/.agentwire` and `~/.claude` files are unwritable by the policed
+# actual `~/.hermeswire` and `~/.claude` files are unwritable by the policed
 # agent, and its parameters are real absolute paths resolved at import. The
 # #893 home redirect would point the protection logic at a tmp directory while
 # these paths stayed real, making every case fail for the wrong reason. Reads
 # only — the audit-hook backstop still fails the run on any write.
-pytestmark = pytest.mark.real_agentwire_home
+pytestmark = pytest.mark.real_hermeswire_home
 
 CONTROL_PLANE_FILES = [
-    os.path.expanduser("~/.agentwire/damagecontrol.yml"),
+    os.path.expanduser("~/.hermeswire/damagecontrol.yml"),
     "/some/repo/.damagecontrol.yml",
     os.path.expanduser("~/.hermes/config.yaml"),
-    os.path.expanduser("~/.agentwire/hooks/damage-control/bash-tool-damage-control.py"),
+    os.path.expanduser("~/.hermeswire/hooks/damage-control/bash-tool-damage-control.py"),
     os.path.expanduser("~/.hermes/hooks/idle-handler.sh"),
-    os.path.expanduser("~/.agentwire/damage-control/core.yaml"),
-    # Execution-plane configs whose strings agentwire runs via shell=True
+    os.path.expanduser("~/.hermeswire/damage-control/core.yaml"),
+    # Execution-plane configs whose strings hermeswire runs via shell=True
     # (scheduler gate commands, service healthchecks, per-project task commands)
     # — these never traverse the Claude Code hook, so they are control plane too.
-    os.path.expanduser("~/.agentwire/scheduler.yaml"),
-    os.path.expanduser("~/.agentwire/config.yaml"),
-    # Per-project task-execution config (#720) — NOT .agentwire.yml, which was
-    # split out and is agent-writable again (see test_agentwire_yml_is_no_longer_protected).
-    "/some/repo/.agentwire.tasks.yml",
+    os.path.expanduser("~/.hermeswire/scheduler.yaml"),
+    os.path.expanduser("~/.hermeswire/config.yaml"),
+    # Per-project task-execution config (#720) — NOT .hermeswire.yml, which was
+    # split out and is agent-writable again (see test_hermeswire_yml_is_no_longer_protected).
+    "/some/repo/.hermeswire.tasks.yml",
 ]
 
 
@@ -66,43 +66,43 @@ def test_every_control_plane_file_is_protected(path):
 def test_unrelated_file_is_not_protected():
     assert is_protected_control_plane(os.path.expanduser("~/projects/foo/main.py")) is False
     # A regular source file in a repo is not control plane even if the repo
-    # carries an .agentwire.yml.
+    # carries an .hermeswire.yml.
     assert is_protected_control_plane(os.path.expanduser("~/projects/foo/app/config.yaml")) is False
 
 
-def test_agentwire_yml_is_no_longer_protected():
-    """#720: .agentwire.yml was split out — it's pure declarative session config
+def test_hermeswire_yml_is_no_longer_protected():
+    """#720: .hermeswire.yml was split out — it's pure declarative session config
     (posture/roles/voice/parent/worktree) now, agent-writable again."""
-    assert is_protected_control_plane("/some/repo/.agentwire.yml") is False
+    assert is_protected_control_plane("/some/repo/.hermeswire.yml") is False
 
 
-def test_agentwire_tasks_proposed_yml_is_not_protected():
+def test_hermeswire_tasks_proposed_yml_is_not_protected():
     """The unprotected staging file an agent drafts to (#720 propose-and-promote)."""
-    assert is_protected_control_plane("/some/repo/.agentwire.tasks.proposed.yml") is False
+    assert is_protected_control_plane("/some/repo/.hermeswire.tasks.proposed.yml") is False
 
 
 BASH_EXECUTION_PLANE_WRITES = [
-    "echo 'x' > ~/.agentwire/scheduler.yaml",
-    "echo 'x' > ~/.agentwire/config.yaml",
-    "echo 'x' > .agentwire.tasks.yml",
-    "sed -i 's/a/b/' ~/.agentwire/scheduler.yaml",
+    "echo 'x' > ~/.hermeswire/scheduler.yaml",
+    "echo 'x' > ~/.hermeswire/config.yaml",
+    "echo 'x' > .hermeswire.tasks.yml",
+    "sed -i 's/a/b/' ~/.hermeswire/scheduler.yaml",
 ]
 
-# #720: .agentwire.yml carries no execution vector anymore — writes to it must
+# #720: .hermeswire.yml carries no execution vector anymore — writes to it must
 # succeed (not be blocked as control plane), while the split-out task-exec
 # file and staging draft behave as expected.
-BASH_AGENTWIRE_YML_WRITES_ALLOWED = [
-    "echo 'roles: [agentwire]' > .agentwire.yml",
-    "echo 'roles: [agentwire]' >> /some/repo/.agentwire.yml",
+BASH_HERMESWIRE_YML_WRITES_ALLOWED = [
+    "echo 'roles: [hermeswire]' > .hermeswire.yml",
+    "echo 'roles: [hermeswire]' >> /some/repo/.hermeswire.yml",
 ]
 
 BASH_PROPOSED_TASKS_WRITES_ALLOWED = [
-    "echo 'tasks: {}' > .agentwire.tasks.proposed.yml",
+    "echo 'tasks: {}' > .hermeswire.tasks.proposed.yml",
 ]
 
 
-@pytest.mark.parametrize("command", BASH_AGENTWIRE_YML_WRITES_ALLOWED)
-def test_bash_write_to_agentwire_yml_not_blocked(cfg, command):
+@pytest.mark.parametrize("command", BASH_HERMESWIRE_YML_WRITES_ALLOWED)
+def test_bash_write_to_hermeswire_yml_not_blocked(cfg, command):
     result = check_command(command, cfg)
     assert result.get("protected") is not True
     assert result["decision"] != "block"
@@ -115,38 +115,38 @@ def test_bash_write_to_proposed_tasks_not_blocked(cfg, command):
     assert result["decision"] != "block"
 
 
-def test_agentwire_tasks_promote_is_hard_blocked_for_agent(cfg):
+def test_hermeswire_tasks_promote_is_hard_blocked_for_agent(cfg):
     """The propose-and-promote CLI escape (#720): an agent must not be able to
-    just run `agentwire tasks promote` itself from its Bash tool — that would
+    just run `hermeswire tasks promote` itself from its Bash tool — that would
     write the protected file on the agent's behalf (confused-deputy)."""
-    result = check_command("agentwire tasks promote", cfg)
+    result = check_command("hermeswire tasks promote", cfg)
     assert result["decision"] == "block"
     assert result.get("protected") is True
 
 
-def test_agentwire_tasks_review_is_not_blocked(cfg):
+def test_hermeswire_tasks_review_is_not_blocked(cfg):
     """`review` is read-only — no reason to block the agent from checking its
     own draft before asking a human to promote it."""
-    result = check_command("agentwire tasks review", cfg)
+    result = check_command("hermeswire tasks review", cfg)
     assert result["decision"] != "block"
 
 
 # --------------------------------------------------------------------------
-# #721 review: `agentwire tasks promote` gets the SAME escape-hatch- and
+# #721 review: `hermeswire tasks promote` gets the SAME escape-hatch- and
 # kill-switch-EXEMPT tier as the protected-control-plane path check — it's a
 # PROTECTED_COMMAND_PATTERNS entry (safety/_core.py), not an ordinary
 # bashToolPatterns rule, specifically so `# allow:` and `enabled: false`
 # can't reopen the confused-deputy escape the file protection exists to
 # close. This is the "step 3 alone isn't enough" gap the review found: an
 # ordinary bashToolPatterns block IS overridable by the escape hatch, which
-# would have let `agentwire tasks promote --yes  # allow: x` straight through.
+# would have let `hermeswire tasks promote --yes  # allow: x` straight through.
 # --------------------------------------------------------------------------
 
 PROMOTE_COMMANDS = [
-    "agentwire tasks promote",
-    "agentwire tasks promote --yes",
-    "uv run agentwire tasks promote --yes",
-    "python3 -m agentwire tasks promote --yes",
+    "hermeswire tasks promote",
+    "hermeswire tasks promote --yes",
+    "uv run hermeswire tasks promote --yes",
+    "python3 -m hermeswire tasks promote --yes",
 ]
 
 
@@ -177,19 +177,19 @@ def test_kill_switch_cannot_reopen_promote_block(command):
 def test_promote_block_has_no_allowlist_override():
     """Unlike protected PATHS, a protected COMMAND has no allowlist escape
     valve at all — there's no legitimate reason for an agent to ever run
-    `agentwire tasks promote`, so nothing should be able to re-permit it."""
+    `hermeswire tasks promote`, so nothing should be able to re-permit it."""
     cfg = load_patterns()
     cfg["safety"] = {"enabled": True}
     cfg["allowedPaths"] = [{"path": "*", "allow": "all"}]
-    result = check_command("agentwire tasks promote", cfg)
+    result = check_command("hermeswire tasks promote", cfg)
     assert result["decision"] == "block"
     assert result.get("protected") is True
 
 
 PROMOTE_MENTIONS_IN_CONTENT = [
-    'git commit -m "docs: mention agentwire tasks promote in the README"',
-    'echo "run agentwire tasks promote when ready"',
-    'gh issue comment 1 --body "see agentwire tasks promote for details"',
+    'git commit -m "docs: mention hermeswire tasks promote in the README"',
+    'echo "run hermeswire tasks promote when ready"',
+    'gh issue comment 1 --body "see hermeswire tasks promote for details"',
 ]
 
 
@@ -206,7 +206,7 @@ def test_promote_block_does_not_false_match_quoted_content(cfg, command):
 
 @pytest.mark.parametrize("command", BASH_EXECUTION_PLANE_WRITES)
 def test_bash_write_to_execution_plane_blocked(cfg, command):
-    """Gate/healthcheck/task config files run via agentwire's own shell=True —
+    """Gate/healthcheck/task config files run via hermeswire's own shell=True —
     the agent must not be able to write them (confused-deputy escape)."""
     result = check_command(command, cfg)
     assert result["decision"] == "block"
@@ -243,36 +243,36 @@ def test_unregistering_hook_via_settings_blocked(cfg):
 # --------------------------------------------------------------------------
 
 BASH_WRITES = [
-    "echo 'enabled: false' > ~/.agentwire/damagecontrol.yml",
+    "echo 'enabled: false' > ~/.hermeswire/damagecontrol.yml",
     "echo '{}' > ~/.hermes/config.yaml",
-    "rm ~/.agentwire/damage-control/core.yaml",
-    "sed -i 's/x/y/' ~/.agentwire/hooks/damage-control/bash-tool-damage-control.py",
+    "rm ~/.hermeswire/damage-control/core.yaml",
+    "sed -i 's/x/y/' ~/.hermeswire/hooks/damage-control/bash-tool-damage-control.py",
     "echo 'enabled: false' > .damagecontrol.yml",
-    # #678 — absolute-path targets: basename globs (*.agentwire.tasks.yml) must
+    # #678 — absolute-path targets: basename globs (*.hermeswire.tasks.yml) must
     # match through a directory prefix, not just the bare relative form.
-    "echo x >> /some/repo/.agentwire.tasks.yml",
-    "echo x > /some/repo/.agentwire.tasks.yml",
-    'sed -i "s/a/b/" /some/repo/.agentwire.tasks.yml',
-    "cp /tmp/x /some/repo/.agentwire.tasks.yml",
-    "mv /tmp/x /some/repo/.agentwire.tasks.yml",
-    'tee "/some/repo/.agentwire.tasks.yml" < /tmp/x',
+    "echo x >> /some/repo/.hermeswire.tasks.yml",
+    "echo x > /some/repo/.hermeswire.tasks.yml",
+    'sed -i "s/a/b/" /some/repo/.hermeswire.tasks.yml',
+    "cp /tmp/x /some/repo/.hermeswire.tasks.yml",
+    "mv /tmp/x /some/repo/.hermeswire.tasks.yml",
+    'tee "/some/repo/.hermeswire.tasks.yml" < /tmp/x',
     # #678 — interpreter programs are opaque; fail closed when an inline/
     # stdin/piped interpreter invocation mentions a protected path.
-    "python3 -c 'open(\".agentwire.tasks.yml\", \"w\").write(\"x\")'",
-    "python3 -c 'open(\"/some/repo/.agentwire.tasks.yml\", \"a\").write(\"x\")'",
-    "perl -e 'open(F, \">\", \".agentwire.tasks.yml\")'",
-    "python3 - <<'EOF'\nopen('/some/repo/.agentwire.tasks.yml', 'w').write('x')\nEOF",
-    "echo 'open(\".agentwire.tasks.yml\",\"w\")' | python3",
+    "python3 -c 'open(\".hermeswire.tasks.yml\", \"w\").write(\"x\")'",
+    "python3 -c 'open(\"/some/repo/.hermeswire.tasks.yml\", \"a\").write(\"x\")'",
+    "perl -e 'open(F, \">\", \".hermeswire.tasks.yml\")'",
+    "python3 - <<'EOF'\nopen('/some/repo/.hermeswire.tasks.yml', 'w').write('x')\nEOF",
+    "echo 'open(\".hermeswire.tasks.yml\",\"w\")' | python3",
 ]
 
 # Write-shaped-looking but innocent: mentioning the filename in quoted
 # CONTENT (an issue body, a commit message) must NOT block (#675 posture),
 # and plain reads stay allowed.
 BASH_INNOCENT = [
-    'gh issue create --title "bug" --body "edit your .agentwire.tasks.yml to fix"',
-    'git commit -m "docs: mention .agentwire.tasks.yml"',
-    "cat .agentwire.tasks.yml",
-    "grep roles /some/repo/.agentwire.tasks.yml",
+    'gh issue create --title "bug" --body "edit your .hermeswire.tasks.yml to fix"',
+    'git commit -m "docs: mention .hermeswire.tasks.yml"',
+    "cat .hermeswire.tasks.yml",
+    "grep roles /some/repo/.hermeswire.tasks.yml",
     "python3 -m pytest tests/unit",
 ]
 
@@ -311,7 +311,7 @@ def test_kill_switch_cannot_reopen_control_plane(command):
 
 
 def test_reading_control_plane_is_allowed(cfg):
-    result = check_command("cat ~/.agentwire/damagecontrol.yml", cfg)
+    result = check_command("cat ~/.hermeswire/damagecontrol.yml", cfg)
     assert result["decision"] == "allow"
 
 
@@ -396,14 +396,14 @@ def test_project_merges_rule_knobs(tmp_path):
 
 # --------------------------------------------------------------------------
 # The per-project allowlist lives in the PROTECTED .damagecontrol.yml, NOT the
-# agent-writable .agentwire.yml (#467 — the residual one-step bypass).
+# agent-writable .hermeswire.yml (#467 — the residual one-step bypass).
 #
 # These read the project file from DISK via _find_project_config()'s PWD walk,
 # so they exercise the real source of the allowlist — injecting a merged dict
 # would hide exactly the bug being closed.
 # --------------------------------------------------------------------------
 
-PROTECTED_TARGET = os.path.expanduser("~/.agentwire/damagecontrol.yml")  # a protected path to (try to) re-permit
+PROTECTED_TARGET = os.path.expanduser("~/.hermeswire/damagecontrol.yml")  # a protected path to (try to) re-permit
 
 
 def _base_cfg():
@@ -413,10 +413,10 @@ def _base_cfg():
     return c
 
 
-def test_agentwire_yml_allowlist_does_NOT_repermit_protected(tmp_path, monkeypatch):  # noqa: N802  # caps emphasize the negative assertion
-    """BUG REPRODUCER: .agentwire.yml safety.allowed_paths must NOT re-permit a
-    protected path — otherwise an agent edits .agentwire.yml to free itself."""
-    (tmp_path / ".agentwire.yml").write_text(
+def test_hermeswire_yml_allowlist_does_NOT_repermit_protected(tmp_path, monkeypatch):  # noqa: N802  # caps emphasize the negative assertion
+    """BUG REPRODUCER: .hermeswire.yml safety.allowed_paths must NOT re-permit a
+    protected path — otherwise an agent edits .hermeswire.yml to free itself."""
+    (tmp_path / ".hermeswire.yml").write_text(
         "posture: bypass\n"
         "safety:\n"
         "  allowed_paths:\n"
@@ -461,14 +461,14 @@ def test_global_host_allowlist_still_repermits(tmp_path, monkeypatch):
     assert blocked is False
 
 
-def test_load_allowed_paths_sources_from_damagecontrol_not_agentwire(tmp_path, monkeypatch):
-    """The per-project allowlist comes from .damagecontrol.yml; an .agentwire.yml
+def test_load_allowed_paths_sources_from_damagecontrol_not_hermeswire(tmp_path, monkeypatch):
+    """The per-project allowlist comes from .damagecontrol.yml; an .hermeswire.yml
     safety block contributes nothing."""
-    (tmp_path / ".agentwire.yml").write_text(
+    (tmp_path / ".hermeswire.yml").write_text(
         "posture: bypass\n"
         "safety:\n"
         "  allowed_paths:\n"
-        "    - path: /from/agentwire\n"
+        "    - path: /from/hermeswire\n"
         "      allow: all\n"
     )
     (tmp_path / ".damagecontrol.yml").write_text(
@@ -479,15 +479,15 @@ def test_load_allowed_paths_sources_from_damagecontrol_not_agentwire(tmp_path, m
     monkeypatch.setenv("PWD", str(tmp_path))
     paths = [e["path"] for e in load_allowed_paths({"allowedPaths": []})]
     assert "/from/damagecontrol" in paths
-    assert "/from/agentwire" not in paths
+    assert "/from/hermeswire" not in paths
 
 
-def test_agentwire_yml_alone_contributes_no_allowlist(tmp_path, monkeypatch):
-    (tmp_path / ".agentwire.yml").write_text(
+def test_hermeswire_yml_alone_contributes_no_allowlist(tmp_path, monkeypatch):
+    (tmp_path / ".hermeswire.yml").write_text(
         "posture: bypass\n"
         "safety:\n"
         "  allowed_paths:\n"
-        "    - path: /from/agentwire\n"
+        "    - path: /from/hermeswire\n"
         "      allow: all\n"
     )
     monkeypatch.setenv("PWD", str(tmp_path))

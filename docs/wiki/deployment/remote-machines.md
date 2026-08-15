@@ -2,7 +2,7 @@
 
 > Living document. Update this, don't create new versions.
 
-AgentWire can manage AI agent sessions on remote machines via SSH. This guide covers adding, removing, and configuring remote machines.
+HermesWire can manage AI agent sessions on remote machines via SSH. This guide covers adding, removing, and configuring remote machines.
 
 ---
 
@@ -11,13 +11,13 @@ AgentWire can manage AI agent sessions on remote machines via SSH. This guide co
 ### CLI (Recommended)
 
 ```bash
-agentwire machine add <id> --host <host> --user <user> --projects-dir <path>
+hermeswire machine add <id> --host <host> --user <user> --projects-dir <path>
 ```
 
 Example:
 
 ```bash
-agentwire machine add gpu-server --host 192.168.1.50 --user ubuntu --projects-dir ~/projects
+hermeswire machine add gpu-server --host 192.168.1.50 --user ubuntu --projects-dir ~/projects
 ```
 
 ### Portal UI
@@ -33,7 +33,7 @@ spawn a new session on one, but has no add/remove controls.
 ### CLI
 
 ```bash
-agentwire machine remove <id>
+hermeswire machine remove <id>
 ```
 
 This:
@@ -46,13 +46,13 @@ This:
 
 ```bash
 # List all machines with connection status
-agentwire machine list
+hermeswire machine list
 
 # Add a machine
-agentwire machine add <id> --host <host> --user <user> --projects-dir <path>
+hermeswire machine add <id> --host <host> --user <user> --projects-dir <path>
 
 # Remove a machine (portal-side cleanup)
-agentwire machine remove <id>
+hermeswire machine remove <id>
 ```
 
 ### Machine List Output
@@ -82,22 +82,22 @@ All session commands support the `session@machine` format:
 
 ```bash
 # Create session on remote machine
-agentwire new -s myproject@gpu-server
+hermeswire new -s myproject@gpu-server
 
 # Create worktree session on remote
-agentwire new -s myproject/feature@gpu-server
+hermeswire new -s myproject/feature@gpu-server
 
 # Send prompt to remote session
-agentwire send -s myproject@gpu-server "run the tests"
+hermeswire send -s myproject@gpu-server "run the tests"
 
 # Read output from remote session
-agentwire output -s myproject@gpu-server -n 100
+hermeswire output -s myproject@gpu-server -n 100
 
 # Kill remote session
-agentwire kill -s myproject@gpu-server
+hermeswire kill -s myproject@gpu-server
 
 # List all sessions (includes remote)
-agentwire list
+hermeswire list
 ```
 
 ---
@@ -116,7 +116,7 @@ agentwire list
 
 ## SSH Configuration
 
-AgentWire uses your existing SSH configuration. Ensure you can connect:
+HermesWire uses your existing SSH configuration. Ensure you can connect:
 
 ```bash
 ssh <machine-id>  # Should connect without password prompt
@@ -137,8 +137,8 @@ Host gpu-server
     IdentityFile ~/.ssh/id_ed25519
 ```
 
-**SSH ControlMaster connection multiplexing (built in).** AgentWire applies
-ControlMaster flags to **every** `ssh` it spawns (see `agentwire/ssh.py` —
+**SSH ControlMaster connection multiplexing (built in).** HermesWire applies
+ControlMaster flags to **every** `ssh` it spawns (see `hermeswire/ssh.py` —
 `ssh_base_opts()`), so the first remote op to a host opens a master connection
 and parks its socket under `~/.ssh/sockets/`; subsequent ops ride that socket
 and skip the handshake (~90–140ms saved on loopback, 300–500ms over a VPN). The
@@ -241,7 +241,7 @@ distribution.
 
 ## machines.json Schema
 
-Machine configuration is stored in `~/.agentwire/machines.json`, keyed under a
+Machine configuration is stored in `~/.hermeswire/machines.json`, keyed under a
 `machines` array (not a bare top-level array):
 
 ```json
@@ -274,23 +274,23 @@ Machine configuration is stored in `~/.agentwire/machines.json`, keyed under a
 
 ## Machine Context for AI Agents
 
-### The `~/.agentwire/machine/` Pattern
+### The `~/.hermeswire/machine/` Pattern
 
-Each machine should have a `~/.agentwire/machine/.hermes.md` — a living document describing that machine's role, services, venvs, paths, and any platform-specific gotchas.
+Each machine should have a `~/.hermeswire/machine/.hermes.md` — a living document describing that machine's role, services, venvs, paths, and any platform-specific gotchas.
 
-When an AI agent needs to do ops work on a remote machine (manage services, install packages, debug the box itself), spawn a Hermes Agent session in `~/.agentwire/machine/` rather than SSHing and running ad-hoc commands. The agent picks up both the user's global Hermes context (`.hermes.md` / `AGENTS.md`) and `~/.agentwire/machine/.hermes.md` (machine context) automatically, giving it full situational awareness without needing to rediscover everything.
+When an AI agent needs to do ops work on a remote machine (manage services, install packages, debug the box itself), spawn a Hermes Agent session in `~/.hermeswire/machine/` rather than SSHing and running ad-hoc commands. The agent picks up both the user's global Hermes context (`.hermes.md` / `AGENTS.md`) and `~/.hermeswire/machine/.hermes.md` (machine context) automatically, giving it full situational awareness without needing to rediscover everything.
 
 ```bash
 # Spawn an ops session on a remote machine (replace `my-server` with your hostname)
 ssh my-server
-cd ~/.agentwire/machine
+cd ~/.hermeswire/machine
 hermes chat --cli  # gets both global prefs and machine context
 
-# Or spawn via agentwire from the Mac (remote target is the @machine suffix)
-agentwire new -s my-server-ops@my-server -p ~/.agentwire/machine
+# Or spawn via hermeswire from the Mac (remote target is the @machine suffix)
+hermeswire new -s my-server-ops@my-server -p ~/.hermeswire/machine
 ```
 
-### What to Put in `~/.agentwire/machine/.hermes.md`
+### What to Put in `~/.hermeswire/machine/.hermes.md`
 
 - **Machine identity** — OS, hardware specs (CPU, GPU, RAM), role in the fleet
 - **Services** — what runs here, how to start/stop/check them, service file locations
@@ -302,8 +302,8 @@ agentwire new -s my-server-ops@my-server -p ~/.agentwire/machine
 ### Example Structure
 
 ```
-~/.agentwire/
-├── config.yaml          # Main agentwire config
+~/.hermeswire/
+├── config.yaml          # Main hermeswire config
 ├── machines.json        # Registered remote machines
 ├── voices/              # TTS voice reference files
 ├── scripts/             # Machine-specific helper scripts
@@ -314,17 +314,17 @@ agentwire new -s my-server-ops@my-server -p ~/.agentwire/machine
     └── .hermes.md      # Machine context for AI agents ← THIS
 ```
 
-### Scripts in `~/.agentwire/scripts/`
+### Scripts in `~/.hermeswire/scripts/`
 
 Machine-specific helper scripts live here — TTS management, startup hooks, service wrappers, etc. This is the canonical location. Scripts in `~/bin/` should symlink here so they're on PATH but the source of truth stays in one place.
 
-These scripts are not managed by agentwire and not version-controlled — they're local to each machine because different machines have different roles.
+These scripts are not managed by hermeswire and not version-controlled — they're local to each machine because different machines have different roles.
 
 ---
 
 ## WSL2 Machines
 
-Running agentwire on Windows Subsystem for Linux has a few differences from bare Linux:
+Running hermeswire on Windows Subsystem for Linux has a few differences from bare Linux:
 
 - **GPU access** — CUDA works normally; `nvidia-smi` is at `/usr/lib/wsl/lib/nvidia-smi` (not in default PATH)
 - **Driver location** — GPU driver lives on the Windows host; never install Linux GPU drivers
@@ -336,24 +336,24 @@ Running agentwire on Windows Subsystem for Linux has a few differences from bare
 ### Recommended WSL Service Pattern
 
 ```bash
-# ~/.agentwire/scripts/wsl-startup
+# ~/.hermeswire/scripts/wsl-startup
 #!/bin/bash
 sudo service ssh start
-systemctl --user start agentwire-tts.service
+systemctl --user start hermeswire-tts.service
 ```
 
 ```ini
-# ~/.config/systemd/user/agentwire-tts.service
+# ~/.config/systemd/user/hermeswire-tts.service
 [Unit]
-Description=AgentWire TTS Server
+Description=HermesWire TTS Server
 After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/user/projects/agentwire-dev
+WorkingDirectory=/home/user/projects/hermeswire-dev
 ExecStartPre=/bin/bash -c 'fuser -k 8100/tcp 2>/dev/null || true'
 ExecStartPre=/bin/sleep 2
-ExecStart=/home/user/projects/agentwire-dev/.venv-chatterbox/bin/python -m uvicorn agentwire.tts_server:app --host 0.0.0.0 --port 8100
+ExecStart=/home/user/projects/hermeswire-dev/.venv-chatterbox/bin/python -m uvicorn hermeswire.tts_server:app --host 0.0.0.0 --port 8100
 Restart=on-failure
 RestartSec=30
 Environment=DEFAULT_BACKEND=chatterbox

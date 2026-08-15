@@ -1,4 +1,4 @@
-"""Tests for agentwire/core.py's posture resolution (#729).
+"""Tests for hermeswire/core.py's posture resolution (#729).
 
 Posture is the ONLY session axis, and every spawn defaults to the same one —
 bypass — regardless of kind/topology: workers run bypass + damage-control just
@@ -8,7 +8,7 @@ that flat rule plus the explicit-override precedence.
 
 from argparse import Namespace
 
-from agentwire.core import _resolve_posture_from_args
+from hermeswire.core import _resolve_posture_from_args
 
 
 class TestResolvePostureFromArgs:

@@ -1,5 +1,5 @@
 [project]
-name = "agentwire-dev"
+name = "hermeswire-dev"
 dynamic = ["version"]
 description = "Multi-session voice web interface for AI coding agents"
 readme = "README.md"
@@ -31,8 +31,8 @@ dependencies = [
     "python-dotenv>=1.2.2",  # >=1.2.2 clears CVE-2026-28684
     "requests>=2.33.0",  # >=2.33.0 clears CVE-2026-25645
     # <2 is load-bearing: MCP SDK 2.x removed `mcp.server.fastmcp`, which
-    # agentwire/mcp_core.py imports. Unbounded, any `agentwire rebuild` after
-    # the 2.x release resolves it and every mcp__agentwire__* tool silently
+    # hermeswire/mcp_core.py imports. Unbounded, any `hermeswire rebuild` after
+    # the 2.x release resolves it and every mcp__hermeswire__* tool silently
     # disappears from every session (#874). Lift only with a 2.x port.
     "mcp>=1.2.0,<2",
     "resend>=2.0.0",
@@ -47,10 +47,10 @@ dependencies = [
     # pulled from HuggingFace on first boot). Marker mirrors kokoro — onnxruntime
     # pins <3.14; on 3.14+ the portal falls back to browser speech recognition.
     "useful-moonshine-onnx>=20250101; python_version < '3.14'",
-    # Used by agentwire.tts.base (TTSRequest); explicit rather than transitive via mcp.
+    # Used by hermeswire.tts.base (TTSRequest); explicit rather than transitive via mcp.
     "pydantic>=2.0.0",
-    # Default-tier voice shim wrappers (#634): `agentwire kokoro start` /
-    # `agentwire stt start` run kokoro_server / stt_server with the installed
+    # Default-tier voice shim wrappers (#634): `hermeswire kokoro start` /
+    # `hermeswire stt start` run kokoro_server / stt_server with the installed
     # package's own interpreter on a pip/uv-tool install, so their FastAPI
     # wrapper (plus multipart uploads and the Moonshine warm-up's soundfile)
     # must ship in the base install for the advertised out-of-the-box voice.
@@ -59,7 +59,7 @@ dependencies = [
     "uvicorn>=0.24.0",
     "python-multipart>=0.0.6",
     "soundfile>=0.12.0; python_version < '3.14'",
-    # Device-pairing QR codes in the terminal (`agentwire portal pair`). Pure
+    # Device-pairing QR codes in the terminal (`hermeswire portal pair`). Pure
     # Python; ASCII output needs no Pillow. Import is guarded so it degrades to
     # a printed URL if absent.
     "qrcode>=7.4",
@@ -67,7 +67,7 @@ dependencies = [
     # notifications reach a backgrounded/locked phone. Inactive until the owner
     # sets channels.push.enabled + VAPID keys; the import is guarded so a missing
     # wheel degrades to "push disabled", never a crash. Pulls in cryptography
-    # (used directly by `agentwire push keygen`).
+    # (used directly by `hermeswire push keygen`).
     "pywebpush>=1.14.0",
 ]
 
@@ -79,7 +79,7 @@ dev = [
     "ruff>=0.1.0",
 ]
 # STT shim server dependencies. Moonshine (the default engine) ships in the
-# base install — see dependencies[] above — so the standalone `agentwire stt
+# base install — see dependencies[] above — so the standalone `hermeswire stt
 # start` shim only needs the FastAPI wrapper plus soundfile for its warm-up.
 # faster-whisper is the higher-accuracy fallback for `stt.engine: whisper`.
 stt = [
@@ -104,81 +104,81 @@ tts = [
 ]
 
 [project.scripts]
-agentwire = "agentwire.__main__:main"
+hermeswire = "hermeswire.__main__:main"
 
 [project.urls]
-Homepage = "https://agentwire.dev"
-Repository = "https://github.com/dotdevdotdev/agentwire-dev"
-Documentation = "https://agentwire.dev"
-Issues = "https://github.com/dotdevdotdev/agentwire-dev/issues"
-Changelog = "https://github.com/dotdevdotdev/agentwire-dev/releases"
+Homepage = "https://hermeswire.dev"
+Repository = "https://github.com/dotdevdotdev/hermeswire-dev"
+Documentation = "https://hermeswire.dev"
+Issues = "https://github.com/dotdevdotdev/hermeswire-dev/issues"
+Changelog = "https://github.com/dotdevdotdev/hermeswire-dev/releases"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["agentwire"]
+packages = ["hermeswire"]
 include = [
     # Web assets and templates required at runtime
-    "agentwire/templates/**/*.html",
-    "agentwire/templates/**/*.html.j2",
-    "agentwire/templates/**/*.css.j2",
-    "agentwire/templates/**/*.txt",
-    "agentwire/templates/**/*.conf",
-    "agentwire/templates/**/*.sh",
-    "agentwire/static/**/*",
+    "hermeswire/templates/**/*.html",
+    "hermeswire/templates/**/*.html.j2",
+    "hermeswire/templates/**/*.css.j2",
+    "hermeswire/templates/**/*.txt",
+    "hermeswire/templates/**/*.conf",
+    "hermeswire/templates/**/*.sh",
+    "hermeswire/static/**/*",
     # Role/prompt content bundled with the CLI
-    "agentwire/roles/*.md",
-    "agentwire/commands/*.md",
+    "hermeswire/roles/*.md",
+    "hermeswire/commands/*.md",
     # Hooks and auxiliary scripts/configs
-    "agentwire/hooks/**/*.py",
-    "agentwire/hooks/**/*.yaml",
-    "agentwire/hooks/**/*.sh",
+    "hermeswire/hooks/**/*.py",
+    "hermeswire/hooks/**/*.yaml",
+    "hermeswire/hooks/**/*.sh",
     # Top-level docs to ship in wheel
     "LICENSE",
     "README.md",
 ]
 artifacts = [
-    "agentwire/hooks/**/*.py",
-    "agentwire/hooks/**/*.yaml",
-    "agentwire/hooks/**/*.sh",
+    "hermeswire/hooks/**/*.py",
+    "hermeswire/hooks/**/*.yaml",
+    "hermeswire/hooks/**/*.sh",
 ]
 exclude = [
     # Never-served source art kept in-repo for regen only. The portal serves
     # WebP exclusively (server.py list_images suffix filter), so the heavyweight
     # .jpeg session icons and full-res custom .png originals are pure regen
     # source — don't ship them in the wheel.
-    "agentwire/static/icons/**/*.jpeg",
-    "agentwire/static/icons/**/custom/*.png",
+    "hermeswire/static/icons/**/*.jpeg",
+    "hermeswire/static/icons/**/custom/*.png",
     # Unreferenced root splash/Echo/banner source PNGs (0 refs across
     # templates/static/js/css/server.py). The wallpaper uses only the 5
-    # decomposed --tree/--telephone/--echo/--echo-claw-fg/--agentwire-text
+    # decomposed --tree/--telephone/--echo/--echo-claw-fg/--hermeswire-text
     # layers; email banner/Echo default to config-driven PUBLIC urls, not
     # these local copies. Kept in-repo as source, not shipped.
-    "agentwire/static/agentwire-Echo.png",
-    "agentwire/static/agentwire-Echo--black.png",
-    "agentwire/static/agentwire-Echo--transparent.png",
-    "agentwire/static/agentwire-email-banner.png",
-    "agentwire/static/agentwire-splash-logo-layers.png",
-    "agentwire/static/agentwire-splash-logo-layers--full--transparent-top.png",
-    "agentwire/static/agentwire-splash-logo-layers--full-black.png",
-    "agentwire/static/agentwire-splash-logo-layers--telephone-fg.png",
-    "agentwire/static/agentwire-splash-logo-layers--transparent-top.png",
-    "agentwire/static/agentwire-splash-logo-layers--transparent.png",
+    "hermeswire/static/hermeswire-Echo.png",
+    "hermeswire/static/hermeswire-Echo--black.png",
+    "hermeswire/static/hermeswire-Echo--transparent.png",
+    "hermeswire/static/hermeswire-email-banner.png",
+    "hermeswire/static/hermeswire-splash-logo-layers.png",
+    "hermeswire/static/hermeswire-splash-logo-layers--full--transparent-top.png",
+    "hermeswire/static/hermeswire-splash-logo-layers--full-black.png",
+    "hermeswire/static/hermeswire-splash-logo-layers--telephone-fg.png",
+    "hermeswire/static/hermeswire-splash-logo-layers--transparent-top.png",
+    "hermeswire/static/hermeswire-splash-logo-layers--transparent.png",
 ]
 
-# Ship the agentwire-owned GLOBAL skill into the package so get_skills_source()
+# Ship the hermeswire-owned GLOBAL skill into the package so get_skills_source()
 # resolves it and `hooks install` can symlink ~/.hermes/skills/wiki at it. SSOT:
 # the source lives at .hermes/skills/wiki (also the project-scoped copy); this
-# maps it to agentwire/skills/wiki in the wheel, so it is auto-current on every
+# maps it to hermeswire/skills/wiki in the wheel, so it is auto-current on every
 # rebuild — the same posture as hooks/roles/prompts bundled inside the package.
 [tool.hatch.build.targets.wheel.force-include]
-".hermes/skills/wiki" = "agentwire/skills/wiki"
-".hermes/skills/handoff-bundle" = "agentwire/skills/handoff-bundle"
+".hermes/skills/wiki" = "hermeswire/skills/wiki"
+".hermes/skills/handoff-bundle" = "hermeswire/skills/handoff-bundle"
 
 [tool.hatch.version]
-path = "agentwire/__init__.py"
+path = "hermeswire/__init__.py"
 
 [tool.hatch.build.targets.sdist]
 exclude = [
@@ -189,7 +189,7 @@ exclude = [
     ".venv*/",
     # Dev/local config files
     ".hermes/",
-    ".agentwire.yml",
+    ".hermeswire.yml",
     "uv.lock",
     ".hermes.md",
     # Build artifacts
@@ -202,23 +202,23 @@ exclude = [
     "scripts/",
     # Never-served source art (see wheel exclude above): .jpeg session icons
     # and full-res custom .png originals are regen source, not shipped.
-    "agentwire/static/icons/**/*.jpeg",
-    "agentwire/static/icons/**/custom/*.png",
+    "hermeswire/static/icons/**/*.jpeg",
+    "hermeswire/static/icons/**/custom/*.png",
     # Unreferenced root splash/Echo/banner source PNGs (see wheel exclude).
-    "agentwire/static/agentwire-Echo.png",
-    "agentwire/static/agentwire-Echo--black.png",
-    "agentwire/static/agentwire-Echo--transparent.png",
-    "agentwire/static/agentwire-email-banner.png",
-    "agentwire/static/agentwire-splash-logo-layers.png",
-    "agentwire/static/agentwire-splash-logo-layers--full--transparent-top.png",
-    "agentwire/static/agentwire-splash-logo-layers--full-black.png",
-    "agentwire/static/agentwire-splash-logo-layers--telephone-fg.png",
-    "agentwire/static/agentwire-splash-logo-layers--transparent-top.png",
-    "agentwire/static/agentwire-splash-logo-layers--transparent.png",
+    "hermeswire/static/hermeswire-Echo.png",
+    "hermeswire/static/hermeswire-Echo--black.png",
+    "hermeswire/static/hermeswire-Echo--transparent.png",
+    "hermeswire/static/hermeswire-email-banner.png",
+    "hermeswire/static/hermeswire-splash-logo-layers.png",
+    "hermeswire/static/hermeswire-splash-logo-layers--full--transparent-top.png",
+    "hermeswire/static/hermeswire-splash-logo-layers--full-black.png",
+    "hermeswire/static/hermeswire-splash-logo-layers--telephone-fg.png",
+    "hermeswire/static/hermeswire-splash-logo-layers--transparent-top.png",
+    "hermeswire/static/hermeswire-splash-logo-layers--transparent.png",
 ]
 
 # The sdist excludes .hermes/, but the wheel force-includes .hermes/skills/wiki
-# (-> agentwire/skills/wiki). Carry it into the sdist too, otherwise building the
+# (-> hermeswire/skills/wiki). Carry it into the sdist too, otherwise building the
 # wheel *from* the sdist (`uv build`, or `pip install` from the sdist) can't
 # resolve the wheel's force-include and fails.
 [tool.hatch.build.targets.sdist.force-include]
@@ -235,16 +235,16 @@ markers = [
     # Deselected in the hermetic CI gate via `-m 'not requires_tmux'` (#323);
     # still runs locally where tmux is on PATH.
     "requires_tmux: spawns a real tmux process; deselected in hermetic CI (#323)",
-    # Opts a test out of the ~/.agentwire redirect so it can assert on the REAL
+    # Opts a test out of the ~/.hermeswire redirect so it can assert on the REAL
     # deployment paths (#893). READ-ONLY by intent — the session-scoped backstop
     # still fails the run if an opted-out test writes anything.
-    "real_agentwire_home: sees the real ~/.agentwire paths instead of the tmp redirect (#893)",
+    "real_hermeswire_home: sees the real ~/.hermeswire paths instead of the tmp redirect (#893)",
 ]
 asyncio_mode = "auto"
 
 [tool.bandit]
 # Make bandit a meaningful green gate rather than perpetual red noise. CI runs
-# `bandit -c pyproject.toml -r agentwire --severity-level high --confidence-level high`,
+# `bandit -c pyproject.toml -r hermeswire --severity-level high --confidence-level high`,
 # so the build only fails on NEW high-severity high-confidence findings. The
 # skips below are test-IDs that are intentional-by-design for this codebase —
 # suppressed here (with justification) instead of via scattered `# nosec`:
@@ -265,11 +265,11 @@ skips = ["B101", "B404", "B602", "B603", "B607", "B501"]
 [tool.ruff]
 line-length = 100
 target-version = "py310"
-# Generated files: the damage-control hooks inline `agentwire/safety/_core.py`
+# Generated files: the damage-control hooks inline `hermeswire/safety/_core.py`
 # verbatim between BEGIN/END markers (regen via
 # scripts/regen_damage_control_hooks.py). Linting the inlined copy fights the
 # generator — `_core.py` itself is the linted source of truth.
-extend-exclude = ["agentwire/hooks/damage-control/*.py"]
+extend-exclude = ["hermeswire/hooks/damage-control/*.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W"]

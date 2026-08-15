@@ -6,7 +6,7 @@ import json
 
 class TestOutputJson:
     def test_produces_valid_json(self, capsys):
-        from agentwire.__main__ import _output_json
+        from hermeswire.__main__ import _output_json
 
         data = {"key": "value", "num": 42, "list": [1, 2, 3]}
         _output_json(data)
@@ -16,7 +16,7 @@ class TestOutputJson:
         assert parsed == data
 
     def test_empty_dict(self, capsys):
-        from agentwire.__main__ import _output_json
+        from hermeswire.__main__ import _output_json
 
         _output_json({})
         captured = capsys.readouterr()
@@ -27,7 +27,7 @@ class TestOutputJson:
 
 class TestOutputResult:
     def test_success_text_mode(self, capsys):
-        from agentwire.__main__ import _output_result
+        from hermeswire.__main__ import _output_result
 
         code = _output_result(success=True, json_mode=False, message="All good")
         captured = capsys.readouterr()
@@ -35,7 +35,7 @@ class TestOutputResult:
         assert "All good" in captured.out
 
     def test_failure_text_mode(self, capsys):
-        from agentwire.__main__ import _output_result
+        from hermeswire.__main__ import _output_result
 
         code = _output_result(success=False, json_mode=False, message="Something broke")
         captured = capsys.readouterr()
@@ -43,7 +43,7 @@ class TestOutputResult:
         assert "Something broke" in captured.err
 
     def test_success_json_mode(self, capsys):
-        from agentwire.__main__ import _output_result
+        from hermeswire.__main__ import _output_result
 
         code = _output_result(success=True, json_mode=True, message="ok", sessions=["a", "b"])
         captured = capsys.readouterr()
@@ -53,7 +53,7 @@ class TestOutputResult:
         assert code == 0
 
     def test_failure_json_mode(self, capsys):
-        from agentwire.__main__ import _output_result
+        from hermeswire.__main__ import _output_result
 
         code = _output_result(success=False, json_mode=True, message="broken")
         captured = capsys.readouterr()
@@ -63,7 +63,7 @@ class TestOutputResult:
         assert code == 1
 
     def test_custom_exit_code(self, capsys):
-        from agentwire.__main__ import _output_result
+        from hermeswire.__main__ import _output_result
 
         code = _output_result(success=False, json_mode=True, message="x", exit_code=42)
         captured = capsys.readouterr()

@@ -1,1 +1,0 @@
-"""AgentWire web interface templates."""

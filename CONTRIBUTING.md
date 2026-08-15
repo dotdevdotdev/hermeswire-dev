@@ -22,8 +22,8 @@ Add it automatically with `git commit -s` (use your real name and an email that 
 
 ```bash
 # Clone the repository
-git clone https://github.com/dotdevdotdev/agentwire-dev.git
-cd agentwire-dev
+git clone https://github.com/dotdevdotdev/hermeswire-dev.git
+cd hermeswire-dev
 
 # Install dependencies into a project venv (creates .venv automatically)
 uv sync --extra dev
@@ -32,25 +32,25 @@ uv sync --extra dev
 uv run pytest
 
 # Run in development mode (picks up code changes instantly)
-uv run agentwire portal start --dev
+uv run hermeswire portal start --dev
 
 # After changing pyproject.toml or adding files, re-sync
 uv sync --extra dev
 ```
 
-If you also have agentwire installed as a tool (`uv tool install agentwire-dev`) and want that install to pick up your source changes, run `agentwire rebuild` (reinstalls from your checkout).
+If you also have hermeswire installed as a tool (`uv tool install hermeswire-dev`) and want that install to pick up your source changes, run `hermeswire rebuild` (reinstalls from your checkout).
 
 ### Development Workflow
 
 ```bash
 # Start development session
-agentwire dev
+hermeswire dev
 
 # Run linter
-uvx ruff check agentwire/
+uvx ruff check hermeswire/
 
 # Run with auto-fix
-uvx ruff check agentwire/ --fix
+uvx ruff check hermeswire/ --fix
 ```
 
 ## Code Style
@@ -91,31 +91,31 @@ def function_name(arg1: str, arg2: int = 10) -> dict:
 
 ### Use Utility Modules
 
-Common operations are centralized in `agentwire/utils/`:
+Common operations are centralized in `hermeswire/utils/`:
 
 ```python
 # Subprocess execution
-from agentwire.utils import run_command, run_command_check
+from hermeswire.utils import run_command, run_command_check
 
 result = run_command(["ls", "-la"])
 if result.success:
     print(result.stdout)
 
 # File I/O
-from agentwire.utils import load_json, save_json, load_yaml
+from hermeswire.utils import load_json, save_json, load_yaml
 
 config = load_json(config_path, default={})
 save_json(config_path, data)
 
 # Paths
-from agentwire.utils import agentwire_dir, config_path, logs_dir
+from hermeswire.utils import hermeswire_dir, config_path, logs_dir
 
-base = agentwire_dir()  # ~/.agentwire/
+base = hermeswire_dir()  # ~/.hermeswire/
 ```
 
 ### Configuration
 
-Use dataclasses for configuration (see `agentwire/config.py`):
+Use dataclasses for configuration (see `hermeswire/config.py`):
 
 ```python
 @dataclass
@@ -126,7 +126,7 @@ class ServerConfig:
 
 ### Validation
 
-Use structured validation with suggestions (see `agentwire/validation.py`):
+Use structured validation with suggestions (see `hermeswire/validation.py`):
 
 ```python
 def validate_config(config: Config) -> tuple[list[ConfigError], list[ConfigWarning]]:
@@ -135,9 +135,9 @@ def validate_config(config: Config) -> tuple[list[ConfigError], list[ConfigWarni
 
 ## CLI First
 
-All session/machine logic lives in the CLI. The command tree is split per-domain (#495): shared helpers (machine config, SSH, JSON output, session resolution, etc.) live in `core.py`; each command group lives in its own `agentwire/<domain>_cli.py` exposing a `register_<domain>_parser(subparsers)` registrar, and `build_parser()` imports them and runs the `_REGISTRARS` loop. `__main__.py` is just the entry point. Adding a command means writing a new `*_cli.py` + appending its registrar, not editing a god-file. The web portal is a thin wrapper that:
+All session/machine logic lives in the CLI. The command tree is split per-domain (#495): shared helpers (machine config, SSH, JSON output, session resolution, etc.) live in `core.py`; each command group lives in its own `hermeswire/<domain>_cli.py` exposing a `register_<domain>_parser(subparsers)` registrar, and `build_parser()` imports them and runs the `_REGISTRARS` loop. `__main__.py` is just the entry point. Adding a command means writing a new `*_cli.py` + appending its registrar, not editing a god-file. The web portal is a thin wrapper that:
 
-1. Calls CLI via `run_agentwire_cmd(["command", "args"])`
+1. Calls CLI via `run_hermeswire_cmd(["command", "args"])`
 2. Parses JSON output (`--json` flag)
 3. Adds WebSocket/real-time features
 
@@ -149,7 +149,7 @@ When adding new functionality:
 ## Project Structure
 
 ```
-agentwire/
+hermeswire/
 ├── __main__.py      # CLI entry point (imports + runs the registrar loop)
 ├── core.py          # Shared CLI helpers (machine config, SSH, JSON, session resolution)
 ├── *_cli.py         # Per-domain command groups, each with a register_<domain>_parser()
@@ -171,7 +171,7 @@ agentwire/
 
 1. Create a branch from `main`
 2. Make your changes
-3. Run `uvx ruff check agentwire/` - ensure no errors
+3. Run `uvx ruff check hermeswire/` - ensure no errors
 4. Commit with descriptive message
 5. Open PR with description of changes
 

@@ -3,7 +3,7 @@ must guard a missing worktree dir instead of crashing the agent into a bare
 shell nobody reaps, and (#743) route the alert to a real parent — not just
 the owner's email — when one is recorded in the launch env."""
 
-from agentwire.core import _guarded_launch_command
+from hermeswire.core import _guarded_launch_command
 
 
 class TestGuardedLaunchCommand:
@@ -19,20 +19,20 @@ class TestGuardedLaunchCommand:
         # The guard clause exits the shell on cd failure — the agent segment
         # is only reachable via the `&&` after a successful cd.
         assert "exit 1" in cmd
-        assert 'AGENTWIRE_UNATTENDED' in cmd
+        assert 'HERMESWIRE_UNATTENDED' in cmd
 
     def test_bare_posture_has_no_agent_segment(self):
         cmd = _guarded_launch_command("/tmp/wt", None)
         assert cmd == (
-            'cd /tmp/wt || { echo "agentwire: worktree missing at launch, '
-            'aborting: /tmp/wt" >&2; [ -n "$AGENTWIRE_CREATED_BY" ] && agentwire '
-            'msg send --to "$AGENTWIRE_CREATED_BY" --kind escalation --subject '
-            '"agentwire: worktree missing at launch — '
-            '${AGENTWIRE_SESSION_NAME:-unknown session}" --body "cd failed at '
-            'launch: /tmp/wt" >/dev/null 2>&1; [ -z "$AGENTWIRE_CREATED_BY" ] && '
-            '[ "$AGENTWIRE_UNATTENDED" = "1" ] && agentwire email --subject '
-            '"agentwire: worktree missing — '
-            '${AGENTWIRE_SESSION_NAME:-unknown session}" --body "cd failed at '
+            'cd /tmp/wt || { echo "hermeswire: worktree missing at launch, '
+            'aborting: /tmp/wt" >&2; [ -n "$HERMESWIRE_CREATED_BY" ] && hermeswire '
+            'msg send --to "$HERMESWIRE_CREATED_BY" --kind escalation --subject '
+            '"hermeswire: worktree missing at launch — '
+            '${HERMESWIRE_SESSION_NAME:-unknown session}" --body "cd failed at '
+            'launch: /tmp/wt" >/dev/null 2>&1; [ -z "$HERMESWIRE_CREATED_BY" ] && '
+            '[ "$HERMESWIRE_UNATTENDED" = "1" ] && hermeswire email --subject '
+            '"hermeswire: worktree missing — '
+            '${HERMESWIRE_SESSION_NAME:-unknown session}" --body "cd failed at '
             'launch: /tmp/wt" >/dev/null 2>&1; exit 1; }'
         )
 
@@ -42,11 +42,11 @@ class TestGuardedLaunchCommand:
 
     def test_alert_guarded_on_unattended_env_var(self):
         cmd = _guarded_launch_command("/tmp/wt", "claude")
-        assert '[ "$AGENTWIRE_UNATTENDED" = "1" ] && agentwire email' in cmd
+        assert '[ "$HERMESWIRE_UNATTENDED" = "1" ] && hermeswire email' in cmd
 
 
 class TestParentEscalation:
-    """#743: a real parent (`$AGENTWIRE_CREATED_BY`, stamped by
+    """#743: a real parent (`$HERMESWIRE_CREATED_BY`, stamped by
     `_set_session_name_env` only for a non-root session) gets the crash
     routed to its msg inbox; the owner-email fallback still fires only when
     there's no parent."""
@@ -54,21 +54,21 @@ class TestParentEscalation:
     def test_parent_notify_clause_present(self):
         cmd = _guarded_launch_command("/tmp/wt", "claude")
         assert (
-            '[ -n "$AGENTWIRE_CREATED_BY" ] && agentwire msg send '
-            '--to "$AGENTWIRE_CREATED_BY" --kind escalation'
+            '[ -n "$HERMESWIRE_CREATED_BY" ] && hermeswire msg send '
+            '--to "$HERMESWIRE_CREATED_BY" --kind escalation'
         ) in cmd
 
     def test_email_fallback_branch_still_present(self):
         cmd = _guarded_launch_command("/tmp/wt", "claude")
         assert (
-            '[ -z "$AGENTWIRE_CREATED_BY" ] && [ "$AGENTWIRE_UNATTENDED" = "1" ] '
-            '&& agentwire email'
+            '[ -z "$HERMESWIRE_CREATED_BY" ] && [ "$HERMESWIRE_UNATTENDED" = "1" ] '
+            '&& hermeswire email'
         ) in cmd
 
     def test_path_still_quoted_with_parent_escalation_present(self):
         cmd = _guarded_launch_command("/tmp/my wt", "claude")
         assert "cd '/tmp/my wt'" in cmd
-        assert '$AGENTWIRE_CREATED_BY' in cmd
+        assert '$HERMESWIRE_CREATED_BY' in cmd
 
     def test_agent_still_gated_behind_successful_cd(self):
         cmd = _guarded_launch_command("/tmp/wt", "claude --flag")

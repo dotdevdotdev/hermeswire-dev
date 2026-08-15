@@ -1,4 +1,4 @@
-"""Tests for agentwire/hooks/idle-handler.sh — the Hermes ``on_session_end`` observer.
+"""Tests for hermeswire/hooks/idle-handler.sh — the Hermes ``on_session_end`` observer.
 
 Issue #12: Hermes has no idle/Notification event, so the Claude idle-handler's
 two-pass summary + ``/exit`` + loop-iteration dance is gone. The file now fires
@@ -25,7 +25,7 @@ import pytest
 
 HOOK_PATH = (
     Path(__file__).resolve().parent.parent.parent
-    / "agentwire" / "hooks" / "idle-handler.sh"
+    / "hermeswire" / "hooks" / "idle-handler.sh"
 )
 
 

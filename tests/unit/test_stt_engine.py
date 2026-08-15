@@ -1,12 +1,12 @@
 """Tests for STT server (shim) backend selection.
 
-Targets agentwire.stt.engine (FastAPI-free) so they run without the
+Targets hermeswire.stt.engine (FastAPI-free) so they run without the
 [stt] extras installed.
 """
 
 import pytest
 
-from agentwire.stt import engine
+from hermeswire.stt import engine
 
 
 @pytest.fixture
@@ -91,7 +91,7 @@ class TestEngineConfigFlow:
     """
 
     def test_engine_config_forces_whisper(self, monkeypatch):
-        from agentwire.config import _dict_to_config
+        from hermeswire.config import _dict_to_config
 
         cfg = _dict_to_config(
             {"stt": {"backend": "custom", "url": "http://shim", "engine": "whisper"}}
@@ -118,13 +118,13 @@ class TestEngineConfigFlow:
         assert info["backend"] == "faster-whisper"
 
     def test_engine_defaults_to_auto(self):
-        from agentwire.config import _dict_to_config
+        from hermeswire.config import _dict_to_config
 
         cfg = _dict_to_config({"stt": {"backend": "custom", "url": "http://shim"}})
         assert cfg.stt.engine == "auto"
 
     def test_invalid_engine_rejected(self):
-        from agentwire.config import _dict_to_config
+        from hermeswire.config import _dict_to_config
 
         with pytest.raises(ValueError, match="stt.engine"):
             _dict_to_config({"stt": {"engine": "custom"}})

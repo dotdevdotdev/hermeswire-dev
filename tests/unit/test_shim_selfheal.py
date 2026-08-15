@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from agentwire import tts_cli
+from hermeswire import tts_cli
 
 # === _shim_session_state: the shared liveness predicate ====================
 
@@ -140,27 +140,27 @@ def test_stt_start_reaps_and_relaunches_dead_session(monkeypatch, capsys):
 
 
 def _patch_doctor(monkeypatch, *, tts="default", stt="default", moonshine=True):
-    from agentwire import doctor_cli
+    from hermeswire import doctor_cli
 
     cfg = SimpleNamespace(
         tts=SimpleNamespace(backend=tts),
         stt=SimpleNamespace(backend=stt),
     )
     # _find_dead_managed_shims imports these lazily from their home modules.
-    import agentwire.config as cfg_mod
-    import agentwire.core as core_mod
-    import agentwire.stt as stt_mod
+    import hermeswire.config as cfg_mod
+    import hermeswire.core as core_mod
+    import hermeswire.stt as stt_mod
 
     monkeypatch.setattr(cfg_mod, "load_config", lambda: cfg)
-    monkeypatch.setattr(core_mod, "get_kokoro_session_name", lambda: "agentwire-kokoro")
-    monkeypatch.setattr(core_mod, "get_stt_session_name", lambda: "agentwire-stt")
+    monkeypatch.setattr(core_mod, "get_kokoro_session_name", lambda: "hermeswire-kokoro")
+    monkeypatch.setattr(core_mod, "get_stt_session_name", lambda: "hermeswire-stt")
     monkeypatch.setattr(stt_mod, "moonshine_importable", lambda: moonshine)
     return doctor_cli
 
 
 def test_doctor_flags_dead_kokoro_shim(monkeypatch):
     doctor_cli = _patch_doctor(monkeypatch, stt="none")
-    from agentwire import core as core_mod
+    from hermeswire import core as core_mod
 
     monkeypatch.setattr(core_mod, "tmux_session_exists", lambda s: True)
     monkeypatch.setattr(tts_cli, "_shim_session_state", lambda s, p: (False, None))
@@ -172,7 +172,7 @@ def test_doctor_flags_dead_kokoro_shim(monkeypatch):
 
 def test_doctor_ignores_warming_shim(monkeypatch):
     doctor_cli = _patch_doctor(monkeypatch, stt="none")
-    from agentwire import core as core_mod
+    from hermeswire import core as core_mod
 
     monkeypatch.setattr(core_mod, "tmux_session_exists", lambda s: True)
     monkeypatch.setattr(tts_cli, "_shim_session_state", lambda s, p: (True, "loading"))
@@ -182,7 +182,7 @@ def test_doctor_ignores_warming_shim(monkeypatch):
 
 def test_doctor_ignores_absent_session(monkeypatch):
     doctor_cli = _patch_doctor(monkeypatch)
-    from agentwire import core as core_mod
+    from hermeswire import core as core_mod
 
     # No tmux session → nothing to self-heal, not a dead shim.
     monkeypatch.setattr(core_mod, "tmux_session_exists", lambda s: False)
@@ -194,7 +194,7 @@ def test_doctor_ignores_absent_session(monkeypatch):
 def test_doctor_skips_stt_when_moonshine_absent(monkeypatch):
     # STT default tier without Moonshine transcribes in-browser: no shim to flag.
     doctor_cli = _patch_doctor(monkeypatch, tts="custom", moonshine=False)
-    from agentwire import core as core_mod
+    from hermeswire import core as core_mod
 
     monkeypatch.setattr(core_mod, "tmux_session_exists", lambda s: True)
     monkeypatch.setattr(tts_cli, "_shim_session_state", lambda s, p: (False, None))

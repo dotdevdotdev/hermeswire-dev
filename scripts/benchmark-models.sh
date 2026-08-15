@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Benchmark a task across haiku, sonnet, opus — runs all 3 in parallel.
-# Requires pre-created worktrees: agentwire-dev-bench-{haiku,sonnet,opus}
+# Requires pre-created worktrees: hermeswire-dev-bench-{haiku,sonnet,opus}
 #
 # Usage: ./scripts/benchmark-models.sh [task-name]
 set -euo pipefail
@@ -8,7 +8,7 @@ set -euo pipefail
 TASK="${1:-cli-test}"
 BASE_DIR="$HOME/projects"
 MODELS=(haiku sonnet opus)
-BENCHMARK_DIR="$HOME/.agentwire/benchmarks"
+BENCHMARK_DIR="$HOME/.hermeswire/benchmarks"
 TIMESTAMP=$(date +%Y-%m-%dT%H-%M-%S)
 OUTFILE="$BENCHMARK_DIR/${TASK}-${TIMESTAMP}.md"
 TMPDIR=$(mktemp -d)
@@ -23,24 +23,24 @@ echo ""
 # Run a single model benchmark, write results to temp files
 run_model() {
   local model="$1"
-  local project="$BASE_DIR/agentwire-dev-bench-$model"
+  local project="$BASE_DIR/hermeswire-dev-bench-$model"
   local session="bench-$model"
 
   echo "[$model] Starting..."
 
   # Ensure clean worktree
   git -C "$project" checkout . 2>/dev/null || true
-  mkdir -p "$project/.agentwire"
+  mkdir -p "$project/.hermeswire"
 
   # Create session with model override
-  agentwire new -s "$session" -p "$project" \
+  hermeswire new -s "$session" -p "$project" \
     --posture bypass --roles task-runner \
     --model "$model" -f 2>/dev/null || true
 
   # Run the task
   local start exit_code=0
   start=$(date +%s)
-  agentwire ensure -s "$session" --task "$TASK" --project "$project" --json || exit_code=$?
+  hermeswire ensure -s "$session" --task "$TASK" --project "$project" --json || exit_code=$?
   local end elapsed
   end=$(date +%s)
   elapsed=$(( end - start ))
@@ -49,7 +49,7 @@ run_model() {
 
   # Find summary file
   local summary_file summary status
-  summary_file=$(find "$project/.agentwire" -name "task-summary-${session}-${TASK}-*.md" -print 2>/dev/null \
+  summary_file=$(find "$project/.hermeswire" -name "task-summary-${session}-${TASK}-*.md" -print 2>/dev/null \
     | sort -r | head -1)
 
   if [[ -n "$summary_file" ]]; then
@@ -61,7 +61,7 @@ run_model() {
   fi
 
   # Kill session
-  agentwire kill -s "$session" 2>/dev/null || true
+  hermeswire kill -s "$session" 2>/dev/null || true
 
   # Reset worktree
   git -C "$project" checkout . 2>/dev/null || true

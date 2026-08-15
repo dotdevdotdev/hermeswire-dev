@@ -6,7 +6,7 @@
 
 import ssl
 
-from agentwire import tunnels
+from hermeswire import tunnels
 
 
 class _Result:

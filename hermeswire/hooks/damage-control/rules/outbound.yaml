@@ -1,0 +1,72 @@
+# Outbound communication damage control rules
+#
+# Outward-facing "send" verbs — email, SMS, push. These are irreversible (you
+# can't un-send) and reach real people, so they must NOT sail through an
+# UNATTENDED (scheduler) session silently. They're classified `ask: true`:
+#   - interactive bypass/auto session  → allow (no friction, the common case)
+#   - interactive non-bypass session   → confirm prompt
+#   - UNATTENDED (HERMESWIRE_UNATTENDED) → fail closed: block + email owner,
+#     unless the rule id is on the task's `unattended_allow`.
+#
+# These patterns gate the Bash shell-out (an agent or a scheduled task's `post:`
+# step running `hermeswire email`/`quo`). Agents inside hermeswire sessions usually
+# send via the MCP tools `email_send` / `quo_send` instead — those are gated by
+# the dedicated `mcp-tool-damage-control.py` PreToolUse hook (#457), which
+# synthesizes the equivalent `hermeswire email`/`quo` command and reuses
+# `outbound.hermeswire-email` / `outbound.hermeswire-quo` below verbatim (same IDs,
+# same `unattended_allow`). See docs/wiki/internals/damage-control.md.
+
+bashToolPatterns:
+  # ---------------------------------------------------------------------------
+  # HERMESWIRE OUTBOUND CHANNELS (external — email via Resend, SMS via Quo)
+  # ---------------------------------------------------------------------------
+  - pattern: '\bhermeswire\s+email\b'
+    reason: hermeswire email (sends an external email via Resend)
+    ask: true
+    id: outbound.hermeswire-email
+    anchored: true
+
+  - pattern: '\bhermeswire\s+quo\b'
+    reason: hermeswire quo (sends an external SMS via Quo/OpenPhone)
+    ask: true
+    id: outbound.hermeswire-quo
+    anchored: true
+
+  # ---------------------------------------------------------------------------
+  # TWILIO (SMS / messaging)
+  # ---------------------------------------------------------------------------
+  - pattern: '\btwilio\s+api[:\w.]*messages[:\w.]*create\b'
+    reason: twilio messages create (sends an SMS/MMS)
+    ask: true
+    id: outbound.twilio-messages
+    anchored: true
+
+  # ---------------------------------------------------------------------------
+  # AWS messaging (SES email, SNS publish)
+  # ---------------------------------------------------------------------------
+  - pattern: '\baws\s+ses(v2)?\s+send-email\b'
+    reason: aws ses send-email (sends an external email)
+    ask: true
+    id: outbound.aws-ses
+    anchored: true
+
+  - pattern: '\baws\s+sns\s+publish\b'
+    reason: aws sns publish (sends an SMS/notification)
+    ask: true
+    id: outbound.aws-sns
+    anchored: true
+
+  # ---------------------------------------------------------------------------
+  # GENERIC MAIL TRANSPORTS
+  # ---------------------------------------------------------------------------
+  - pattern: '\bsendmail\b'
+    reason: sendmail (sends external email)
+    ask: true
+    id: outbound.sendmail
+    anchored: true
+
+  - pattern: '\b(mail|mailx)\s+(-[^\s]*\s+)*-s\b'
+    reason: mail -s (sends external email)
+    ask: true
+    id: outbound.mail
+    anchored: true

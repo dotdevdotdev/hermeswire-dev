@@ -1,9 +1,9 @@
-"""Tests for agentwire/roles/__init__.py — Role parsing, merging, discovery."""
+"""Tests for hermeswire/roles/__init__.py — Role parsing, merging, discovery."""
 
 
 import pytest
 
-from agentwire.roles import (
+from hermeswire.roles import (
     INTRINSIC_ETIQUETTE,
     SAFETY_RAIL_KINDS,
     WORKTREE_TOPOLOGY_ETIQUETTE,
@@ -126,18 +126,18 @@ class TestMergeRoles:
 class TestDiscoverRole:
     def test_bundled_roles_found(self):
         """All bundled roles should be discoverable."""
-        for name in ["agentwire", "contributor", "voice", "worker", "reviewer", "task-runner", "chatbot", "init", "soul"]:
+        for name in ["hermeswire", "contributor", "voice", "worker", "reviewer", "task-runner", "chatbot", "init", "soul"]:
             path = discover_role(name)
             assert path is not None, f"Bundled role '{name}' not found"
 
     def test_project_level_overrides_bundled(self, tmp_path):
         # Create project-level role
-        project_roles = tmp_path / ".agentwire" / "roles"
+        project_roles = tmp_path / ".hermeswire" / "roles"
         project_roles.mkdir(parents=True)
-        custom = project_roles / "agentwire.md"
-        custom.write_text("---\nname: agentwire\n---\n\nCustom!\n")
+        custom = project_roles / "hermeswire.md"
+        custom.write_text("---\nname: hermeswire\n---\n\nCustom!\n")
 
-        path = discover_role("agentwire", project_path=tmp_path)
+        path = discover_role("hermeswire", project_path=tmp_path)
         assert path == custom
 
     def test_unknown_role_returns_none(self):
@@ -154,11 +154,11 @@ class TestInjectSoul:
 
     def test_returns_unchanged_and_writes_soul(self):
         # soul is SOUL.md identity now, not a role (#15)
-        assert inject_soul(["agentwire"]) == ["agentwire"]
+        assert inject_soul(["hermeswire"]) == ["hermeswire"]
         assert self._soul_md().exists()
 
     def test_injected_with_explicit_roles(self):
-        assert inject_soul(["agentwire", "voice"]) == ["agentwire", "voice"]
+        assert inject_soul(["hermeswire", "voice"]) == ["hermeswire", "voice"]
         assert self._soul_md().exists()
 
     def test_empty_list_still_writes_soul(self):
@@ -171,12 +171,12 @@ class TestInjectSoul:
         assert not self._soul_md().exists()
 
     def test_headless_mixed_excluded(self):
-        assert inject_soul(["agentwire", "worker"]) == ["agentwire", "worker"]
+        assert inject_soul(["hermeswire", "worker"]) == ["hermeswire", "worker"]
         assert not self._soul_md().exists()
 
     def test_no_double_add(self):
         assert inject_soul(["soul"]) == ["soul"]
-        assert inject_soul(["agentwire", "soul"]) == ["agentwire", "soul"]
+        assert inject_soul(["hermeswire", "soul"]) == ["hermeswire", "soul"]
         assert not self._soul_md().exists()
 
     def test_soul_lens_variant_excluded(self):
@@ -190,24 +190,24 @@ class TestInjectSoul:
         assert not self._soul_md().exists()
 
     def test_no_soul_flag(self):
-        assert inject_soul(["agentwire"], no_soul=True) == ["agentwire"]
+        assert inject_soul(["hermeswire"], no_soul=True) == ["hermeswire"]
         assert not self._soul_md().exists()
 
     def test_global_opt_out(self):
         config = {"session": {"inject_soul": False}}
-        assert inject_soul(["agentwire"], config) == ["agentwire"]
+        assert inject_soul(["hermeswire"], config) == ["hermeswire"]
         assert not self._soul_md().exists()
 
     def test_global_default_enabled(self):
         # soul is SOUL.md identity, never appended regardless of config default
-        assert inject_soul(["agentwire"], {}) == ["agentwire"]
-        assert inject_soul(["agentwire"], None) == ["agentwire"]
+        assert inject_soul(["hermeswire"], {}) == ["hermeswire"]
+        assert inject_soul(["hermeswire"], None) == ["hermeswire"]
         assert self._soul_md().exists()
 
     def test_input_not_mutated(self):
-        names = ["agentwire"]
+        names = ["hermeswire"]
         inject_soul(names)
-        assert names == ["agentwire"]
+        assert names == ["hermeswire"]
 
     def test_bundled_soul_is_pure_personality(self):
         """soul.md must not widen or narrow tool permissions."""
@@ -296,7 +296,7 @@ class TestResolveRolesSafetyRail:
         assert resolve_roles("worker", worktree_topology=True, cli_roles=["domain"]) == ["worker-worktree", "domain"]
 
     def test_worker_worktree_etiquette_always_present_project_stacks(self):
-        # A repo with roles: in .agentwire.yml still gets the safety contract.
+        # A repo with roles: in .hermeswire.yml still gets the safety contract.
         assert resolve_roles("worker", worktree_topology=True, project_roles=["domain"]) == ["worker-worktree", "domain"]
 
     def test_project_and_cli_both_stack(self):
@@ -398,7 +398,7 @@ class TestSchedulerWorktreeOptsOutOfPrEtiquette:
         assert "worker-worktree" not in resolve_roles(kind, worktree_topology=True)
 
     def test_human_worktree_keeps_full_pr_etiquette(self):
-        # `agentwire worktree foo` → cmd_worktree passes kind="worker" (default)
+        # `hermeswire worktree foo` → cmd_worktree passes kind="worker" (default)
         # and an explicit worktree_topology=True override. The draft-PR/notify
         # contract stays.
         kind = derive_session_kind(has_branch=False, explicit_kind="worker")
@@ -452,7 +452,7 @@ class TestBundledWorkerWorktreeRole:
         role = parse_role_file(discover_role("worker-worktree"))
         assert role is not None
         # Etiquette present.
-        for needle in ["agentwire rebuild", "portal restart", "DRAFT", "uv run pytest", "agentwire msg send"]:
+        for needle in ["hermeswire rebuild", "portal restart", "DRAFT", "uv run pytest", "hermeswire msg send"]:
             assert needle in role.instructions, f"etiquette missing: {needle}"
         # PM ghost and templating gone.
         assert "{{" not in role.instructions
@@ -488,7 +488,7 @@ class TestBundledReviewerRole:
         role = parse_role_file(discover_role("reviewer-worktree"))
         assert role is not None
         assert "AskUserQuestion" not in (role.disallowed_tools or [])
-        for needle in ["agentwire rebuild", "portal restart"]:
+        for needle in ["hermeswire rebuild", "portal restart"]:
             assert needle in role.instructions, f"isolation guardrail missing: {needle}"
         # No draft-PR/push contract — the opposite of worker-worktree's Finish step.
         assert "git push" not in role.instructions.lower()
@@ -531,10 +531,10 @@ class TestCouncilRoles:
 
 class TestTtsToolPromptInjection:
     def test_voice_role_gains_capabilities_section(self, monkeypatch):
-        import agentwire.roles as roles_mod
+        import hermeswire.roles as roles_mod
         monkeypatch.setattr(roles_mod, "get_tts_tool_prompt",
                             lambda: "Supports inline [laugh] tags.")
-        roles, missing = roles_mod.load_roles(["voice", "agentwire"])
+        roles, missing = roles_mod.load_roles(["voice", "hermeswire"])
         assert missing == []
         voice = next(r for r in roles if r.name == "voice")
         assert "## TTS backend capabilities" in voice.instructions
@@ -544,15 +544,15 @@ class TestTtsToolPromptInjection:
         assert "TTS backend capabilities" not in other.instructions
 
     def test_no_prompt_no_injection(self, monkeypatch):
-        import agentwire.roles as roles_mod
+        import hermeswire.roles as roles_mod
         monkeypatch.setattr(roles_mod, "get_tts_tool_prompt", lambda: "")
         roles, _ = roles_mod.load_roles(["voice"])
         assert "## TTS backend capabilities" not in roles[0].instructions
 
     def test_get_tts_tool_prompt_default_tier_is_empty(self, monkeypatch, tmp_path):
-        import agentwire.roles as roles_mod
+        import hermeswire.roles as roles_mod
         monkeypatch.setattr(roles_mod, "_tts_tool_prompt_cache", None)
-        from agentwire.config import load_config
+        from hermeswire.config import load_config
         cfg = load_config(tmp_path / "nonexistent.yaml")  # default tier
-        monkeypatch.setattr("agentwire.config.load_config", lambda *a, **k: cfg)
+        monkeypatch.setattr("hermeswire.config.load_config", lambda *a, **k: cfg)
         assert roles_mod.get_tts_tool_prompt() == ""

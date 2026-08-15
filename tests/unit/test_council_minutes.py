@@ -1,9 +1,9 @@
 """Tests for council minutes (#708) — synthetic prompt dirs, never live sittings.
 
-Covers the pure renderer (``agentwire/council/minutes.py``), the
+Covers the pure renderer (``hermeswire/council/minutes.py``), the
 ``council minutes`` CLI handler, and the ``council stop`` auto-minutes
 integration. Artifacts land in a tmp dir and the portal notification is mocked,
-so nothing touches ``~/.agentwire`` or the network.
+so nothing touches ``~/.hermeswire`` or the network.
 """
 
 import argparse
@@ -11,7 +11,7 @@ import json
 
 import pytest
 
-from agentwire.council import cli, inbox, minutes, state
+from hermeswire.council import cli, inbox, minutes, state
 
 NAME = "proj"
 

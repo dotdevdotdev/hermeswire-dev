@@ -1,4 +1,4 @@
-"""Tests for the `agentwire rebuild` git-drift guard (#462).
+"""Tests for the `hermeswire rebuild` git-drift guard (#462).
 
 `rebuild` is otherwise git-blind: it reinstalls whatever is checked out, so a
 never-pulled local main silently ships stale code. The guard fetches origin and
@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from agentwire.core import _git_behind_origin
-from agentwire.system_cli import cmd_rebuild, cmd_uninstall
+from hermeswire.core import _git_behind_origin
+from hermeswire.system_cli import cmd_rebuild, cmd_uninstall
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -89,9 +89,9 @@ class TestRebuildGuard:
         clone, _ = behind_checkout
         # Make a pyproject so cmd_rebuild treats the clone as the source root.
         (clone / "pyproject.toml").write_text("[project]\nname='x'\n")
-        import agentwire.system_cli as sys_mod
+        import hermeswire.system_cli as sys_mod
         # __file__.parent.parent must resolve to the clone.
-        fake_file = clone / "agentwire" / "system_cli.py"
+        fake_file = clone / "hermeswire" / "system_cli.py"
         fake_file.parent.mkdir(parents=True, exist_ok=True)
         fake_file.write_text("")
         monkeypatch.setattr(sys_mod, "__file__", str(fake_file))
@@ -145,7 +145,7 @@ def up_to_date_checkout(tmp_path):
     clone = tmp_path / "clone"
     _git(tmp_path, "clone", "-q", str(origin), str(clone))
     (clone / "pyproject.toml").write_text("[project]\nname='x'\n")
-    fake_file = clone / "agentwire" / "system_cli.py"
+    fake_file = clone / "hermeswire" / "system_cli.py"
     fake_file.parent.mkdir(parents=True, exist_ok=True)
     fake_file.write_text("")
     return clone, fake_file
@@ -157,7 +157,7 @@ class TestRebuildSafety:
     @pytest.fixture(autouse=True)
     def _patch_root(self, up_to_date_checkout, monkeypatch):
         clone, fake_file = up_to_date_checkout
-        import agentwire.system_cli as sys_mod
+        import hermeswire.system_cli as sys_mod
         monkeypatch.setattr(sys_mod, "__file__", str(fake_file))
         self.clone = clone
 
@@ -182,7 +182,7 @@ class TestRebuildSafety:
         rc = cmd_rebuild(_args(force=False))
         assert rc == 0
         assert rmtree_calls == []
-        assert ["uv", "cache", "clean", "agentwire-dev"] in calls
+        assert ["uv", "cache", "clean", "hermeswire-dev"] in calls
 
     def test_no_uninstall_step_atomic_replace(self, monkeypatch):
         calls = self._capture_uv(monkeypatch)
@@ -200,8 +200,8 @@ class TestRebuildSafety:
         assert "left untouched" in err
 
     def test_missing_checkout_fails_before_any_uv_call(self, monkeypatch, capsys, tmp_path):
-        import agentwire.system_cli as sys_mod
-        fake_file = tmp_path / "nocheckout" / "agentwire" / "system_cli.py"
+        import hermeswire.system_cli as sys_mod
+        fake_file = tmp_path / "nocheckout" / "hermeswire" / "system_cli.py"
         fake_file.parent.mkdir(parents=True)
         fake_file.write_text("")
         monkeypatch.setattr(sys_mod, "__file__", str(fake_file))
@@ -231,5 +231,5 @@ class TestUninstallSafety:
         rc = cmd_uninstall(_args())
         assert rc == 0
         assert rmtree_calls == []
-        assert ["uv", "cache", "clean", "agentwire-dev"] in calls
-        assert ["uv", "tool", "uninstall", "agentwire-dev"] in calls
+        assert ["uv", "cache", "clean", "hermeswire-dev"] in calls
+        assert ["uv", "tool", "uninstall", "hermeswire-dev"] in calls

@@ -49,29 +49,29 @@ command_allowlist: []
 # cron / gateway runs). Equivalent of accepting every hook non-interactively.
 hooks_auto_accept: true
 
-# Damage-control hooks (installed/healed by the agentwire safety path — see
-# internals/damage-control.md; `agentwire doctor` reports missing matchers).
+# Damage-control hooks (installed/healed by the hermeswire safety path — see
+# internals/damage-control.md; `hermeswire doctor` reports missing matchers).
 # Each entry is {matcher, command, timeout}. `matcher` is the Hermes tool name
 # as a regex (mcp__<server>__<tool> for MCP tools).
 hooks:
   pre_tool_call:
     - matcher: "terminal"
-      command: "~/.agentwire/hooks/damage-control/bash-tool-damage-control.py"
+      command: "~/.hermeswire/hooks/damage-control/bash-tool-damage-control.py"
       timeout: 60
     - matcher: "write_file"
-      command: "~/.agentwire/hooks/damage-control/write-tool-damage-control.py"
+      command: "~/.hermeswire/hooks/damage-control/write-tool-damage-control.py"
       timeout: 60
     - matcher: "patch"
-      command: "~/.agentwire/hooks/damage-control/edit-tool-damage-control.py"
+      command: "~/.hermeswire/hooks/damage-control/edit-tool-damage-control.py"
       timeout: 60
     - matcher: "read_file"
-      command: "~/.agentwire/hooks/damage-control/read-tool-damage-control.py"
+      command: "~/.hermeswire/hooks/damage-control/read-tool-damage-control.py"
       timeout: 60
     - matcher: "search_files"
-      command: "~/.agentwire/hooks/damage-control/read-tool-damage-control.py"
+      command: "~/.hermeswire/hooks/damage-control/read-tool-damage-control.py"
       timeout: 60
     - matcher: "mcp__.*"
-      command: "~/.agentwire/hooks/damage-control/mcp-tool-damage-control.py"
+      command: "~/.hermeswire/hooks/damage-control/mcp-tool-damage-control.py"
       timeout: 60
 ```
 
@@ -79,7 +79,7 @@ hooks:
 
 - **Tool gating is at toolSET granularity, not per-tool.** `-t terminal`
   enables the whole terminal/process toolset. There is no per-tool
-  `--allowedTools` / `--disallowedTools` equivalent; AgentWire's fine-grained
+  `--allowedTools` / `--disallowedTools` equivalent; HermesWire's fine-grained
   role tool lists degrade to toolsets + `approvals.deny` (issues #3/#11).
 - **`approvals.deny` outranks yolo.** A deny glob blocks the command even under
   `--yolo` / `mode: off` — the user-editable hard stop that replaces the
@@ -102,8 +102,8 @@ hooks:
   Claude-paste delivery bug (#889/#867), which is confirmed negative (the real
   root cause was an expired login, #906) and specific to Claude Code's input
   box; Hermes has no analogous input box to probe.
-- `agentwire/templates/statusline.sh` — deleted. It consumed Claude Code's
+- `hermeswire/templates/statusline.sh` — deleted. It consumed Claude Code's
   `statusLine` JSON-on-stdin protocol (`~/.claude/settings.json`); Hermes
   renders its own status bar (toggle `/statusbar`) and exposes no external
-  statusline protocol to point the script at. `agentwire/templates/tmux.conf`
+  statusline protocol to point the script at. `hermeswire/templates/tmux.conf`
   keeps an inline `status-right` for the tmux-visible fields (dir/branch/CPU/RAM).

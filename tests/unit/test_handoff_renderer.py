@@ -1,7 +1,7 @@
-"""Tests for agentwire/handoff/renderer.py."""
+"""Tests for hermeswire/handoff/renderer.py."""
 
-from agentwire.handoff.parser import parse
-from agentwire.handoff.renderer import render_html
+from hermeswire.handoff.parser import parse
+from hermeswire.handoff.renderer import render_html
 
 _BASE = """\
 <session_bundle version="1">
@@ -10,7 +10,7 @@ _BASE = """\
 - cwd: /tmp/foo
 - branch: main
 - model: claude-opus-4-7
-- mcp_servers: agentwire, claude-in-chrome
+- mcp_servers: hermeswire, claude-in-chrome
 </metadata>
 <instructions>
 <file path="./CLAUDE.md" kind="project_claude_md">

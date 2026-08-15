@@ -22,7 +22,7 @@ here would be fixture-shaped:
 - **That the rendered body survives delivery.** That is measured against the
   real paste path in ``test_voice_body_delivery.py``.
 
-Deliberately in-process. Shelling ``agentwire msg send`` with prose about
+Deliberately in-process. Shelling ``hermeswire msg send`` with prose about
 guarded operations through the Bash tool trips the damage-control hook (#915),
 and the interesting cases here contain exactly such prose. Nothing here disables
 a guard; the runner is injected rather than stubbed at the subprocess layer.
@@ -36,8 +36,8 @@ import time
 
 import pytest
 
-from agentwire import core, inbox
-from agentwire.voice_layer import confirm, relay, tools, transcript, write_tools
+from hermeswire import core, inbox
+from hermeswire.voice_layer import confirm, relay, tools, transcript, write_tools
 
 
 class FakeClock:
@@ -2486,7 +2486,7 @@ class TestAttribution:
         ).render()
         human = inbox.Message(
             id="1700000000000000000-def456",
-            sender="agentwire",
+            sender="hermeswire",
             to="orchestrator",
             kind="request",
             text="restart the portal",
@@ -2903,7 +2903,7 @@ class TestOutcomesAreDistinctAndSpoken:
         assert verdict.approved is False
         assert verdict.reason == "dispatch_failed"
         # Names the UNCERTAINTY as well as the next move. "nothing was sent"
-        # would be a definite claim the system cannot verify — run_agentwire_cmd
+        # would be a definite claim the system cannot verify — run_hermeswire_cmd
         # reports success=False on a subprocess timeout, where the CLI may
         # already have enqueued — and pairing false certainty with "ask me
         # again" invites a re-propose that double-delivers.
@@ -3175,7 +3175,7 @@ class TestWriteToolSurface:
         assert result["confirm_phrase"] in result["say"]
 
     def test_the_persona_has_no_digit_era_phrasing(self):
-        from agentwire.voice_layer import instructions
+        from hermeswire.voice_layer import instructions
 
         text = instructions.build_instructions().lower()
         assert "digits" not in text
@@ -3258,7 +3258,7 @@ class TestDispatch:
 class TestBridgeRoutes:
     @pytest.fixture
     def bridge(self, tmp_path, monkeypatch):
-        from agentwire.voice_layer import server
+        from hermeswire.voice_layer import server
 
         monkeypatch.setattr(core, "CONFIG_DIR", tmp_path)
         runner = RecordingRunner()
@@ -3808,9 +3808,9 @@ class TestHonestLimit:
 
         root = Path(__file__).resolve().parents[2]
         targets = [
-            root / "agentwire" / "voice_layer" / "confirm.py",
-            root / "agentwire" / "voice_layer" / "write_tools.py",
-            root / "agentwire" / "voice_layer" / "transcript.py",
+            root / "hermeswire" / "voice_layer" / "confirm.py",
+            root / "hermeswire" / "voice_layer" / "write_tools.py",
+            root / "hermeswire" / "voice_layer" / "transcript.py",
             root / "docs" / "wiki" / "voice-layer.md",
         ]
         overclaims = (

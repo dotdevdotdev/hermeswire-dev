@@ -1,22 +1,22 @@
-# Polite agent-to-agent messaging (`agentwire msg`)
+# Polite agent-to-agent messaging (`hermeswire msg`)
 
 > A non-interrupting channel for sessions to talk amongst themselves — it never
 > clobbers a human who is mid-typing.
 
 ## The problem it solves
 
-The only channel into a running session used to be `agentwire send` /
+The only channel into a running session used to be `hermeswire send` /
 `session_send`: it pastes text into the prompt and presses Enter **right now**.
 There is no check for whether the input box already holds uncommitted text. So
 when a worker reports back while you're half-way through typing a long message,
 the worker's text is appended to your draft and the whole thing is submitted
 together. Garbage in, garbage out.
 
-`agentwire send` stays exactly as it was — forceful, immediate control is a
+`hermeswire send` stays exactly as it was — forceful, immediate control is a
 feature when you actually want it. `msg` is its **polite sibling**: the message
 lands in a durable inbox and is injected only at a safe boundary.
 
-| | `agentwire send` / `session_send` | `agentwire msg` / `msg_send` |
+| | `hermeswire send` / `session_send` | `hermeswire msg` / `msg_send` |
 |---|---|---|
 | Delivery | Immediate paste + Enter | Queued; injected when safe |
 | Collision with a human draft | **Clobbers it** | **Never** — waits for the box to clear |
@@ -26,12 +26,12 @@ lands in a durable inbox and is injected only at a safe boundary.
 ## How it works
 
 1. **Enqueue.** `msg send` writes one JSON file per message into the recipient's
-   inbox dir, `~/.agentwire/inbox/<session>/<epoch_ns>-<uuid>.json`, atomically
+   inbox dir, `~/.hermeswire/inbox/<session>/<epoch_ns>-<uuid>.json`, atomically
    (`*.tmp` then rename). Filename order = delivery order. "ls is the protocol"
    — same pattern as [Council](../council.md)'s file inbox.
 
 2. **Drain.** A flush loop rides the existing [usage-limit watchdog](../usage-limit-recovery.md)
-   tick (`agentwire limits tick`, every 60s), after the usage-limit and
+   tick (`hermeswire limits tick`, every 60s), after the usage-limit and
    [prompt-routing](prompt-routing.md) sweeps. For each inbox it delivers
    **only when both gates pass**:
    - `prompt_is_empty(session)` — the input box holds no uncommitted text.
@@ -68,7 +68,7 @@ lands in a durable inbox and is injected only at a safe boundary.
    `send_verified` caller: **(a) full-message identity** — the land/confirm
    checks key on the full whitespace-normalized message, never a fixed-length
    prefix (all worktree idle notifications share a >32-char
-   `[NOTIFY from agentwire-dev-issue-…` prefix, so a fragment false-matched a
+   `[NOTIFY from hermeswire-dev-issue-…` prefix, so a fragment false-matched a
    *pile* of other sessions' notifications sitting in the box); and **(b) no
    blind re-paste** — before pasting, each attempt checks whether the message
    already sits landed-but-unsubmitted in the box, and if so retries only the
@@ -91,7 +91,7 @@ lands in a durable inbox and is injected only at a safe boundary.
    `prompt_is_empty` vetoes, so dim ghost/autosuggest text never counts), and
    `_deliver_once` **refuses** rather than pasting — it is the delivery
    primitive and cannot tell a human's sentence from wedged wreckage. Box
-   surgery stays in the recovery layer: `agentwire send --verify/--wait-ready`
+   surgery stays in the recovery layer: `hermeswire send --verify/--wait-ready`
    look at the box *before* attempting anything, and a draft that predates the
    attempt is queued to the msg inbox with `recover_failed_seed(clear=False)`
    → outcome **`inbox_blocked`** (queued, box left untouched) rather than the
@@ -147,7 +147,7 @@ lands in a durable inbox and is injected only at a safe boundary.
    `attempts` counter bumps, and the defer `reason` (`box_not_empty`,
    `target_not_agent`, …) is stamped on each message. After `MAX_ATTEMPTS`
    (40 ≈ 40 min of a permanently busy session) a message moves to
-   `~/.agentwire/inbox/<session>/dead/` carrying that reason + a `dead_ts`, and a
+   `~/.hermeswire/inbox/<session>/dead/` carrying that reason + a `dead_ts`, and a
    `dead_letter` event is logged — no infinite retry. `msg dead` surfaces these
    so the drop is never silent.
 
@@ -176,11 +176,11 @@ lands in a durable inbox and is injected only at a safe boundary.
      dead-lettering also means never firing the dead-letter owner email, which is
      the only *unprompted* signal in the whole path. That was harmless while every
      no-penalty reason was a short-lived box state; admitting `target_parked`
-     changed it, since a park can legitimately last hours. So `agentwire doctor`
+     changed it, since a park can legitimately last hours. So `hermeswire doctor`
      reports load-bearing (`ESCALATE_KINDS`) messages still
      pending past `inbox.STALE_PENDING_MS` (2h), naming the recipient, the wait,
      and the defer reason — and flagging parked recipients as self-resolving so
-     the section reads as FYI rather than failure. `agentwire msg inbox -s
+     the section reads as FYI rather than failure. `hermeswire msg inbox -s
      <session>` remains the on-request view. Deliberately *not* an owner email: a
      multi-hour park is the expected shape now, so emailing on it is the noise
      that gets the channel muted.
@@ -240,7 +240,7 @@ collision detector simple and the no-clobber guarantee absolute.
 | kind | meaning |
 |---|---|
 | `note` | default — informational |
-| `done` | a worker finished — also what idle report-backs ride: `agentwire notify-parent --queued` (used by `idle-handler.sh`, #667) enqueues here instead of direct-pasting |
+| `done` | a worker finished — also what idle report-backs ride: `hermeswire notify-parent --queued` (used by `idle-handler.sh`, #667) enqueues here instead of direct-pasting |
 | `request` | asking for something |
 | `escalation` | needs attention — **the only kind a consumer may act on out of turn** |
 | `ingest` | **passive** — awareness only; never auto-delivered (see below) |
@@ -322,7 +322,7 @@ inbox; they are never dead-lettered.
 Until #982 every kind above had exactly one class of sender: an agent typing
 `msg send`. The machine's own detectors — expired login, usage-limit park,
 dead-lettered report-backs, a root session blocked with nowhere to route — could
-only reach the **owner**, by email. `agentwire/fleet_alerts.py` is the other
+only reach the **owner**, by email. `hermeswire/fleet_alerts.py` is the other
 half: the same detectors, addressed as typed mail to any session that asks for
 it. Nothing about the email path changed; this rides alongside it.
 
@@ -352,12 +352,12 @@ clear without a human, and is something burning while it waits?*
 | expired login (`auth_expired`) | `escalation` | Machine-wide; every subsequent turn is refused and only `/login` clears it. Once per `ESCALATE_TTL` (1h) **per outage, per machine** — not per session, not per dispatch — stamped in the outage record next to the email's own stamp. |
 | root session blocked, no parent (`prompt_router`) | `escalation` | By design nothing can route it; the session is stalled until a human answers. Once per hour **per distinct prompt** (keyed on the prompt hash, so a redraw doesn't re-fire). |
 | usage-limit park | `note` | **Demoted on purpose.** Self-healing: reset time parsed, resume nudge armed, the owner's email literally ends "no action needed". Real news, nothing to act on inside thirty seconds. One per park (`is_parked` is the throttle). |
-| dead-lettered load-bearing mail | `request`, promoted to `escalation` iff the lost message *was* an escalation | Someone must go look at `agentwire msg dead`. The floor is `request` because the realistic bad case is one stuck recipient — 147 dead letters in ~2s, observed — and that shape must not buy 147 interrupts. One alert per **batch**, matching the digest email's coalescing. |
+| dead-lettered load-bearing mail | `request`, promoted to `escalation` iff the lost message *was* an escalation | Someone must go look at `hermeswire msg dead`. The floor is `request` because the realistic bad case is one stuck recipient — 147 dead letters in ~2s, observed — and that shape must not buy 147 interrupts. One alert per **batch**, matching the digest email's coalescing. |
 | dangling PR (`worktree --dangling`) | **not wired** | No autonomous trigger (only `doctor` and the explicit flag, both run by a human already reading the output) and no per-finding throttle state to reuse, so a producer would re-announce the same durable, passive condition every invocation. Nothing is burning while a dangling PR waits. |
 
 ### Lifecycle joins the same table (#1016)
 
-Detectors report that something is *wrong*. `agentwire/fleet_activity.py` adds
+Detectors report that something is *wrong*. `hermeswire/fleet_activity.py` adds
 the other producer — the fleet reporting that something *happened*: a session
 going idle, a scheduled task finishing, a toast, anything spoken through fleet
 TTS. It shares `DETECTOR_KINDS` because the question is identical (what may a
@@ -366,7 +366,7 @@ places is how the two answers drift.
 
 | Event | Kind | Why, and what bounds it |
 |---|---|---|
-| session went idle | `done`, **only if delegated** | The event the owner wanted: work they handed off has finished. Authority is consulted first and can veto — an `orchestrator`/`anchor` role is never delegated whatever its location, because `agentwire orchestrator` is `worktree --kind orchestrator` and an OR over #716's axes let *location* overrule the role, announcing the owner's own durable window every 15 minutes. After that veto, a recorded parent, a worker/reviewer role, or a worktree checkout each suffice. Throttled 15m per session; the event's parent is excluded, since it hears this by paste from `notify-parent`. |
+| session went idle | `done`, **only if delegated** | The event the owner wanted: work they handed off has finished. Authority is consulted first and can veto — an `orchestrator`/`anchor` role is never delegated whatever its location, because `hermeswire orchestrator` is `worktree --kind orchestrator` and an OR over #716's axes let *location* overrule the role, announcing the owner's own durable window every 15 minutes. After that veto, a recorded parent, a worker/reviewer role, or a worktree checkout each suffice. Throttled 15m per session; the event's parent is excluded, since it hears this by paste from `notify-parent`. |
 | scheduled task completed | `done`, `request` if it ended badly | The owner did not watch it start and cannot see it end. The `request` promotion is the dead-letter inherit rule's shape: the fleet already judged it. `usage_limit` / `auth_expired` runs are **not** announced — those conditions have detectors of their own that say it once, machine-wide. Throttled 2m per task. |
 | `notify-user --priority high` | `request` | The one notify surface that declares its own urgency, about a screen the owner may not be looking at. Throttled 5m per **toast content**, not per sender: keyed on the session, a second, different high toast a minute later was silently never spoken. |
 | ordinary toast, portal lifecycle, **anything spoken** | **not wired** | Ledger-only. `spoke` most deliberately: the owner heard it in the room, and a voice channel that reads the audio back is worse than one that stays quiet. |
@@ -381,7 +381,7 @@ subscriber you want is the one that *reads* mail rather than acting on it.
 
 **No lifecycle event is ever an `escalation`.** The interrupt tier stays the two
 conditions nothing clears without a human. What everything else gets is the
-**ledger** — `~/.agentwire/fleet-activity.jsonl`, read with `agentwire activity
+**ledger** — `~/.hermeswire/fleet-activity.jsonl`, read with `hermeswire activity
 list`, never pushed at anyone. That split is the design, and it exists because
 everything in a spool is eventually spoken; see
 [voice-layer.md](../voice-layer.md#fleet-awareness-two-tiers-because-everything-in-the-spool-gets-spoken-1016).
@@ -434,12 +434,12 @@ deliberate edit to a test that says why.
 ### CLI
 
 ```bash
-agentwire alerts subscribe <session>     # lease alerts for a session
-agentwire alerts unsubscribe <session>
-agentwire alerts list [--json]           # live leases, with their expiry
-agentwire alerts reindex [--json]        # rebuild the candidate index
+hermeswire alerts subscribe <session>     # lease alerts for a session
+hermeswire alerts unsubscribe <session>
+hermeswire alerts list [--json]           # live leases, with their expiry
+hermeswire alerts reindex [--json]        # rebuild the candidate index
 
-agentwire activity list [--limit N] [--hours N] [--event E] [-s SESSION] [--json]
+hermeswire activity list [--limit N] [--hours N] [--event E] [-s SESSION] [--json]
 ```
 
 `activity list` reads the ledger — the awareness tier, which nothing pushes.
@@ -483,17 +483,17 @@ skipped automatically because their pane 0 doesn't run an agent.
 ## CLI
 
 ```bash
-agentwire msg send --to <session|@all> [--kind note|done|request|escalation|ingest|voice|idle] [--ref <path>] <text | --body-file PATH>
-agentwire msg send --to agentwire-dev-fix-nav --kind done "PR #312 drafted"
-agentwire msg send --to anchor --kind ingest --ref /path/report.md "auth findings"  # passive
-agentwire msg send --to reviewer --kind request --body-file /tmp/findings.md       # code-bearing body, no escaping
-git diff --stat | agentwire msg send --to orch --body-file -                       # '-' reads stdin
-agentwire msg inbox [-s <session>]   # peek pending + passive (does not drain/consume)
-agentwire msg pull  [-s <session>]   # read + REMOVE passive (ingest) messages
-agentwire msg dead  [-s <session>]   # list dropped (dead-lettered) msgs + why
-agentwire msg dead  --purge [-s <session>] [--older-than 7d]  # clear the graveyard
-agentwire msg flush [-s <session>] [--force]  # attempt a drain now (gated unless --force)
-agentwire msg purge [<session>]      # drop a session's PENDING queue (self-heal a wedged inbox)
+hermeswire msg send --to <session|@all> [--kind note|done|request|escalation|ingest|voice|idle] [--ref <path>] <text | --body-file PATH>
+hermeswire msg send --to hermeswire-dev-fix-nav --kind done "PR #312 drafted"
+hermeswire msg send --to anchor --kind ingest --ref /path/report.md "auth findings"  # passive
+hermeswire msg send --to reviewer --kind request --body-file /tmp/findings.md       # code-bearing body, no escaping
+git diff --stat | hermeswire msg send --to orch --body-file -                       # '-' reads stdin
+hermeswire msg inbox [-s <session>]   # peek pending + passive (does not drain/consume)
+hermeswire msg pull  [-s <session>]   # read + REMOVE passive (ingest) messages
+hermeswire msg dead  [-s <session>]   # list dropped (dead-lettered) msgs + why
+hermeswire msg dead  --purge [-s <session>] [--older-than 7d]  # clear the graveyard
+hermeswire msg flush [-s <session>] [--force]  # attempt a drain now (gated unless --force)
+hermeswire msg purge [<session>]      # drop a session's PENDING queue (self-heal a wedged inbox)
 ```
 
 `--body-file PATH` (`-` for stdin, same shape as `gh --body-file`) exists
@@ -537,7 +537,7 @@ pending queue *past* the empty-box gate (it may land mid-draft, so it's an
 operator action; `--force` requires `-s` and never bypasses the `safe_deliver`
 gone/parked/non-agent/live-dialog guards).
 
-**GC on sender exit.** When a session is killed via `agentwire kill`, the drain
+**GC on sender exit.** When a session is killed via `hermeswire kill`, the drain
 GCs that sender's still-pending outbound across every recipient inbox so exited-
 sender report-backs don't accumulate: load-bearing kinds (`done`/`request`/
 `escalation`) dead-letter (and escalate via the owner-email path); the rest are
@@ -570,14 +570,14 @@ session right now.
 
 | Path | Purpose |
 |---|---|
-| `~/.agentwire/inbox/<session>/*.json` | queued driving messages (filename = order) |
-| `~/.agentwire/inbox/<session>/ingest/` | passive `ingest` messages — pull-only, drain never walks here |
-| `~/.agentwire/inbox/<session>/dead/` | dead-lettered after the attempt cap |
-| `~/.agentwire/inbox/<session>/.lock/` | mkdir-based per-session drain lock |
-| `~/.agentwire/inbox/.tick.lock` | global flock guarding `tick()` |
-| `~/.agentwire/inbox-events.jsonl` | audit log (enqueued/delivered/deferred/dead_letter) |
-| `~/.agentwire/sessions/<session>/metadata.json` → `fleet_alerts` | the subscription lease (see Fleet alerts) |
-| `~/.agentwire/fleet-alerts-events.jsonl` | audit log (subscribed/emitted/emit_failed) |
+| `~/.hermeswire/inbox/<session>/*.json` | queued driving messages (filename = order) |
+| `~/.hermeswire/inbox/<session>/ingest/` | passive `ingest` messages — pull-only, drain never walks here |
+| `~/.hermeswire/inbox/<session>/dead/` | dead-lettered after the attempt cap |
+| `~/.hermeswire/inbox/<session>/.lock/` | mkdir-based per-session drain lock |
+| `~/.hermeswire/inbox/.tick.lock` | global flock guarding `tick()` |
+| `~/.hermeswire/inbox-events.jsonl` | audit log (enqueued/delivered/deferred/dead_letter) |
+| `~/.hermeswire/sessions/<session>/metadata.json` → `fleet_alerts` | the subscription lease (see Fleet alerts) |
+| `~/.hermeswire/fleet-alerts-events.jsonl` | audit log (subscribed/emitted/emit_failed) |
 
 ## Scope (v1)
 

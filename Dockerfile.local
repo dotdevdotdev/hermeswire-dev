@@ -6,10 +6,10 @@
 # The Hermes Agent runtime image lives in Dockerfile.agent.
 #
 # Build:
-#   docker build -f Dockerfile.local -t agentwire-tts-local --build-arg HF_TOKEN=$HF_TOKEN .
+#   docker build -f Dockerfile.local -t hermeswire-tts-local --build-arg HF_TOKEN=$HF_TOKEN .
 #
 # Run:
-#   docker run --gpus all -p 8100:8100 -v ~/.agentwire/voices:/voices agentwire-tts-local
+#   docker run --gpus all -p 8100:8100 -v ~/.hermeswire/voices:/voices hermeswire-tts-local
 
 FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
 
@@ -48,8 +48,8 @@ RUN pip install --no-cache-dir \
 # Install Chatterbox TTS
 RUN pip install --no-cache-dir git+https://github.com/resemble-ai/chatterbox.git
 
-# Copy AgentWire source code
-COPY agentwire/ ./agentwire/
+# Copy HermesWire source code
+COPY hermeswire/ ./hermeswire/
 
 # Pre-download models (requires HF_TOKEN for Chatterbox)
 ARG HF_TOKEN
@@ -66,7 +66,7 @@ RUN python3 -c "from faster_whisper import WhisperModel; WhisperModel('large-v3'
 
 # Copy bundled synthetic voices (can override at runtime with -v mount)
 # Includes: default, darren, jessica, lisa, may
-COPY agentwire/voices/ /voices/
+COPY hermeswire/voices/ /voices/
 
 # Environment
 ENV PYTHONUNBUFFERED=1
@@ -76,4 +76,4 @@ ENV VOICES_DIR=/voices
 EXPOSE 8100
 
 # Run FastAPI server
-CMD ["python3", "-m", "uvicorn", "agentwire.tts_server:app", "--host", "0.0.0.0", "--port", "8100"]
+CMD ["python3", "-m", "uvicorn", "hermeswire.tts_server:app", "--host", "0.0.0.0", "--port", "8100"]

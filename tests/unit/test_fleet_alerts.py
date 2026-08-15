@@ -25,13 +25,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from agentwire import auth_expired, core, fleet_alerts, inbox, prompt_router, usage_limit
+from hermeswire import auth_expired, core, fleet_alerts, inbox, prompt_router, usage_limit
 
 
 @pytest.fixture
 def isolate(tmp_path, monkeypatch):
     """A throwaway config dir: session records, inboxes and event logs."""
-    root = tmp_path / "agentwire"
+    root = tmp_path / "hermeswire"
     (root / "sessions").mkdir(parents=True)
     monkeypatch.setattr(core, "CONFIG_DIR", root)
     monkeypatch.setattr(inbox, "INBOX_ROOT", root / "inbox")
@@ -238,7 +238,7 @@ class TestAuthExpired:
     def test_records_outage_and_escalates_to_the_listener(self, isolate, monkeypatch):
         _subscribe("listener")
         monkeypatch.setattr(
-            "agentwire.channels.email.send_email",
+            "hermeswire.channels.email.send_email",
             lambda **k: SimpleNamespace(success=False, error="no key"),
         )
         auth_expired.record_outage({"session": "task-a", "transcript": "/t.jsonl"})
@@ -251,7 +251,7 @@ class TestAuthExpired:
     def test_throttled_by_the_same_state_record(self, isolate, monkeypatch):
         _subscribe("listener")
         monkeypatch.setattr(
-            "agentwire.channels.email.send_email",
+            "hermeswire.channels.email.send_email",
             lambda **k: SimpleNamespace(success=False, error="no key"),
         )
         auth_expired.record_outage({"session": "a", "transcript": "/t.jsonl"})
@@ -272,7 +272,7 @@ class TestAuthExpired:
     def test_a_broken_alert_never_breaks_the_gate(self, isolate, monkeypatch):
         _subscribe("listener")
         monkeypatch.setattr(
-            "agentwire.channels.email.send_email",
+            "hermeswire.channels.email.send_email",
             lambda **k: SimpleNamespace(success=False, error="no key"),
         )
         monkeypatch.setattr(
@@ -304,7 +304,7 @@ class TestUsageLimitPark:
     def test_park_notice_reaches_the_listener_as_a_note(self, isolate, monkeypatch):
         _subscribe("listener")
         monkeypatch.setattr(
-            "agentwire.channels.email.send_email",
+            "hermeswire.channels.email.send_email",
             lambda **k: SimpleNamespace(success=True, error=None),
         )
         usage_limit._notify_parked(self._state())
@@ -317,7 +317,7 @@ class TestUsageLimitPark:
     def test_the_notice_survives_a_dead_email_channel(self, isolate, monkeypatch):
         _subscribe("listener")
         monkeypatch.setattr(
-            "agentwire.channels.email.send_email",
+            "hermeswire.channels.email.send_email",
             lambda **k: (_ for _ in ()).throw(RuntimeError("no provider")),
         )
         usage_limit._notify_parked(self._state())
@@ -339,7 +339,7 @@ class TestDeadLetters:
     def test_a_lost_done_is_a_request(self, isolate, monkeypatch):
         _subscribe("listener")
         monkeypatch.setattr(
-            "agentwire.channels.email.send_email",
+            "hermeswire.channels.email.send_email",
             lambda **k: SimpleNamespace(success=True, error=None),
         )
         inbox._escalate_dead_letters([_dead("done")], "target_gone")
@@ -349,7 +349,7 @@ class TestDeadLetters:
     def test_a_lost_escalation_stays_an_escalation(self, isolate, monkeypatch):
         _subscribe("listener")
         monkeypatch.setattr(
-            "agentwire.channels.email.send_email",
+            "hermeswire.channels.email.send_email",
             lambda **k: SimpleNamespace(success=True, error=None),
         )
         inbox._escalate_dead_letters([_dead("done"), _dead("escalation")], "target_gone")
@@ -363,7 +363,7 @@ class TestDeadLetters:
         """
         _subscribe("listener")
         monkeypatch.setattr(
-            "agentwire.channels.email.send_email",
+            "hermeswire.channels.email.send_email",
             lambda **k: SimpleNamespace(success=True, error=None),
         )
         inbox._escalate_dead_letters(
@@ -384,7 +384,7 @@ class TestDeadLetters:
         _subscribe("listener")
         _subscribe("second")
         monkeypatch.setattr(
-            "agentwire.channels.email.send_email",
+            "hermeswire.channels.email.send_email",
             lambda **k: SimpleNamespace(success=True, error=None),
         )
         inbox._escalate_dead_letters(
@@ -397,7 +397,7 @@ class TestDeadLetters:
     ):
         _subscribe("listener")
         monkeypatch.setattr(
-            "agentwire.channels.email.send_email",
+            "hermeswire.channels.email.send_email",
             lambda **k: SimpleNamespace(success=True, error=None),
         )
         inbox._escalate_dead_letters([_dead("done", to="listener")], "target_gone")
@@ -406,7 +406,7 @@ class TestDeadLetters:
     def test_one_alert_per_batch_not_per_message(self, isolate, monkeypatch):
         _subscribe("listener")
         monkeypatch.setattr(
-            "agentwire.channels.email.send_email",
+            "hermeswire.channels.email.send_email",
             lambda **k: SimpleNamespace(success=True, error=None),
         )
         inbox._escalate_dead_letters([_dead("done") for _ in range(147)], "target_gone")
@@ -446,12 +446,12 @@ class TestKeylessMachine:
 
     @pytest.fixture(autouse=True)
     def keyless(self, monkeypatch):
-        from agentwire.channels.email import EmailConfigError
+        from hermeswire.channels.email import EmailConfigError
 
         def raises(**kwargs):
             raise EmailConfigError("Email API key not configured.")
 
-        monkeypatch.setattr("agentwire.channels.email.send_email", raises)
+        monkeypatch.setattr("hermeswire.channels.email.send_email", raises)
 
     def test_no_parent_sweep_alerts_once_not_once_per_tick(
         self, isolate, monkeypatch, tmp_path
@@ -564,12 +564,12 @@ class TestNoStampWhenNobodyHeard:
 
     @pytest.fixture(autouse=True)
     def keyless(self, monkeypatch):
-        from agentwire.channels.email import EmailConfigError
+        from hermeswire.channels.email import EmailConfigError
 
         def raises(**kwargs):
             raise EmailConfigError("Email API key not configured.")
 
-        monkeypatch.setattr("agentwire.channels.email.send_email", raises)
+        monkeypatch.setattr("hermeswire.channels.email.send_email", raises)
 
     def test_auth_outage_alerts_a_subscriber_that_arrives_mid_incident(self, isolate):
         for _ in range(3):
@@ -682,7 +682,7 @@ class TestCliSurface:
     """CLI is the SSOT: an API only a branch can reach is not shipped."""
 
     def _run(self, argv: list[str]) -> int:
-        from agentwire.__main__ import build_parser
+        from hermeswire.__main__ import build_parser
 
         args = build_parser().parse_args(argv)
         return args.func(args)
@@ -765,7 +765,7 @@ class TestBlockedRootPane:
         monkeypatch.setattr(prompt_router, "EVENTS_FILE", tmp_path / "pr-events.jsonl")
         monkeypatch.setattr(prompt_router, "resolve_parent", lambda *a, **k: None)
         monkeypatch.setattr(
-            "agentwire.channels.email.send_email",
+            "hermeswire.channels.email.send_email",
             lambda **k: SimpleNamespace(success=True, error=None),
         )
         return lambda info=None: prompt_router.route_prompt(

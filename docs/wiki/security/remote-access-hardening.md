@@ -2,12 +2,12 @@
 
 > Living document. Update this, don't create new versions.
 >
-> Audit deliverable for [#396](https://github.com/dotdevdotdev/agentwire-dev/issues/396)
-> (portal-boundary hardening) and [#420](https://github.com/dotdevdotdev/agentwire-dev/issues/420)
+> Audit deliverable for [#396](https://github.com/dotdevdotdev/hermeswire-dev/issues/396)
+> (portal-boundary hardening) and [#420](https://github.com/dotdevdotdev/hermeswire-dev/issues/420)
 > (networking/tunnel footprint). Verified against the code on 2026-06-22.
-> Implementation lands in [#423](https://github.com/dotdevdotdev/agentwire-dev/issues/423)
-> / [#424](https://github.com/dotdevdotdev/agentwire-dev/issues/424)
-> / [#425](https://github.com/dotdevdotdev/agentwire-dev/issues/425).
+> Implementation lands in [#423](https://github.com/dotdevdotdev/hermeswire-dev/issues/423)
+> / [#424](https://github.com/dotdevdotdev/hermeswire-dev/issues/424)
+> / [#425](https://github.com/dotdevdotdev/hermeswire-dev/issues/425).
 
 ## TL;DR
 
@@ -17,8 +17,8 @@ refuse-to-start-without-token on non-loopback, constant-time compare, MCP stdio-
 
 Two corrections frame everything below:
 
-1. **agentwire owns no internet tunnel.** The phone→portal "from anywhere" path is the user's
-   own cloudflared/tailscale/ngrok — documentation, never code. agentwire's responsibility ends
+1. **hermeswire owns no internet tunnel.** The phone→portal "from anywhere" path is the user's
+   own cloudflared/tailscale/ngrok — documentation, never code. hermeswire's responsibility ends
    at *"the portal refuses unauthenticated requests regardless of what's in front of it."* (#420)
 2. **The real residual risk is blast radius, not the front door.** One shared god-token unlocks
    the entire ~90-route API, including a live interactive shell and the ability to disable its own
@@ -35,15 +35,15 @@ devices) was cut by the owner, so every credential is full-access and there is n
 
 | Item | Status | Shape |
 |---|---|---|
-| **#420** networking cuts | ✅ shipped | Tunnel auto-spawn removed from `portal start`; reverse-tunnel (`autossh -R` / `~/.local/bin/agentwire-tunnels`) guidance stripped from `machine add/remove`; `network status` is read-only (already was — confirmed). `agentwire tunnels *` stays as an opt-in manual helper, never auto-fired. |
+| **#420** networking cuts | ✅ shipped | Tunnel auto-spawn removed from `portal start`; reverse-tunnel (`autossh -R` / `~/.local/bin/hermeswire-tunnels`) guidance stripped from `machine add/remove`; `network status` is read-only (already was — confirmed). `hermeswire tunnels *` stays as an opt-in manual helper, never auto-fired. |
 | **#425** freeze config | ✅ shipped | `POST /api/config` rejects (403) any change to frozen keys `server.auth_token`, `server.host`, `executables`, `services`, `safety`; `POST /api/safety/config` is frozen entirely (host-edit-only). The read-side redaction round-trip is now reversed on save so the editor can't blank `auth_token`. Constant: `security.FROZEN_CONFIG_KEYS`. |
-| **#423** per-device creds | ✅ shipped | New `agentwire/devices.py`: `devices.json` registry (0600) stores a **sha256 hash** per device + `pairings.json` for short-lived codes. Pairing: `agentwire portal pair` → code + QR → `GET /pair?code=` page → `POST /api/pair` mints a device token. Middleware resolves the presented token to a device (bootstrap token = synthetic `host` device, else registry lookup); unknown/revoked → 401. CLI: `portal pair` / `portal devices` / `portal revoke <id>`. |
+| **#423** per-device creds | ✅ shipped | New `hermeswire/devices.py`: `devices.json` registry (0600) stores a **sha256 hash** per device + `pairings.json` for short-lived codes. Pairing: `hermeswire portal pair` → code + QR → `GET /pair?code=` page → `POST /api/pair` mints a device token. Middleware resolves the presented token to a device (bootstrap token = synthetic `host` device, else registry lookup); unknown/revoked → 401. CLI: `portal pair` / `portal devices` / `portal revoke <id>`. |
 | **#424** scopes | ❌ dropped | Not-planned. No `full`/`ptt`, no per-route allowlist, no PTT session whitelist. |
 
-**Auth model now:** the bootstrap token (`~/.agentwire/portal.token` / `server.auth_token`) is the
+**Auth model now:** the bootstrap token (`~/.hermeswire/portal.token` / `server.auth_token`) is the
 host/owner full credential used by the CLI, MCP, hooks and daemons — unchanged. *Remote* devices no
 longer paste that shared token; they pair to get their own named, individually-revocable credential.
-Revoking one device (`agentwire portal revoke dev_xxxx`) doesn't log out the others. Every credential
+Revoking one device (`hermeswire portal revoke dev_xxxx`) doesn't log out the others. Every credential
 is full-access. The registry is read through an mtime-cached loader so revocation takes effect on the
 next request without a portal restart.
 
@@ -51,15 +51,15 @@ next request without a portal restart.
 
 ## Part 1 — Network footprint map (#420)
 
-### What agentwire actually opens / owns
+### What hermeswire actually opens / owns
 
 | # | Touchpoint | Code | What it is | Verdict |
 |---|---|---|---|---|
 | **C** | Portal bind / host / token / TLS | `config.py` (`ServerConfig.host="127.0.0.1"` @ `config.py:70`, `SSLConfig`), `server.py`, `security.py` | **The actual boundary.** HTTP(S) listener, default `127.0.0.1:8765`; non-loopback bind requires a token; self-signed TLS when cert+key exist. | **KEEP** — the only thing #396 hardens |
-| **A** | `agentwire tunnels up/down/status/check` + MCP `tunnels_*` | `tunnels.py` (395 LOC), `network.py` (205), CLI handlers | SSH `-L` port-forward **manager** (create / track-PID / health / teardown) to reach a *service* on another box. Was auto-invoked at **portal startup** via `NetworkContext.get_required_tunnels()` + `TunnelManager.create_tunnel` (the old `__main__.py:835-857` call site no longer exists post-#495 split). | **CUT the auto-spawn** — since shipped; see "What shipped" above |
-| **B** | `agentwire network status` + MCP `network_status` | `doctor_cli.py::cmd_network_status` | Read-only diagnostic: machine SSH reachability + service health + tunnel rows + worker sessions. | **SCOPE-DOWN** to read-only (decouple from create-missing) |
-| **D** | Remote-machine wiring | `machines.json`, `machine add/remove/list`, MCP `machine_*` | SSH-based remote **session** management (`name@machine`, `ssh -t … tmux attach`). Core feature. But `machine add` prints `autossh -R` reverse-tunnel next-steps + references `~/.local/bin/agentwire-tunnels`. | **KEEP**, strip the reverse-tunnel print |
-| **E** | Tunnel-provider integration (cloudflared/ngrok/tailscale) | **none** | Doc-only (`remote-access.md`). `grep -rE 'cloudflared\|ngrok\|tailscale' agentwire/` over code returns only CORS comments. | **already BYO** — reframe docs only |
+| **A** | `hermeswire tunnels up/down/status/check` + MCP `tunnels_*` | `tunnels.py` (395 LOC), `network.py` (205), CLI handlers | SSH `-L` port-forward **manager** (create / track-PID / health / teardown) to reach a *service* on another box. Was auto-invoked at **portal startup** via `NetworkContext.get_required_tunnels()` + `TunnelManager.create_tunnel` (the old `__main__.py:835-857` call site no longer exists post-#495 split). | **CUT the auto-spawn** — since shipped; see "What shipped" above |
+| **B** | `hermeswire network status` + MCP `network_status` | `doctor_cli.py::cmd_network_status` | Read-only diagnostic: machine SSH reachability + service health + tunnel rows + worker sessions. | **SCOPE-DOWN** to read-only (decouple from create-missing) |
+| **D** | Remote-machine wiring | `machines.json`, `machine add/remove/list`, MCP `machine_*` | SSH-based remote **session** management (`name@machine`, `ssh -t … tmux attach`). Core feature. But `machine add` prints `autossh -R` reverse-tunnel next-steps + references `~/.local/bin/hermeswire-tunnels`. | **KEEP**, strip the reverse-tunnel print |
+| **E** | Tunnel-provider integration (cloudflared/ngrok/tailscale) | **none** | Doc-only (`remote-access.md`). `grep -rE 'cloudflared\|ngrok\|tailscale' hermeswire/` over code returns only CORS comments. | **already BYO** — reframe docs only |
 
 ### The key fact about the SSH service-router (A)
 
@@ -74,16 +74,16 @@ networking business" liability the owner wants out of.
 
 ### Target posture (#420)
 
-> agentwire owns the portal's **local security boundary** (127.0.0.1 default, token-gated LAN
+> hermeswire owns the portal's **local security boundary** (127.0.0.1 default, token-gated LAN
 > opt-in, self-signed TLS — see Part 2/3) and SSH-based remote **session** management (machines
 > list, `/api/sessions/remote`, `ssh -t … tmux attach`). It does **not** own internet exposure or
 > service-routing tunnels — those are bring-your-own, documented but never code.
 
 ### #420 follow-up cuts (separate from the #396 auth wave)
 
-- Remove the tunnel auto-spawn from `portal start` (was `__main__.py:835-857`, pre-#495 split — that call site is gone); decide delete-vs-thin-helper for `agentwire tunnels *` / `tunnels.py` / the `network.py` tunnel paths.
-- Reframe `docs/wiki/deployment/remote-access.md` as a provider-agnostic BYO-tunnel guide; strip personal `solodev.dev` specifics; state plainly that agentwire ships no tunnel code.
-- Strip `autossh -R` reverse-tunnel guidance + `~/.local/bin/agentwire-tunnels` from `machine add/remove` output — keep pure session management.
+- Remove the tunnel auto-spawn from `portal start` (was `__main__.py:835-857`, pre-#495 split — that call site is gone); decide delete-vs-thin-helper for `hermeswire tunnels *` / `tunnels.py` / the `network.py` tunnel paths.
+- Reframe `docs/wiki/deployment/remote-access.md` as a provider-agnostic BYO-tunnel guide; strip personal `solodev.dev` specifics; state plainly that hermeswire ships no tunnel code.
+- Strip `autossh -R` reverse-tunnel guidance + `~/.local/bin/hermeswire-tunnels` from `machine add/remove` output — keep pure session management.
 - Scope `network status` / `network_status` to read-only diagnostics.
 - Add a single "Exposing the portal" posture doc (local boundary vs BYO internet), linked from quickstart.
 
@@ -99,16 +99,16 @@ tunnel in front of it.
 
 ```
 any device  ──▶  BYO tunnel (cloudflared/tailscale)  ──▶  portal :8765  ──▶  tmux / shell
-            (user owns this — agentwire ships no code)    (agentwire's boundary)
+            (user owns this — hermeswire ships no code)    (hermeswire's boundary)
 ```
 
-agentwire can only harden the last hop. Everything below is about that hop.
+hermeswire can only harden the last hop. Everything below is about that hop.
 
 ### How a device authenticates today
 
-- **Single shared bearer token** at `~/.agentwire/portal.token` (0600, auto-generated by
+- **Single shared bearer token** at `~/.hermeswire/portal.token` (0600, auto-generated by
   `ensure_auth_token`, `security.py:123`).
-- HTTP: `Authorization: Bearer <token>`. WebSocket: `Sec-WebSocket-Protocol: agentwire.bearer.<token>`
+- HTTP: `Authorization: Bearer <token>`. WebSocket: `Sec-WebSocket-Protocol: hermeswire.bearer.<token>`
   subprotocol (keeps the token out of the URL → out of logs/referrers — good).
 - Constant-time compare (`hmac.compare_digest`, `security.py:368`).
 - One aiohttp middleware (`create_security_middleware`, `security.py:562`) enforces **two** layers:
@@ -134,7 +134,7 @@ radius:
 **Public / unauthenticated** (`_is_public_path`, `security.py:239`): `GET /`, `GET /mobile`,
 `GET /pair`, `GET /health`, `GET /static/*`, `GET /manifest.webmanifest`, `GET /service-worker.js`,
 and `POST /api/pair` (gated instead by its own short-lived pairing code). Page shells + healthcheck —
-do nothing without the token, but confirm "an agentwire portal lives here" (fingerprint).
+do nothing without the token, but confirm "an hermeswire portal lives here" (fingerprint).
 
 ### Residual gaps (ranked)
 
@@ -146,12 +146,12 @@ do nothing without the token, but confirm "an agentwire portal lives here" (fing
 3. **Config-write is an auth-disable + RCE pivot.** `POST /api/config` writes raw YAML; an attacker
    who's in can set `auth_token: ""`, rewrite `executables`, and persist. → **#425**
 4. **Safety rules are API-writable.** `POST /api/safety/config` can disable the rm-rf hooks with
-   the same token — defense-in-depth defeated by one secret. → **#425** *(closed; **#466/#467** then went further — the kill switch, rules, and allowlist moved out of `config.yaml`/`.agentwire.yml` entirely into the protected, agent-unwritable `~/.agentwire/damagecontrol.yml` + `<repo>/.damagecontrol.yml`, closing the **local-agent** write path too, not just the token/API one.)*
+   the same token — defense-in-depth defeated by one secret. → **#425** *(closed; **#466/#467** then went further — the kill switch, rules, and allowlist moved out of `config.yaml`/`.hermeswire.yml` entirely into the protected, agent-unwritable `~/.hermeswire/damagecontrol.yml` + `<repo>/.damagecontrol.yml`, closing the **local-agent** write path too, not just the token/API one.)*
 5. **No auth-failure logging, no lockout, no alerting.** 401s are silent. → backlog (action E).
 6. **Token transport relies on opt-in TLS.** SSL only turns on if cert+key exist (`SSLConfig.enabled`, `config.py:52-60`).
    A non-loopback *plaintext* LAN bind sends the bearer token in cleartext. Fine when the BYO
    tunnel terminates TLS; a footgun for a bare LAN bind. → backlog (action F).
-7. **Unauthenticated fingerprint.** `/health`, `/`, `/mobile` confirm agentwire pre-token.
+7. **Unauthenticated fingerprint.** `/health`, `/`, `/mobile` confirm hermeswire pre-token.
    → backlog (action G), low priority.
 
 ### What's already good (the floor — bless it, don't rebuild)
@@ -164,7 +164,7 @@ do nothing without the token, but confirm "an agentwire portal lives here" (fing
   locally, **never network-exposed.** Not part of the remote surface at all. (`mcp_server.py` is now
   a thin ~51-line per-domain import index post-#495 split.)
 - **Artifact DELETE path-traversal is already closed** — `api_artifacts_delete`
-  (`agentwire/routes/artifacts.py:128`, post-#560 server.py split) allowlists filenames to
+  (`hermeswire/routes/artifacts.py:128`, post-#560 server.py split) allowlists filenames to
   `^[a-zA-Z0-9_\-][a-zA-Z0-9_\-\.]*$`, so the `{filename:.+}` route can't be walked out of the
   artifacts dir. (Audit's earlier "open question" → resolved. The *upload* write target is still
   worth a glance but is constrained to the artifacts dir.)
@@ -184,14 +184,14 @@ every other defense. Closing the write path means even a fully-compromised token
 persistence or auth-disable.
 
 **Design:**
-- In `api_save_config` (`POST /api/config`, `agentwire/routes/config.py`) and `api_safety_config_post`
-  (`POST /api/safety/config`, `agentwire/routes/safety.py`), treat a fixed set of keys as
+- In `api_save_config` (`POST /api/config`, `hermeswire/routes/config.py`) and `api_safety_config_post`
+  (`POST /api/safety/config`, `hermeswire/routes/safety.py`), treat a fixed set of keys as
   **host-file-edit-only** and reject any request that attempts to change them: `server.auth_token`,
   `server.host`, `executables`, `services` (the RCE-bearing ones), and the safety-disable toggles.
 - Reject = compare the incoming value against the on-disk value for those keys; if changed, return
-  `403` with a message naming the frozen key and pointing to "edit `~/.agentwire/config.yaml` on
+  `403` with a message naming the frozen key and pointing to "edit `~/.hermeswire/config.yaml` on
   the host." Don't silently drop — be honest about why.
-- Read-side redaction already exists (`agentwire/routes/config.py::api_get_config`) but is cosmetic;
+- Read-side redaction already exists (`hermeswire/routes/config.py::api_get_config`) but is cosmetic;
   this closes the **write** path it implies.
 - Frozen-key list lives in one constant so it's auditable and so #424's `ptt` scope can reuse it
   ("ptt can't touch config at all" is a superset of "nobody can touch these keys via API").
@@ -204,11 +204,11 @@ disable a safety rule via the API — each returns 403; each still editable by h
 **Why second:** #424 needs a device identity to hang a scope on. This issue creates that identity.
 
 **Design:**
-- Replace the single `portal.token` with a **device registry** under `~/.agentwire/` (e.g.
+- Replace the single `portal.token` with a **device registry** under `~/.hermeswire/` (e.g.
   `devices.json`, 0600): each entry `{ id, name, token_hash, scope, created, last_seen, revoked }`.
   Store a **hash** of each device token, not the token itself (the host never needs the plaintext
   after issuance).
-- **Issuance via pairing**, host-shown: `agentwire portal pair [--name <device>] [--scope full|ptt]`
+- **Issuance via pairing**, host-shown: `hermeswire portal pair [--name <device>] [--scope full|ptt]`
   prints a short-lived pairing code and a QR (encoding the portal URL + code). The device posts the
   code to a `POST /api/pair` endpoint (itself gated by the pairing code, time-boxed), receives a
   freshly-minted device token, and stores it in `localStorage` as today.
@@ -218,8 +218,8 @@ disable a safety rule via the API — each returns 403; each still editable by h
 - **Backward-compat:** none required (pre-launch). The existing single `portal.token` becomes the
   bootstrap/first-device credential or is migrated to one registry entry on upgrade — pick one,
   don't keep both code paths.
-- CLI: `agentwire portal devices` (list), `agentwire portal revoke <id>` (revoke one without
-  logging out the rest), `agentwire portal pair` (add).
+- CLI: `hermeswire portal devices` (list), `hermeswire portal revoke <id>` (revoke one without
+  logging out the rest), `hermeswire portal pair` (add).
 
 **Verification:** pair two devices; revoke one; the revoked device gets 401 on every non-public
 route while the other keeps working; actions are attributable to a named device.
@@ -241,7 +241,7 @@ token from full RCE into "can talk to one session."
   `/api/scheduler/tasks/*/run`, `/api/machines`, everything else → `403`.
 - `full` retains everything (subject to #425's frozen-config keys, which apply to all scopes).
 - The PTT target whitelist lives on the device entry (`{ scope: "ptt", session: "<name>" }`), set at
-  pairing time (`agentwire portal pair --scope ptt --session mysession`).
+  pairing time (`hermeswire portal pair --scope ptt --session mysession`).
 
 **Verification:** pair a `ptt` device; it can transcribe + send to its whitelisted session but gets
 `403` on `/ws/terminal/*`, `/api/create`, `/api/config`, `/api/safety/config`; a `full` device

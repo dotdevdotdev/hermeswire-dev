@@ -1,0 +1,621 @@
+"""Portal security: Origin validation (CSRF guard) and per-device bearer auth.
+
+Two layers, both enforced by a single aiohttp middleware:
+
+1. Origin check — on every state-changing request (POST/PUT/DELETE/PATCH) and
+   WebSocket upgrade, a present ``Origin`` header must match the portal's own
+   origin, a localhost equivalent, or an entry in ``server.allowed_origins``.
+   Absent Origin is allowed (curl/CLI/scripts don't send one). Always on.
+
+2. Token auth — when auth is configured, every request outside the public
+   bootstrap surface (``GET /``, ``/mobile``, ``/pair``, ``/health``,
+   ``/static/*``, ``POST /api/pair``) must carry a credential:
+   ``Authorization: Bearer <token>`` on HTTP, or a
+   ``Sec-WebSocket-Protocol: hermeswire.bearer.<token>`` subprotocol on WS
+   upgrades. The presented token resolves to a *device* — either the bootstrap
+   token (``~/.hermeswire/portal.token`` / ``server.auth_token``, used by the
+   CLI/MCP/hooks) or a paired device in the registry (``devices.json``; see
+   :mod:`hermeswire.devices`). Unknown or revoked → 401. Every credential is
+   full-access; per-device identity buys named, individually-revocable
+   attribution, not capability scoping.
+
+``server.auth_token`` semantics: ``None`` → use the token file; ``""`` →
+disable auth (loopback binds only); any other string → explicit override.
+"""
+
+import base64
+import hashlib
+import hmac
+import ipaddress
+import logging
+import re
+import secrets
+import time
+from pathlib import Path
+from typing import Callable, Optional
+from urllib.parse import urlsplit
+
+import yaml
+from aiohttp import web
+
+from . import devices as devices_mod
+from .devices import BOOTSTRAP_DEVICE, Device
+
+logger = logging.getLogger(__name__)
+
+MUTATING_METHODS = {"POST", "PUT", "DELETE", "PATCH"}
+TOKEN_FILE = Path.home() / ".hermeswire" / "portal.token"
+WS_PROTOCOL_PREFIX = "hermeswire.bearer."
+_LOCALHOST_NAMES = {"localhost", "127.0.0.1", "::1"}
+
+# Config keys that the portal API must never be able to change — editing them is
+# host-file-only (#425). A leaked/compromised token must not be able to disable
+# its own auth, rewrite the executables/services that run as RCE, move the bind
+# host, or turn off the rm-rf damage-control rules.
+FROZEN_CONFIG_KEYS = (
+    "server.auth_token",
+    "server.host",
+    "executables",
+    "services",
+    "safety",
+)
+REDACTION_MARKER = "[REDACTED]"
+_REDACTED_FIELDS = ("api_key", "auth_token")
+
+
+# ---------------------------------------------------------------------------
+# Token lifecycle
+
+
+def generate_token() -> str:
+    """Generate a new portal auth token (32 bytes, urlsafe)."""
+    return secrets.token_urlsafe(32)
+
+
+def read_token_file() -> Optional[str]:
+    """Read the token file. None if missing or empty."""
+    try:
+        token = TOKEN_FILE.read_text().strip()
+    except OSError:
+        return None
+    return token or None
+
+
+def write_token_file(token: str) -> None:
+    """Write the token file with owner-only permissions.
+
+    Atomic and never wider than 0600 — the guarantee this function has always
+    made, now made by :func:`core.write_owner_only`, which is where that
+    technique lives for every owner-only file hermeswire writes (#887). The
+    import is function-local: ``core`` is imported by hooks and the CLI, and
+    must never be made to pull in this module's aiohttp dependency.
+    """
+    from .core import write_owner_only
+
+    write_owner_only(TOKEN_FILE, token + "\n")
+
+
+def resolve_auth_token(config) -> Optional[str]:
+    """Effective token: config override wins, else the token file.
+
+    ``server.auth_token`` semantics: None = use token file, "" = auth
+    disabled, anything else = explicit override.
+    """
+    if config.server.auth_token is not None:
+        return config.server.auth_token or None
+    return read_token_file()
+
+
+def ensure_auth_token(config) -> Optional[str]:
+    """Resolve the token, auto-generating the token file when nothing is set.
+
+    Returns None only when auth is explicitly disabled (auth_token: "").
+    """
+    if config.server.auth_token == "":
+        return None
+    token = resolve_auth_token(config)
+    if token is None:
+        token = generate_token()
+        write_token_file(token)
+        logger.info("Generated portal auth token at %s", TOKEN_FILE)
+    return token
+
+
+def get_local_portal_token() -> Optional[str]:
+    """Token for local callers (CLI, MCP, daemons, hooks) hitting the portal.
+
+    Reads ``server.auth_token`` from ~/.hermeswire/config.yaml if set,
+    else the token file. Standalone so raw-dict config consumers can use it.
+    """
+    config_path = Path.home() / ".hermeswire" / "config.yaml"
+    try:
+        data = yaml.safe_load(config_path.read_text()) or {}
+        override = data.get("server", {}).get("auth_token")
+        if override is not None:
+            return str(override) or None
+    except OSError:
+        pass
+    return read_token_file()
+
+
+# ---------------------------------------------------------------------------
+# Bind / startup policy
+
+
+def is_loopback_host(host: str) -> bool:
+    """True when the bind host only accepts local connections."""
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        # Hostnames and anything unparseable: assume reachable from outside.
+        return False
+
+
+def validate_startup_security(config) -> None:
+    """Refuse unsafe non-loopback binds.
+
+    Two guards, both only apply when the bind host is reachable from the network:
+
+    1. **No auth token** — refuse always (the portal would be wide open).
+    2. **Plaintext transport** — when TLS is off, the bearer token rides the wire
+       in cleartext (``Authorization: Bearer <token>``). Refuse unless the
+       operator explicitly opts in with ``server.allow_insecure: true`` (the BYO
+       reverse-tunnel case, where the tunnel terminates TLS and connects to the
+       portal locally).
+
+    Call after ``ensure_auth_token()`` has populated config.server.auth_token.
+    """
+    if is_loopback_host(config.server.host):
+        return
+    if not config.server.auth_token:
+        raise SystemExit(
+            f"Refusing to start: server.host is {config.server.host!r} (reachable "
+            "from the network) but portal auth is disabled (server.auth_token: \"\" "
+            "in config). Either remove auth_token from config to use the generated "
+            "token, run `hermeswire portal token --rotate` to create one, or bind "
+            "to 127.0.0.1."
+        )
+    if not config.server.ssl.enabled and not getattr(
+        config.server, "allow_insecure", False
+    ):
+        raise SystemExit(
+            f"Refusing to start: server.host is {config.server.host!r} (reachable "
+            "from the network) but TLS is not configured, so the auth token would "
+            "transit the network in cleartext (Authorization: Bearer ...). Either "
+            "configure server.ssl.cert/key, bind to 127.0.0.1, or — if a reverse "
+            "tunnel terminates TLS in front of the portal — set "
+            "server.allow_insecure: true to acknowledge the plaintext local bind."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Request checks
+
+
+def _is_websocket_upgrade(request: web.Request) -> bool:
+    return request.headers.get("Upgrade", "").lower() == "websocket"
+
+
+def _effective_port(scheme: str, netloc_port: Optional[int]) -> int:
+    if netloc_port:
+        return netloc_port
+    return 443 if scheme in ("https", "wss") else 80
+
+
+def origin_allowed(origin: str, request: web.Request, allowed_origins: list) -> bool:
+    """Whether a browser Origin may make state-changing requests."""
+    if origin in allowed_origins:
+        return True
+    # The portal's own origin (request.host includes the port when non-default)
+    if origin == f"{request.scheme}://{request.host}":
+        return True
+    # Localhost equivalents on the same effective port
+    parsed = urlsplit(origin)
+    own = urlsplit(f"{request.scheme}://{request.host}")
+    return (
+        parsed.hostname in _LOCALHOST_NAMES
+        and own.hostname in _LOCALHOST_NAMES
+        and _effective_port(parsed.scheme, parsed.port)
+        == _effective_port(request.scheme, own.port)
+    )
+
+
+def _is_public_path(request: web.Request) -> bool:
+    """The unauthenticated bootstrap surface: page shells, health, pairing.
+
+    ``POST /api/pair`` is public because an unpaired device has no token yet — it
+    is instead gated by the short-lived pairing code it must present.
+    """
+    path = request.path
+    if request.method == "POST":
+        return path == "/api/pair"
+    if request.method != "GET":
+        return False
+    # PWA bootstrap files must be fetchable before any token exists: the browser
+    # requests the manifest and service worker as part of installing the app.
+    if path in ("/manifest.webmanifest", "/service-worker.js"):
+        return True
+    return path in ("/", "/mobile", "/pair", "/health") or path.startswith("/static/")
+
+
+# ---------------------------------------------------------------------------
+# Frozen security-critical config (#425)
+
+
+def _dig(data, dotted: str):
+    """Walk a dotted path into a nested dict; None if any segment is missing."""
+    cur = data
+    for part in dotted.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            return None
+        cur = cur[part]
+    return cur
+
+
+def _load_yaml(text: str) -> dict:
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+_REDACTED_LINE = re.compile(
+    r'^(?P<indent>[ \t]*)(?P<field>[A-Za-z0-9_]+)(?P<sep>[ \t]*:[ \t]*)'
+    r'["\']?\[REDACTED\]["\']?[ \t]*(?P<eol>\r?\n?)$'
+)
+_MAPPING_KEY = re.compile(r'^(?P<indent>[ \t]*)(?P<key>[A-Za-z0-9_]+)[ \t]*:[ \t]*(?P<val>.*?)[ \t]*\r?\n?$')
+
+
+def restore_redactions(new_content: str, old_content: str) -> str:
+    """Reverse the read-side secret redaction before a config save.
+
+    ``GET /api/config`` replaces ``auth_token``/``api_key`` values with
+    ``"[REDACTED]"``. Saving that text back verbatim would overwrite the real
+    secret on disk (and falsely trip the frozen-key check on
+    ``server.auth_token``).
+
+    Restores each redacted field to the on-disk value **at its own YAML path** —
+    so multiple ``api_key`` entries (e.g. several service credentials) each get
+    their own secret back, not a single global first-match. Operates on the raw text so
+    comments and formatting survive the round-trip; only redacted scalar lines
+    change.
+    """
+    old = _load_yaml(old_content)
+    out: list[str] = []
+    stack: list[tuple[int, str]] = []  # (indent, key) path to the current mapping
+
+    for line in new_content.splitlines(keepends=True):
+        key_m = _MAPPING_KEY.match(line)
+        if key_m:
+            indent = len(key_m.group("indent").expandtabs())
+            # Pop siblings/deeper levels so the path reflects this key's parent.
+            while stack and stack[-1][0] >= indent:
+                stack.pop()
+            red_m = _REDACTED_LINE.match(line)
+            if red_m and red_m.group("field") in _REDACTED_FIELDS:
+                path = ".".join([k for _, k in stack] + [red_m.group("field")])
+                real = _dig(old, path)
+                if real is not None:
+                    out.append(
+                        f'{red_m.group("indent")}{red_m.group("field")}'
+                        f'{red_m.group("sep")}{_yaml_scalar(real)}{red_m.group("eol")}'
+                    )
+                    continue  # scalar leaf — don't push onto the path
+            # A key that opens a nested mapping (no inline value) extends the path.
+            if key_m.group("val") == "":
+                stack.append((indent, key_m.group("key")))
+        out.append(line)
+
+    return "".join(out)
+
+
+def _yaml_scalar(value) -> str:
+    if isinstance(value, str):
+        return f'"{value}"'
+    return str(value)
+
+
+def frozen_config_violations(new_content: str, old_content: str) -> list[str]:
+    """Frozen keys whose value differs between the submitted and on-disk config.
+
+    Run *after* :func:`restore_redactions` so a redacted-but-unchanged
+    ``auth_token`` doesn't read as a change. An empty list means the save is
+    allowed.
+    """
+    new = _load_yaml(new_content)
+    old = _load_yaml(old_content)
+    return [key for key in FROZEN_CONFIG_KEYS if _dig(new, key) != _dig(old, key)]
+
+
+def _extract_token(request: web.Request, is_ws: bool) -> Optional[str]:
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        return auth[len("Bearer "):]
+    if is_ws:
+        for proto in request.headers.get("Sec-WebSocket-Protocol", "").split(","):
+            proto = proto.strip()
+            if proto.startswith(WS_PROTOCOL_PREFIX):
+                return proto[len(WS_PROTOCOL_PREFIX):]
+    return None
+
+
+def resolve_device(provided: Optional[str], auth_token: Optional[str]) -> Optional[Device]:
+    """Resolve a presented token to a device, or None.
+
+    The bootstrap token (``portal.token`` / config override) maps to a synthetic
+    full-scope ``host`` device; everything else is looked up (by hash) in the
+    device registry. Revoked devices resolve to None.
+    """
+    if not provided:
+        return None
+    if auth_token and hmac.compare_digest(provided.encode(), auth_token.encode()):
+        return BOOTSTRAP_DEVICE
+    return devices_mod.load_registry_cached().resolve(provided)
+
+
+# ---------------------------------------------------------------------------
+# Security response headers (CSP & friends)
+
+_TEMPLATES_DIR = Path(__file__).parent / "templates"
+_INLINE_SCRIPT_RE = re.compile(r"<script\b[^>]*>(.*?)</script>", re.DOTALL | re.IGNORECASE)
+
+
+def _inline_script_hashes() -> list[str]:
+    """CSP sha256 sources for inline <script> blocks in the bundled templates.
+
+    The pair page ships a small inline module (no Jinja interpolation inside
+    it), so ``script-src 'self'`` alone would break pairing. Hashing the blocks
+    at startup keeps script-src locked down while auto-healing when a template's
+    inline script changes.
+    """
+    hashes: list[str] = []
+    try:
+        for tpl in sorted(_TEMPLATES_DIR.glob("*.html")):
+            for m in _INLINE_SCRIPT_RE.finditer(tpl.read_text()):
+                body = m.group(1)
+                if not body.strip():
+                    continue
+                digest = base64.b64encode(hashlib.sha256(body.encode()).digest()).decode()
+                hashes.append(f"'sha256-{digest}'")
+    except OSError:
+        pass
+    return hashes
+
+
+def _build_csp() -> str:
+    """Portal-wide Content-Security-Policy.
+
+    Constraints baked in from the real UI:
+    - xterm.js / marked load from cdn.jsdelivr.net (script + css).
+    - Inline <style> attributes are used throughout (and WinBox injects a
+      style element) → style-src needs 'unsafe-inline'.
+    - WinBox uses data: SVG background images; uploads render as blobs.
+    - The dashboard/session/terminal WebSockets need ws:/wss:, and the
+      announcement modal fetches raw.githubusercontent.com.
+    - Voice playback uses blob: audio; browser STT records via MediaRecorder.
+    """
+    script_src = " ".join(["'self'", "https://cdn.jsdelivr.net"] + _inline_script_hashes())
+    return "; ".join([
+        "default-src 'self'",
+        f"script-src {script_src}",
+        # fonts.googleapis.com: the Council window injects a Google Fonts
+        # stylesheet (council-window.js); fonts.gstatic.com serves the woff2s.
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com",
+        "img-src 'self' data: blob:",
+        "font-src 'self' data: https://fonts.gstatic.com",
+        "connect-src 'self' ws: wss: https://raw.githubusercontent.com",
+        "media-src 'self' blob: data:",
+        "worker-src 'self' blob:",
+        "frame-src 'self'",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "frame-ancestors 'self'",
+    ])
+
+
+# Artifacts are agent-generated HTML rendered in sandboxed iframes; they may
+# legitimately carry inline scripts/styles and pull CDN libraries, so the
+# policy stays permissive on content while locking embedding (frame-ancestors)
+# and plugins. The iframe sandbox attribute remains the primary containment.
+_ARTIFACTS_CSP = "; ".join([
+    "default-src 'self' 'unsafe-inline' data: blob: https:",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "frame-ancestors 'self'",
+])
+
+
+def create_security_headers_middleware(hsts_enabled: bool = False):
+    """Middleware stamping security response headers on every response.
+
+    HSTS is opt-in (``server.hsts``) and emitted only on TLS requests: hermeswire
+    commonly serves HTTPS with a self-signed cert, and a pinned HSTS policy
+    removes the cert-error click-through — a rotated/expired self-signed cert
+    would hard-lock the browser out of the portal.
+    """
+    csp = _build_csp()
+
+    @web.middleware
+    async def security_headers_middleware(request: web.Request, handler):
+        try:
+            response = await handler(request)
+        except web.HTTPException as exc:
+            _stamp_security_headers(request, exc, csp, hsts_enabled)
+            raise
+        _stamp_security_headers(request, response, csp, hsts_enabled)
+        return response
+
+    return security_headers_middleware
+
+
+def _stamp_security_headers(
+    request: web.Request, response, csp: str, hsts_enabled: bool
+) -> None:
+    headers = response.headers
+    headers.setdefault("X-Content-Type-Options", "nosniff")
+    headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    headers.setdefault("Referrer-Policy", "same-origin")
+    if request.path.startswith("/artifacts/"):
+        headers["Content-Security-Policy"] = _ARTIFACTS_CSP
+    else:
+        headers.setdefault("Content-Security-Policy", csp)
+    if hsts_enabled and request.secure:
+        headers.setdefault("Strict-Transport-Security", "max-age=31536000")
+
+
+# ---------------------------------------------------------------------------
+# Bounded multipart reads (upload DoS guard)
+
+
+async def read_multipart_field_limited(field, max_bytes: int) -> bytes:
+    """Read a multipart field, aborting with 413 once ``max_bytes`` is exceeded.
+
+    ``await field.read()`` buffers the entire part into RAM before any size
+    check can run (aiohttp's ``client_max_size`` does not bound the streaming
+    ``request.multipart()`` path) — an oversized upload would balloon the
+    portal's memory before being rejected. Streaming chunk-by-chunk caps the
+    buffered amount at ``max_bytes`` + one chunk.
+    """
+    chunks: list[bytes] = []
+    size = 0
+    while True:
+        chunk = await field.read_chunk()
+        if not chunk:
+            break
+        size += len(chunk)
+        if size > max_bytes:
+            raise web.HTTPRequestEntityTooLarge(
+                max_size=max_bytes, actual_size=size,
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+# ---------------------------------------------------------------------------
+# Auth-failure tracking + lockout (gap #5)
+
+# A token-spray against an internet-exposed portal must not be invisible. We log
+# every rejected credential and count failures per source IP over a sliding
+# window; once a non-loopback IP crosses the threshold it is locked out (429)
+# for the rest of the window and the owner is notified once. Loopback is never
+# counted or locked — local dev/CLI/MCP/hooks fail-and-retry freely.
+AUTH_FAIL_WINDOW = 300.0  # seconds
+AUTH_FAIL_LOCKOUT = 10    # failures within the window before an IP is locked out
+
+
+class AuthFailureTracker:
+    """Sliding-window per-IP auth-failure counter with lockout.
+
+    ``record`` appends a failure and returns the count in the current window;
+    ``is_locked`` reports whether an IP has reached the lockout threshold. State
+    is pruned lazily so the dict can't grow unbounded.
+    """
+
+    def __init__(self, threshold: int = AUTH_FAIL_LOCKOUT, window: float = AUTH_FAIL_WINDOW):
+        self.threshold = threshold
+        self.window = window
+        self._fails: dict[str, list[float]] = {}
+
+    def _live(self, ip: str, now: float) -> list[float]:
+        cutoff = now - self.window
+        return [t for t in self._fails.get(ip, []) if t > cutoff]
+
+    def is_locked(self, ip: str, *, now: Optional[float] = None) -> bool:
+        now = time.monotonic() if now is None else now
+        return len(self._live(ip, now)) >= self.threshold
+
+    def record(self, ip: str, *, now: Optional[float] = None) -> int:
+        """Record a failure for ``ip``; return its failure count in the window."""
+        now = time.monotonic() if now is None else now
+        cutoff = now - self.window
+        # Prune every IP's stale timestamps, then drop emptied buckets, so the
+        # dict can't grow unbounded under a spray from many one-off source IPs.
+        pruned = {
+            k: kept
+            for k, ts in self._fails.items()
+            if (kept := [t for t in ts if t > cutoff])
+        }
+        live = pruned.get(ip, [])
+        live.append(now)
+        pruned[ip] = live
+        self._fails = pruned
+        return len(live)
+
+
+def create_security_middleware(
+    auth_token: Optional[str],
+    allowed_origins: list,
+    on_lockout: Optional[Callable[[str, int], None]] = None,
+):
+    """Build the aiohttp middleware enforcing origin + per-device token auth.
+
+    ``auth_token`` is the bootstrap credential. Auth is enforced whenever it is
+    set *or* the registry holds an active paired device; a loopback dev portal
+    with neither configured stays open (origin checks still cover the browser).
+
+    ``on_lockout(ip, failures)`` is invoked once when a non-loopback IP first
+    crosses the failure threshold — wire it to the owner-notification path.
+    """
+    tracker = AuthFailureTracker()
+
+    @web.middleware
+    async def security_middleware(request: web.Request, handler):
+        is_ws = _is_websocket_upgrade(request)
+
+        # Origin check: browser CSRF guard on mutations + WS upgrades.
+        if request.method in MUTATING_METHODS or is_ws:
+            origin = request.headers.get("Origin")
+            if origin and not origin_allowed(origin, request, allowed_origins):
+                logger.warning(
+                    "Rejected %s %s from disallowed origin %s",
+                    request.method, request.path, origin,
+                )
+                raise web.HTTPForbidden(text="Origin not allowed")
+
+        auth_enabled = bool(auth_token) or bool(
+            devices_mod.load_registry_cached().active()
+        )
+        if auth_enabled and not _is_public_path(request):
+            ip = request.remote or "?"
+            # Loopback callers (CLI/MCP/hooks/local dev) are exempt from the
+            # spray lockout so a bad local token never wedges the dev portal.
+            countable = not is_loopback_host(ip)
+            if countable and tracker.is_locked(ip):
+                logger.warning(
+                    "Locked out %s %s from %s (too many auth failures)",
+                    request.method, request.path, ip,
+                )
+                raise web.HTTPTooManyRequests(
+                    text="Too many failed auth attempts — try again later.",
+                )
+            provided = _extract_token(request, is_ws)
+            device = resolve_device(provided, auth_token)
+            if device is None:
+                failures = tracker.record(ip) if countable else 0
+                logger.warning(
+                    "Rejected %s %s: invalid auth token from %s (failures: %d)",
+                    request.method, request.path, ip, failures,
+                )
+                if countable and failures >= tracker.threshold:
+                    if on_lockout is not None:
+                        try:
+                            on_lockout(ip, failures)
+                        except Exception:
+                            logger.exception("auth-lockout notification failed")
+                    raise web.HTTPTooManyRequests(
+                        text="Too many failed auth attempts — try again later.",
+                    )
+                raise web.HTTPUnauthorized(
+                    text="Missing or invalid auth token",
+                    headers={"WWW-Authenticate": 'Bearer realm="hermeswire"'},
+                )
+            request["device"] = device
+            if device.id != BOOTSTRAP_DEVICE.id:
+                devices_mod.load_registry_cached().touch(device.id)
+
+        return await handler(request)
+
+    return security_middleware

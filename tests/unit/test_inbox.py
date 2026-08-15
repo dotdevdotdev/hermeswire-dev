@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from agentwire import inbox, prompt_router
+from hermeswire import inbox, prompt_router
 
 
 @pytest.fixture
@@ -274,7 +274,7 @@ class TestBroadcast:
 
 
 def _patch_delivery(monkeypatch, empty=True, deliver=(True, "delivered"), box=None):
-    from agentwire import usage_limit
+    from hermeswire import usage_limit
     monkeypatch.setattr(usage_limit, "_capture", lambda s, **kw: "dummy screen")
     monkeypatch.setattr(prompt_router, "capture", lambda s, p=0, **kw: "dummy screen")
     # Default non-empty box content VARIES per sweep (an actively-edited draft);
@@ -539,7 +539,7 @@ class TestTick:
 class TestEscalation:
     def test_busy_screen_defers_target_busy(self, isolate, monkeypatch):
         inbox.enqueue("s", "PR done", kind="done", sender="worker")
-        monkeypatch.setattr("agentwire.usage_limit._capture", lambda s, **kw: "dummy")
+        monkeypatch.setattr("hermeswire.usage_limit._capture", lambda s, **kw: "dummy")
         monkeypatch.setattr(prompt_router, "input_box_content_sgr", lambda vis: None)
         monkeypatch.setattr(prompt_router, "is_agent_pane", lambda s, p: True)
 
@@ -551,7 +551,7 @@ class TestEscalation:
 
     def test_done_under_threshold_defers_box_not_empty(self, isolate, monkeypatch):
         inbox.enqueue("s", "PR done", kind="done", sender="worker")
-        monkeypatch.setattr("agentwire.usage_limit._capture", lambda s, **kw: "dummy")
+        monkeypatch.setattr("hermeswire.usage_limit._capture", lambda s, **kw: "dummy")
         monkeypatch.setattr(prompt_router, "input_box_content_sgr", lambda vis: "draft content")
         monkeypatch.setattr(prompt_router, "is_agent_pane", lambda s, p: True)
 
@@ -566,7 +566,7 @@ class TestEscalation:
         msg.attempts = 10
         inbox._write_message(msg.path, msg)
 
-        monkeypatch.setattr("agentwire.usage_limit._capture", lambda s, **kw: "dummy")
+        monkeypatch.setattr("hermeswire.usage_limit._capture", lambda s, **kw: "dummy")
         monkeypatch.setattr(prompt_router, "input_box_content_sgr", lambda vis: "draft content")
         monkeypatch.setattr(prompt_router, "is_agent_pane", lambda s, p: True)
         sent = []
@@ -584,7 +584,7 @@ class TestEscalation:
         msg.attempts = 10
         inbox._write_message(msg.path, msg)
 
-        monkeypatch.setattr("agentwire.usage_limit._capture", lambda s, **kw: "dummy")
+        monkeypatch.setattr("hermeswire.usage_limit._capture", lambda s, **kw: "dummy")
         monkeypatch.setattr(prompt_router, "input_box_content_sgr", lambda vis: None)
         monkeypatch.setattr(prompt_router, "is_agent_pane", lambda s, p: True)
 
@@ -600,7 +600,7 @@ class TestEscalation:
         msg.attempts = 10
         inbox._write_message(msg.path, msg)
 
-        monkeypatch.setattr("agentwire.usage_limit._capture", lambda s, **kw: "dummy")
+        monkeypatch.setattr("hermeswire.usage_limit._capture", lambda s, **kw: "dummy")
         monkeypatch.setattr(prompt_router, "input_box_content_sgr", lambda vis: "draft content")
         monkeypatch.setattr(prompt_router, "is_agent_pane", lambda s, p: False)
 
@@ -628,7 +628,7 @@ class TestParkedDefer:
     @pytest.fixture
     def park(self, tmp_path, monkeypatch):
         """Park/un-park a session for real, on a throwaway state dir."""
-        from agentwire import session_ready, usage_limit
+        from hermeswire import session_ready, usage_limit
 
         state_dir = tmp_path / "usage-limit"
         state_dir.mkdir(parents=True, exist_ok=True)
@@ -765,7 +765,7 @@ class TestTargetGone:
     def test_gone_target_penalizes_not_target_busy(self, isolate, monkeypatch):
         monkeypatch.setattr(inbox, "live_sessions", lambda: {"someone-else"})
         # Old-bug conditions: the gone session's capture yields no parseable box.
-        monkeypatch.setattr("agentwire.usage_limit._capture", lambda s, **kw: "")
+        monkeypatch.setattr("hermeswire.usage_limit._capture", lambda s, **kw: "")
         monkeypatch.setattr(prompt_router, "capture", lambda s, p=0, **kw: "")
         inbox.enqueue("ghost", "hi", sender="w")
         res = inbox.flush_session("ghost")
@@ -796,7 +796,7 @@ class TestTargetGone:
         inbox._write_message(m.path, m)
         monkeypatch.setattr(inbox, "live_sessions", lambda: set())
         monkeypatch.setattr(
-            "agentwire.channels.email.send_email",
+            "hermeswire.channels.email.send_email",
             lambda **kw: SimpleNamespace(success=True),
         )
         for _ in range(inbox.GONE_MAX_ATTEMPTS - 1):
@@ -810,7 +810,7 @@ class TestTargetGone:
         # recipient: the ordinary defer path applies (here: unparseable box →
         # target_busy, no penalty) so a reboot can't nuke queued report-backs.
         monkeypatch.setattr(inbox, "live_sessions", lambda: None)
-        monkeypatch.setattr("agentwire.usage_limit._capture", lambda s, **kw: "")
+        monkeypatch.setattr("hermeswire.usage_limit._capture", lambda s, **kw: "")
         monkeypatch.setattr(prompt_router, "capture", lambda s, p=0, **kw: "")
         monkeypatch.setattr(prompt_router, "input_box_content_sgr", lambda vis: None)
         inbox.enqueue("ghost", "hi", sender="w")
@@ -834,7 +834,7 @@ class TestTargetGone:
         monkeypatch.setattr(inbox, "live_sessions", lambda: set())
         emails = []
         monkeypatch.setattr(
-            "agentwire.channels.email.send_email",
+            "hermeswire.channels.email.send_email",
             lambda **kw: emails.append(kw) or SimpleNamespace(success=True),
         )
         inbox.enqueue("ghost", "PR #1 drafted", kind="done", sender="w")
@@ -851,7 +851,7 @@ class TestDeadLetterEscalation:
     must never break the drain."""
 
     def _occupied_agent(self, monkeypatch):
-        monkeypatch.setattr("agentwire.usage_limit._capture", lambda s, **kw: "dummy")
+        monkeypatch.setattr("hermeswire.usage_limit._capture", lambda s, **kw: "dummy")
         # Varying draft per sweep — identical content would hit the no-penalty
         # box_static path (#669) and never dead-letter.
         calls = {"n": 0}
@@ -865,7 +865,7 @@ class TestDeadLetterEscalation:
 
     def _capture_email(self, monkeypatch, sink):
         monkeypatch.setattr(
-            "agentwire.channels.email.send_email",
+            "hermeswire.channels.email.send_email",
             lambda **kw: sink.append(kw) or SimpleNamespace(success=True),
         )
 
@@ -912,7 +912,7 @@ class TestDeadLetterEscalation:
         def boom(**kw):
             raise RuntimeError("resend down")
 
-        monkeypatch.setattr("agentwire.channels.email.send_email", boom)
+        monkeypatch.setattr("hermeswire.channels.email.send_email", boom)
         for _ in range(inbox.MAX_ATTEMPTS):
             inbox.flush_session("s")
         assert len(inbox.list_dead("s")) == 1  # drain survived; corpse archived
@@ -968,7 +968,7 @@ class TestIdempotentDelivery:
     subset."""
 
     def _patch(self, monkeypatch, deliver, scrollback):
-        from agentwire import session_ready, usage_limit
+        from hermeswire import session_ready, usage_limit
         # #689: "on scrollback" now means outside a parseable input box — a bare
         # rendered line with no box no longer counts (it could be sitting unsent
         # in the box). Model a real delivered state: text above an EMPTY box.
@@ -1018,7 +1018,7 @@ class TestIdempotentDelivery:
         # messages shared a fragment and the 2nd was silently consumed against
         # the 1st's scrollback line. Full-line keying keeps them distinct: only
         # the first (on scrollback) is consumed; the second stays pending.
-        sender = "agentwire-dev-fix-621-inbox"  # 27 chars — blows the 32 budget
+        sender = "hermeswire-dev-fix-621-inbox"  # 27 chars — blows the 32 budget
         a = inbox.enqueue("orch", "first report alpha", kind="done", sender=sender)[0]
         inbox.enqueue("orch", "second report beta", kind="done", sender=sender)
         self._patch(monkeypatch, deliver=(False, "delivery_unverified"),
@@ -1033,7 +1033,7 @@ class TestIdempotentDelivery:
         # A.text is a strict prefix of B.text (same sender + kind). B is on
         # scrollback; A's full rendered line would be a substring of B's WITHOUT
         # the unique id token. The token must keep A from being consumed.
-        sender = "agentwire-dev-fix-621-inbox"
+        sender = "hermeswire-dev-fix-621-inbox"
         inbox.enqueue("orch", "done: phase 1", kind="done", sender=sender)
         b = inbox.enqueue("orch", "done: phase 1 and 2 complete", kind="done", sender=sender)[0]
         self._patch(monkeypatch, deliver=(False, "delivery_unverified"),
@@ -1090,7 +1090,7 @@ class TestPurgePending:
         inbox.enqueue("s", "active", sender="x")
         inbox.enqueue("s", "passive", kind="ingest", sender="x")
         # dead-letter one
-        monkeypatch.setattr("agentwire.usage_limit._capture", lambda s, **kw: "dummy")
+        monkeypatch.setattr("hermeswire.usage_limit._capture", lambda s, **kw: "dummy")
         monkeypatch.setattr(prompt_router, "input_box_content_sgr", lambda vis: "draft")
         monkeypatch.setattr(prompt_router, "is_agent_pane", lambda s, p=0: True)
         msgs = inbox.enqueue("s", "doomed", kind="done", sender="x")
@@ -1111,7 +1111,7 @@ class TestPurgePending:
 class TestForceFlush:
     def test_force_pastes_despite_nonempty_box(self, isolate, monkeypatch):
         inbox.enqueue("s", "urgent", kind="done", sender="w")
-        monkeypatch.setattr("agentwire.usage_limit._capture", lambda s, **kw: "dummy")
+        monkeypatch.setattr("hermeswire.usage_limit._capture", lambda s, **kw: "dummy")
         monkeypatch.setattr(prompt_router, "input_box_content_sgr", lambda vis: "draft")
         monkeypatch.setattr(prompt_router, "is_agent_pane", lambda s, p=0: True)
         sent = []
@@ -1177,7 +1177,7 @@ class TestGcSender:
         # actually be caught here.
         sent = []
         monkeypatch.setattr(
-            "agentwire.channels.email.send_email",
+            "hermeswire.channels.email.send_email",
             lambda **kw: sent.append(kw) or SimpleNamespace(success=True),
         )
         inbox.enqueue("orch", "PR drafted", kind="done", sender="worker")
@@ -1242,7 +1242,7 @@ class TestStuckInBox:
     an Enter-only retry (never a re-paste) and unlink only once submitted."""
 
     def _patch(self, monkeypatch, box_content, finish_ok):
-        from agentwire import session_ready, usage_limit
+        from hermeswire import session_ready, usage_limit
         monkeypatch.setattr(usage_limit, "_capture", lambda s: "dummy screen")
         monkeypatch.setattr(
             prompt_router, "input_box_content_sgr", lambda vis: box_content)

@@ -1,10 +1,10 @@
-"""Tests for agentwire/utils/file_io.py — JSON/YAML load/save utilities."""
+"""Tests for hermeswire/utils/file_io.py — JSON/YAML load/save utilities."""
 
 import json
 
 import pytest
 
-from agentwire.utils.file_io import load_json, load_yaml, save_json, save_yaml
+from hermeswire.utils.file_io import load_json, load_yaml, save_json, save_yaml
 
 # --- load/save JSON ---
 

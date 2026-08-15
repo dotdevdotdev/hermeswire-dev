@@ -1,4 +1,4 @@
-"""Unit tests for ``agentwire helper`` — the no-isolation worker session (#838).
+"""Unit tests for ``hermeswire helper`` — the no-isolation worker session (#838).
 
 The feature is composition, so these tests pin the composition: what
 ``cmd_helper`` hands ``cmd_new``, and the invariants that make sharing a
@@ -12,9 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from agentwire import worktree_cli, worktree_registry
-from agentwire.roles import discover_role, resolve_roles
-from agentwire.worktree import worktree_session_name
+from hermeswire import worktree_cli, worktree_registry
+from hermeswire.roles import discover_role, resolve_roles
+from hermeswire.worktree import worktree_session_name
 
 
 @pytest.fixture
@@ -34,7 +34,7 @@ def repo(tmp_path):
 @pytest.fixture
 def captured_new(monkeypatch):
     """Replace ``session_cli.cmd_new`` and capture the args it's handed."""
-    from agentwire import session_cli
+    from hermeswire import session_cli
 
     seen = {}
 
@@ -72,7 +72,7 @@ class TestSessionName:
     def test_no_slash_so_cmd_new_cannot_read_it_as_a_branch(self, tmp_path):
         # A "project/branch" name would send cmd_new down the worktree path —
         # the exact thing this verb must never trigger.
-        from agentwire.worktree import parse_session_name
+        from hermeswire.worktree import parse_session_name
         name = worktree_session_name(tmp_path / "myapp", "some/thing")
         assert parse_session_name(name)[1] is None
 
@@ -219,7 +219,7 @@ class TestNoGitFootprint:
 
 
 def test_registered_on_the_cli():
-    from agentwire.__main__ import build_parser
+    from hermeswire.__main__ import build_parser
     args = build_parser().parse_args(["helper", "digest", "-p", "/tmp/x"])
     assert args.func is worktree_cli.cmd_helper
     assert args.name == "digest"

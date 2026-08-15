@@ -1,14 +1,14 @@
 # Conversation identity
 
-Every agentwire session records, at launch, **which Claude conversation it is**
+Every hermeswire session records, at launch, **which Claude conversation it is**
 — plus everything needed to reconstruct that launch. Written to
-`~/.agentwire/sessions/<name>/metadata.json` by exactly one function,
+`~/.hermeswire/sessions/<name>/metadata.json` by exactly one function,
 `core.record_session_launch`.
 
 Before this, a session's conversation id was unrecoverable except by scraping
 tmux scrollback for the resume id Claude prints on `/exit`.
 
-## agentwire mints the UUID
+## hermeswire mints the UUID
 
 `claude --session-id <uuid>` lets the caller choose the conversation id, so
 `build_agent_command` generates one and passes it at launch. The record is
@@ -29,8 +29,8 @@ Two verified properties of the flag shape everything else:
 
 ## The flag is single-use; the launch line is not (#901)
 
-The line agentwire builds is stored in the tmux session env as
-`AGENTWIRE_LAUNCH_CMD` and **exists to be re-run** — that is the entire point
+The line hermeswire builds is stored in the tmux session env as
+`HERMESWIRE_LAUNCH_CMD` and **exists to be re-run** — that is the entire point
 of [#856/#866](../internals/shell-escaping.md). Putting a single-use
 `--session-id` in it made those two facts contradict each other:
 
@@ -43,7 +43,7 @@ of [#856/#866](../internals/shell-escaping.md). Putting a single-use
 ```
 
 That stranded 13 live sessions on one machine. The reasoning that let it ship
-was "nothing inside agentwire re-evaluates that variable" — true, and beside
+was "nothing inside hermeswire re-evaluates that variable" — true, and beside
 the point: the variable is a **public re-entry point**, so "nothing in our code
 calls it" is not "it is not called."
 
@@ -108,12 +108,12 @@ line twice under both zsh and bash.
 
   "posture": "bypass",                // enough to REGENERATE the system prompt,
   "roles": ["worker-worktree", "soul"], //   not merely to reference it
-  "role_prompt_path": "/Users/…/.agentwire/role-prompts/<conversation-id>.txt"
+  "role_prompt_path": "/Users/…/.hermeswire/role-prompts/<conversation-id>.txt"
 }
 ```
 
 The prompt file is written **0600 in a 0700 directory**, matching the posture of
-`~/.agentwire/.env`. Both modes are forced rather than requested — `mkdir(mode=)`
+`~/.hermeswire/.env`. Both modes are forced rather than requested — `mkdir(mode=)`
 and `open(mode=)` are masked by umask and neither touches an already-existing
 path, so a directory created before this rule heals on the next write. The
 remote mirror sets the same modes on the far side.
@@ -136,7 +136,7 @@ directory. A session older than the GC window relaunched with an **empty**
 system prompt: the conversation came back, the role did not, and nothing
 failed loudly — the agent just quietly stopped being a worker.
 
-Fixed by moving the prompt to `~/.agentwire/role-prompts/<conversation-id>.txt`
+Fixed by moving the prompt to `~/.hermeswire/role-prompts/<conversation-id>.txt`
 (`core.role_prompts_dir()`), keyed by conversation so the prompt a conversation
 launched with stays recoverable even after its session's roles change. The
 remote launch paths mirror the file to the *same* durable location on the
@@ -159,7 +159,7 @@ prompt. Exit-deletion reintroduces the `/var/folders` bug above with a tidier
 implementation. The lifetime that matters is the **conversation**, not the
 session: one conversation chain outlives many kill/recreate cycles.
 
-The rule (`agentwire/role_prompts.py`):
+The rule (`hermeswire/role_prompts.py`):
 
 1. **Reachable is forever.** A prompt whose conversation id appears in any
    session's `conversation_ids` chain — or in its recorded `role_prompt_path`
@@ -180,7 +180,7 @@ The rule (`agentwire/role_prompts.py`):
 
 Where it runs: the sweep rides the limits watchdog (which already owns the
 periodic housekeeping), self-throttled to once a day via
-`~/.agentwire/role-prompt-sweep.json`. `agentwire doctor` reports the store's
+`~/.hermeswire/role-prompt-sweep.json`. `hermeswire doctor` reports the store's
 size and reachability split, and flags only the **aged-out tail** — because
 unreachable-but-young files are the normal steady state, a surviving tail means
 the watchdog sweep isn't running. `doctor --yes` sweeps.
@@ -190,7 +190,7 @@ agents' system prompts:
 
 - Reachability globs `sessions/**/metadata.json`, **recursively**. Session
   names contain slashes by design — `tmux_safe_name` rewrites only `.` and `:`,
-  and `project/branch` is what every `agentwire worktree` and every scheduler
+  and `project/branch` is what every `hermeswire worktree` and every scheduler
   dispatch is called — so those records nest one level deeper than a flat glob
   looks. A flat `sessions/*/metadata.json` found 469 of 1106 records in the
   wild: 58% of live conversations reading as unreachable, with age the only
@@ -199,7 +199,7 @@ agents' system prompts:
   parameters**. Only `tick()` resolves the real ones.
 - `core.role_prompts_dir()` is a **function**, not the import-time constant it
   used to be. A constant does not follow this repo's isolation seam
-  (`monkeypatch.setattr("agentwire.core.CONFIG_DIR", tmp_path)`), so a test
+  (`monkeypatch.setattr("hermeswire.core.CONFIG_DIR", tmp_path)`), so a test
   that believed it had isolated the config dir would still have pointed a
   deletion pass at the operator's real store.
 - Only regular files named `<uuid4>.txt` directly inside the store are ever
@@ -219,7 +219,7 @@ key to **detect** this. Migrating the history is separate follow-up work.
 This is the most important thing to know before building on the record, and it
 is easy to assume the opposite.
 
-`conversation_ids` records what agentwire **launched**. It says nothing about
+`conversation_ids` records what hermeswire **launched**. It says nothing about
 whether Claude still **has** that conversation. The two can diverge:
 
 - A moved worktree orphans the history (above) — the file still exists, under a
@@ -238,7 +238,7 @@ recorded to *regenerate* the prompt rather than merely reference it), and say
 so, rather than passing `--resume <id>` and surfacing Claude's raw
 `No conversation found with session ID`.
 
-Concretely: `agentwire restart` handles it as a normal branch, and the `doctor`
+Concretely: `hermeswire restart` handles it as a normal branch, and the `doctor`
 check distinguishes *orphaned* (history exists under a different cwd key —
 recoverable by migration) from *gone* (no history anywhere — not recoverable,
 relaunch fresh).
@@ -268,7 +268,7 @@ path with a dot, underscore or space.
 
 ## Restarting in place
 
-`agentwire restart -s <session>` is the verb the record exists for: `/exit`,
+`hermeswire restart -s <session>` is the verb the record exists for: `/exit`,
 regenerate the launch flags, relaunch at the same cwd with `--resume`. The
 alternatives all cost something — `recreate` `rm -rf`s the worktree and cuts a
 new branch, `history resume` forks into a *new* tmux session, `kill` + `new`
@@ -277,7 +277,7 @@ currently running, which is the post-reboot case the epic opens with.
 
 **Regenerate, never re-evaluate.** The flags are rebuilt from the recorded
 `roles` / `posture` / `model` through `build_agent_command`. The previous
-launch line is still sitting in the tmux session env as `AGENTWIRE_LAUNCH_CMD`,
+launch line is still sitting in the tmux session env as `HERMESWIRE_LAUNCH_CMD`,
 and re-`eval`ing it is the one thing that must not happen: it carries a
 single-use `--session-id`, so the relaunch dies with "already in use" and drops
 the pane to exactly the bare shell `_guarded_launch_command` exists to prevent.
@@ -309,7 +309,7 @@ creation.
 
 ## Detecting orphaned history
 
-`agentwire doctor` reports sessions whose conversation is intact but keyed to a
+`hermeswire doctor` reports sessions whose conversation is intact but keyed to a
 directory they no longer run in. The key it compares against is where the
 session **runs** — its live pane cwd (`core.tmux_session_cwd`) when it's up,
 else `cwd_at_launch` — which is what catches the case where the record and the
@@ -430,7 +430,7 @@ sessions that agreed:
 `history.encode_project_path` is the one implementation. It previously replaced
 only `/`, which silently produced a non-existent directory for any path holding
 a dot, underscore or space — including `~/.claude` and
-`~/.agentwire/council/<n>/workspace`. The lookup then found nothing and
+`~/.hermeswire/council/<n>/workspace`. The lookup then found nothing and
 reported nothing, the same dot-shaped bug class as #865 → #868 → #870 → #878.
 
 **There is no inverse, and `decode_project_path` was deleted rather than
@@ -442,7 +442,7 @@ ambiguity, pinning the bug as intended behaviour.
 
 A consequence worth naming: `/p/a_b` and `/p/a.b` are distinct directories that
 **share one history directory**. That is a property of Claude Code, not
-something agentwire can repair, and it is why a migration destination may
+something hermeswire can repair, and it is why a migration destination may
 already hold an unrelated project's transcripts.
 
 ### Is a conversation resumable?
@@ -464,18 +464,18 @@ id having been used before. A recorded id is therefore never a promise that
 
 Move a worktree and its transcripts stay behind under the old key, so
 `--resume` fails with *"No conversation found with session ID"* while the file
-sits intact on disk. `agentwire history migrate` re-keys it.
+sits intact on disk. `hermeswire history migrate` re-keys it.
 
 ```bash
-agentwire history migrate --all                 # dry run: what's orphaned
-agentwire history migrate -s <session>          # reconcile one session
-agentwire history migrate --from OLD --to NEW   # a move agentwire never saw
-agentwire history migrate ... --apply           # perform it
+hermeswire history migrate --all                 # dry run: what's orphaned
+hermeswire history migrate -s <session>          # reconcile one session
+hermeswire history migrate --from OLD --to NEW   # a move hermeswire never saw
+hermeswire history migrate ... --apply           # perform it
 ```
 
 **Why a `history migrate` verb and not `worktree --move`.** #871 originally
 asked for the latter, describing a flag that does not exist. A move verb would
-only repair moves made *through agentwire*, and that is the minority of them —
+only repair moves made *through hermeswire*, and that is the minority of them —
 `git worktree move`, a plain `mv`, and a reorganised `~/worktrees` orphan
 history identically and would all still be broken. The damage is not caused by
 moving; it is caused by the recorded cwd and the real cwd disagreeing, which
@@ -526,7 +526,7 @@ transcripts have been observed disappearing on their own, and a never-prompted
 session never had one. A sweep reports sessions it cannot judge as a counted
 summary rather than a wall of lines — counted, never silently dropped.
 
-An interrupted run can leave a `.agentwire-migrate-<hex>` staging directory
+An interrupted run can leave a `.hermeswire-migrate-<hex>` staging directory
 behind; `apply` sweeps them before starting. A staging directory only ever
 holds a *copy* — the source is untouched until after publication — so clearing
 one cannot lose history.

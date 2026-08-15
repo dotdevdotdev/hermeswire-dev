@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-STATIC_JS = Path(__file__).resolve().parents[2] / "agentwire" / "static" / "js"
+STATIC_JS = Path(__file__).resolve().parents[2] / "hermeswire" / "static" / "js"
 
 
 @pytest.fixture(scope="module")

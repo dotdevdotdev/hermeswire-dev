@@ -2,7 +2,7 @@
 
 > Living document. Update this, don't create new versions.
 
-Common issues and solutions for AgentWire.
+Common issues and solutions for HermesWire.
 
 ---
 
@@ -10,32 +10,32 @@ Common issues and solutions for AgentWire.
 
 ```bash
 # Auto-diagnose and fix common issues
-agentwire doctor
+hermeswire doctor
 
 # Show what would be fixed without making changes
-agentwire doctor --dry-run
+hermeswire doctor --dry-run
 
 # Auto-fix everything without prompts
-agentwire doctor --yes
+hermeswire doctor --yes
 
 # Walk ONLY the push-to-talk path (fast, no SSH waits): mic, STT shim,
 # portal/tunnel, tmux+PTT — each pass/fail with a fix line when red
-agentwire doctor --voice
+hermeswire doctor --voice
 
 # Check network/service health
-agentwire network status
+hermeswire network status
 ```
 
 ### Voice doesn't work / push-to-talk seems dead
 
-`agentwire doctor --voice` walks the live voice loop end to end and tells you
+`hermeswire doctor --voice` walks the live voice loop end to end and tells you
 which link is broken with a next step:
 
 | Stage | Red means | Fix |
 |-------|-----------|-----|
 | **Mic / audio capture** | ffmpeg missing, or (macOS) no input device — mic permission revoked | Grant the mic in System Settings → Privacy → Microphone, or `brew install ffmpeg` |
-| **STT process** | the Moonshine `:8101` shim (default tier) or your custom shim isn't responding | `agentwire stt start` (the portal also auto-starts the default shim) |
-| **Tunnel / portal reachability** | the portal isn't up, or a required reverse tunnel is down | `agentwire portal start` / `agentwire tunnels up` |
+| **STT process** | the Moonshine `:8101` shim (default tier) or your custom shim isn't responding | `hermeswire stt start` (the portal also auto-starts the default shim) |
+| **Tunnel / portal reachability** | the portal isn't up, or a required reverse tunnel is down | `hermeswire portal start` / `hermeswire tunnels up` |
 | **tmux wiring + PTT binding** | tmux is missing (no way to deliver keystrokes); host ⌥Space binding absent (informational) | `brew install tmux`; for host PTT copy `examples/hammerspoon-ptt/init.lua` |
 
 Break one dependency and exactly that stage goes red while the others stay
@@ -68,13 +68,13 @@ sudo apt install python3.12
 **Fix:** Use a virtual environment
 
 ```bash
-python3 -m venv ~/.agentwire-venv
-source ~/.agentwire-venv/bin/activate
-echo 'source ~/.agentwire-venv/bin/activate' >> ~/.bashrc
-pip install agentwire-dev
+python3 -m venv ~/.hermeswire-venv
+source ~/.hermeswire-venv/bin/activate
+echo 'source ~/.hermeswire-venv/bin/activate' >> ~/.bashrc
+pip install hermeswire-dev
 ```
 
-### "agentwire: command not found"
+### "hermeswire: command not found"
 
 **Cause:** Installation directory not in PATH.
 
@@ -112,7 +112,7 @@ sudo apt install ffmpeg
 
 **Fix:**
 
-1. Generate certificates: `agentwire generate-certs`
+1. Generate certificates: `hermeswire generate-certs`
 2. Open https://localhost:8765 in browser
 3. Click "Advanced" > "Proceed to localhost (unsafe)"
 4. Browser will remember the exception
@@ -122,7 +122,7 @@ sudo apt install ffmpeg
 **Check status:**
 
 ```bash
-agentwire portal status
+hermeswire portal status
 ```
 
 **Common causes:**
@@ -130,13 +130,13 @@ agentwire portal status
 | Cause | Fix |
 |-------|-----|
 | Port in use | `lsof -i :8765` to find process, kill it |
-| Missing SSL certs | `agentwire generate-certs` |
+| Missing SSL certs | `hermeswire generate-certs` |
 | tmux not running | `tmux new -d -s test && tmux kill-session -t test` |
 
 **Start with debug output:**
 
 ```bash
-agentwire portal serve  # Runs in foreground with logs
+hermeswire portal serve  # Runs in foreground with logs
 ```
 
 ### WebSocket Connection Failed
@@ -158,28 +158,28 @@ agentwire portal serve  # Runs in foreground with logs
 **Check TTS server:**
 
 ```bash
-agentwire tts status
+hermeswire tts status
 ```
 
 **If not running:**
 
 ```bash
-agentwire tts start
+hermeswire tts start
 ```
 
 **Test TTS directly:**
 
 ```bash
-agentwire say "Hello world"
+hermeswire say "Hello world"
 ```
 
 **Check configuration:**
 
 ```yaml
-# ~/.agentwire/config.yaml
+# ~/.hermeswire/config.yaml
 tts:
   backend: "custom"          # default = in-process Kokoro (no service to debug;
-                             # check `agentwire tts status` for model state)
+                             # check `hermeswire tts status` for model state)
   url: "http://localhost:8100"
   default_voice: "default"
   options:
@@ -188,7 +188,7 @@ tts:
 ```
 
 **Default tier (Kokoro) quirks:** the model lives in `~/.cache/kokoro_onnx/`
-(`agentwire tts warm` pre-downloads it; delete the directory to force a fresh
+(`hermeswire tts warm` pre-downloads it; delete the directory to force a fresh
 download). If you hear the robotic browser voice, the model is still
 downloading or failed — check the portal toast or `/api/voice-status`.
 Python 3.14+ has no kokoro-onnx wheels yet; the portal logs a warning and
@@ -207,7 +207,7 @@ is on localhost or HTTPS (secure context). There is no server component.
 **Custom tier** (`stt.backend: custom`): the portal uploads audio to your shim.
 
 ```bash
-agentwire stt status     # probe the shim
+hermeswire stt status     # probe the shim
 
 # Test transcription manually
 ffmpeg -f avfoundation -i ":default" -t 5 -ar 16000 -ac 1 test.wav
@@ -223,7 +223,7 @@ curl -s -X POST http://localhost:8101/transcribe -F file=@test.wav
 **Configure specific device:**
 
 ```yaml
-# ~/.agentwire/config.yaml
+# ~/.hermeswire/config.yaml
 audio:
   input_device: 0  # Device index, or "default"
 ```
@@ -253,7 +253,7 @@ tmux list-sessions
 **List available sessions:**
 
 ```bash
-agentwire list
+hermeswire list
 ```
 
 **Check session exists in tmux:**
@@ -279,7 +279,7 @@ tmux capture-pane -t session-name -p
 **Check pane count:**
 
 ```bash
-agentwire info -s session-name
+hermeswire info -s session-name
 ```
 
 ---
@@ -303,7 +303,7 @@ ssh-copy-id user@host
 **Check machine config:**
 
 ```bash
-agentwire machine list
+hermeswire machine list
 ```
 
 ### Tunnel Not Working
@@ -311,13 +311,13 @@ agentwire machine list
 **Check tunnel status:**
 
 ```bash
-agentwire tunnels status
+hermeswire tunnels status
 ```
 
 **Create tunnels:**
 
 ```bash
-agentwire tunnels up
+hermeswire tunnels up
 ```
 
 **Verify port is listening:**
@@ -350,13 +350,13 @@ Host *
 **Test command:**
 
 ```bash
-agentwire safety check "your command here"
+hermeswire safety check "your command here"
 ```
 
 **View recent blocks:**
 
 ```bash
-agentwire safety logs --tail 20
+hermeswire safety logs --tail 20
 ```
 
 **Check pattern that matched:**
@@ -368,13 +368,13 @@ The safety check output shows which pattern blocked the command.
 **Check status:**
 
 ```bash
-agentwire hooks status
+hermeswire hooks status
 ```
 
 **Install hooks:**
 
 ```bash
-agentwire hooks install
+hermeswire hooks install
 ```
 
 ---
@@ -391,10 +391,10 @@ ls ~/.claude/hooks/idle-handler.sh
 
 **Verify parent is configured:**
 
-Check `.agentwire.yml` in the project directory:
+Check `.hermeswire.yml` in the project directory:
 
 ```yaml
-parent: agentwire  # Must be set for cross-session notifications
+parent: hermeswire  # Must be set for cross-session notifications
 ```
 
 ### Notifications Firing Too Often
@@ -405,18 +405,18 @@ There is no cooldown/rate-limit mechanism in the current `idle-handler.sh` — e
 
 **For workers (panes 1+):** Notifications go to pane 0 automatically.
 
-**For orchestrators (pane 0):** Notifications go to the resolved parent: the session recorded as `created_by` at creation time, falling back to `.agentwire.yml`'s `parent:` field if unset.
+**For orchestrators (pane 0):** Notifications go to the resolved parent: the session recorded as `created_by` at creation time, falling back to `.hermeswire.yml`'s `parent:` field if unset.
 
 **Check current session/pane:**
 
 ```bash
-echo $AGENTWIRE_SESSION  # Current session name
+echo $HERMESWIRE_SESSION  # Current session name
 echo $TMUX_PANE          # Current pane (e.g., %5)
 ```
 
 ### `ensure` Hangs After Summary File Appears
 
-**Cause:** `ensure` waits for both the summary file AND the context file (`~/.agentwire/tasks/{session}.json`) to be deleted. The context file deletion happens on the hook's second idle pass, which requires another 60-second idle cycle after the summary is written.
+**Cause:** `ensure` waits for both the summary file AND the context file (`~/.hermeswire/tasks/{session}.json`) to be deleted. The context file deletion happens on the hook's second idle pass, which requires another 60-second idle cycle after the summary is written.
 
 **Fix:** Wait for the next idle cycle (~60s). Check `/tmp/claude-hook-debug.log` for `TASK: second idle` messages. If the hook isn't firing, the agent may still be processing.
 
@@ -424,19 +424,19 @@ echo $TMUX_PANE          # Current pane (e.g., %5)
 
 ```bash
 # Check if context file still exists
-ls ~/.agentwire/tasks/
+ls ~/.hermeswire/tasks/
 
 # Manually delete context file (ensure will proceed)
-rm ~/.agentwire/tasks/session-name.json
+rm ~/.hermeswire/tasks/session-name.json
 ```
 
 ### Text vs voice notifications
 
 | Command | Audio | Use Case |
 |---------|-------|----------|
-| `agentwire say` | Yes (TTS) | User-facing messages, completion announcements |
-| `agentwire msg send` | No (text only) | Polite peer report-back, dropped into the recipient's inbox |
-| `agentwire notify-parent --to` | No (text only) | Worker → orchestrator status, injected as text |
+| `hermeswire say` | Yes (TTS) | User-facing messages, completion announcements |
+| `hermeswire msg send` | No (text only) | Polite peer report-back, dropped into the recipient's inbox |
+| `hermeswire notify-parent --to` | No (text only) | Worker → orchestrator status, injected as text |
 
 Idle hooks route text alerts to the orchestrator (no audio) to avoid spam when multiple panes go idle.
 
@@ -455,15 +455,15 @@ Idle hooks route text alerts to the orchestrator (no audio) to avoid spam when m
 **Check what's running:**
 
 ```bash
-agentwire portal status
-agentwire tts status
+hermeswire portal status
+hermeswire tts status
 tmux list-sessions
 ```
 
 **Kill unused sessions:**
 
 ```bash
-agentwire kill -s unused-session
+hermeswire kill -s unused-session
 ```
 
 ---
@@ -472,7 +472,7 @@ agentwire kill -s unused-session
 
 ### Agent Command Not Starting (Just Shows Bash Prompt)
 
-**Symptom:** `agentwire new -s name --posture bypass` creates a tmux session but Claude never starts - you just see a bash prompt.
+**Symptom:** `hermeswire new -s name --posture bypass` creates a tmux session but Claude never starts - you just see a bash prompt.
 
 **Cause:** System prompt (from roles) contains characters that break shell escaping when sent via `tmux send-keys`.
 
@@ -489,7 +489,7 @@ quote> line2"   # Bash waiting for closing quote
 
 **Solution:** This was fixed by writing the system prompt to a temp file instead of embedding it in the command line. If you see this issue:
 
-1. Make sure you're running the latest version: `agentwire rebuild`
+1. Make sure you're running the latest version: `hermeswire rebuild`
 2. Check role files for unusual characters
 3. See `shell-escaping.md` for technical details
 
@@ -503,14 +503,14 @@ quote> line2"   # Bash waiting for closing quote
 
 ## Getting Help
 
-1. **Run diagnostics:** `agentwire doctor`
-2. **Check logs:** Portal logs are in the portal tmux session (default: `agentwire-portal`)
-3. **Report issues:** https://github.com/dotdevdotdev/agentwire-dev/issues
+1. **Run diagnostics:** `hermeswire doctor`
+2. **Check logs:** Portal logs are in the portal tmux session (default: `hermeswire-portal`)
+3. **Report issues:** https://github.com/dotdevdotdev/hermeswire-dev/issues
 
 When reporting issues, include:
 
-- Output of `agentwire doctor --dry-run`
-- Output of `agentwire --version`
+- Output of `hermeswire doctor --dry-run`
+- Output of `hermeswire --version`
 - Your OS and Python version
 - Steps to reproduce
 
@@ -523,6 +523,6 @@ When reporting issues, include:
 - Mid-interaction during Chrome browser automation
 - Right after receiving notifications/alerts
 
-**Workaround:** nudge the session with `agentwire send -s name "continue"`. May need 2–3 nudges. Kill the session if its task is otherwise complete.
+**Workaround:** nudge the session with `hermeswire send -s name "continue"`. May need 2–3 nudges. Kill the session if its task is otherwise complete.
 
-This appears to be a Claude Code-side stall, not an agentwire issue.
+This appears to be a Claude Code-side stall, not an hermeswire issue.

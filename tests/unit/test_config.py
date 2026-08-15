@@ -1,10 +1,10 @@
-"""Tests for agentwire/config.py — Config loading, env overrides, merge."""
+"""Tests for hermeswire/config.py — Config loading, env overrides, merge."""
 
 
 import pytest
 import yaml
 
-from agentwire.config import (
+from hermeswire.config import (
     Config,
     _apply_env_overrides,
     _merge_dict,
@@ -75,19 +75,19 @@ class TestMergeDict:
 
 class TestApplyEnvOverrides:
     def test_nested_key(self, monkeypatch, clean_env):
-        monkeypatch.setenv("AGENTWIRE_SERVER__PORT", "9999")
+        monkeypatch.setenv("HERMESWIRE_SERVER__PORT", "9999")
         data = {"server": {"port": 8765}}
         result = _apply_env_overrides(data)
         assert result["server"]["port"] == 9999
 
     def test_creates_missing_keys(self, monkeypatch, clean_env):
-        monkeypatch.setenv("AGENTWIRE_NEW__SETTING", "value")
+        monkeypatch.setenv("HERMESWIRE_NEW__SETTING", "value")
         data = {}
         result = _apply_env_overrides(data)
         assert result["new"]["setting"] == "value"
 
     def test_boolean_parsing(self, monkeypatch, clean_env):
-        monkeypatch.setenv("AGENTWIRE_PROJECTS__WORKTREES__ENABLED", "false")
+        monkeypatch.setenv("HERMESWIRE_PROJECTS__WORKTREES__ENABLED", "false")
         data = {"projects": {"worktrees": {"enabled": True}}}
         result = _apply_env_overrides(data)
         assert result["projects"]["worktrees"]["enabled"] is False
@@ -113,7 +113,7 @@ class TestLoadConfig:
         assert config.server.ssl.enabled is False
 
     def test_env_override_applies(self, config_file, monkeypatch, clean_env):
-        monkeypatch.setenv("AGENTWIRE_SERVER__PORT", "1234")
+        monkeypatch.setenv("HERMESWIRE_SERVER__PORT", "1234")
         config = load_config(config_file)
         assert config.server.port == 1234
 
@@ -228,8 +228,8 @@ class TestVoiceBackends:
     def test_env_override_backend(self, tmp_path, monkeypatch, clean_env):
         path = tmp_path / "config.yaml"
         path.write_text(yaml.dump({"tts": {"backend": "default"}}))
-        monkeypatch.setenv("AGENTWIRE_TTS__BACKEND", "custom")
-        monkeypatch.setenv("AGENTWIRE_TTS__URL", "http://localhost:9999")
+        monkeypatch.setenv("HERMESWIRE_TTS__BACKEND", "custom")
+        monkeypatch.setenv("HERMESWIRE_TTS__URL", "http://localhost:9999")
         config = load_config(path)
         assert config.tts.backend == "custom"
         assert config.tts.url == "http://localhost:9999"

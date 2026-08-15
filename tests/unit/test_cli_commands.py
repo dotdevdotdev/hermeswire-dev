@@ -11,7 +11,7 @@ import yaml
 
 class TestRecentActivity:
     def test_keeps_outcome_events_newest_first(self):
-        from agentwire.scheduler_cli import _recent_activity
+        from hermeswire.scheduler_cli import _recent_activity
 
         events = [
             {"ts": "2026-06-15T10:00:00+00:00", "event": "scheduler_sleeping"},
@@ -28,7 +28,7 @@ class TestRecentActivity:
         assert "complete" in out[1]["detail"]
 
     def test_respects_limit(self):
-        from agentwire.scheduler_cli import _recent_activity
+        from hermeswire.scheduler_cli import _recent_activity
 
         events = [
             {"ts": f"2026-06-15T10:0{i}:00+00:00", "event": "task_completed",
@@ -45,9 +45,9 @@ class TestCmdRolesList:
         """cmd_roles_list --json should return bundled roles."""
 
         # Directly test that roles are loadable
-        from agentwire.roles import discover_role, parse_role_file
+        from hermeswire.roles import discover_role, parse_role_file
 
-        bundled_names = ["agentwire", "voice", "worker", "task-runner", "chatbot", "init"]
+        bundled_names = ["hermeswire", "voice", "worker", "task-runner", "chatbot", "init"]
         roles = []
         for name in bundled_names:
             path = discover_role(name)
@@ -71,14 +71,14 @@ class TestCmdRolesList:
 
 class TestCmdSafetyCheck:
     def test_allowed_command(self, tmp_path, monkeypatch):
-        import agentwire.safety_commands as mod
+        import hermeswire.safety_commands as mod
         monkeypatch.setattr(mod, "RULES_DIR", tmp_path / "empty-rules")
 
         result = mod.check_command_safety("echo hello")
         assert result["decision"] == "allow"
 
     def test_blocked_by_pattern(self, tmp_path, monkeypatch):
-        import agentwire.safety_commands as mod
+        import hermeswire.safety_commands as mod
 
         # Create a rules dir with a blocking pattern
         rules_dir = tmp_path / "rules"
@@ -106,7 +106,7 @@ class TestCmdSafetyCheck:
 
 class TestTaskCommands:
     def test_list_tasks(self, project_dir):
-        config_path = project_dir / ".agentwire.tasks.yml"
+        config_path = project_dir / ".hermeswire.tasks.yml"
         data = {
             "tasks": {
                 "lint": {"prompt": "Run linting."},
@@ -116,7 +116,7 @@ class TestTaskCommands:
         with open(config_path, "w") as f:
             yaml.safe_dump(data, f)
 
-        from agentwire.tasks import list_tasks
+        from hermeswire.tasks import list_tasks
         tasks = list_tasks(project_dir)
         assert len(tasks) == 2
         names = {t["name"] for t in tasks}
@@ -124,18 +124,18 @@ class TestTaskCommands:
         assert "test" in names
 
     def test_validate_good_task(self, project_dir):
-        config_path = project_dir / ".agentwire.tasks.yml"
+        config_path = project_dir / ".hermeswire.tasks.yml"
         data = {"tasks": {"good": {"prompt": "Do things.", "retries": 1}}}
         with open(config_path, "w") as f:
             yaml.safe_dump(data, f)
 
-        from agentwire.tasks import load_task, validate_task
+        from hermeswire.tasks import load_task, validate_task
         task = load_task(project_dir, "good")
         issues = validate_task(task)
         assert issues == []
 
     def test_validate_bad_task(self, project_dir):
-        from agentwire.tasks import TaskConfig, validate_task
+        from hermeswire.tasks import TaskConfig, validate_task
 
         task = TaskConfig(name="bad", prompt="ok", retries=-1, mode="invalid")
         issues = validate_task(task)
@@ -146,7 +146,7 @@ class TestTaskCommands:
 
 class TestProjectsDiscovery:
     def test_discovers_projects(self, tmp_path):
-        """Projects with .agentwire.yml or .git should be discoverable."""
+        """Projects with .hermeswire.yml or .git should be discoverable."""
         # Create fake projects
         p1 = tmp_path / "project-a"
         p1.mkdir()
@@ -154,7 +154,7 @@ class TestProjectsDiscovery:
 
         p2 = tmp_path / "project-b"
         p2.mkdir()
-        with open(p2 / ".agentwire.yml", "w") as f:
+        with open(p2 / ".hermeswire.yml", "w") as f:
             yaml.safe_dump({"posture": "bare"}, f)
 
         p3 = tmp_path / "not-a-project"
@@ -165,7 +165,7 @@ class TestProjectsDiscovery:
         for d in sorted(tmp_path.iterdir()):
             if d.is_dir():
                 has_git = (d / ".git").exists()
-                has_config = (d / ".agentwire.yml").exists()
+                has_config = (d / ".hermeswire.yml").exists()
                 if has_git or has_config:
                     projects.append(d.name)
 
@@ -189,21 +189,21 @@ class TestCmdSendWaitReady:
         return json.loads(capsys.readouterr().out.strip())
 
     def _mock_has_session(self, monkeypatch):
-        from agentwire import session_ready
+        from hermeswire import session_ready
 
         has_session = MagicMock(returncode=0)
-        monkeypatch.setattr("agentwire.send_cli.subprocess.run", lambda *a, **k: has_session)
+        monkeypatch.setattr("hermeswire.send_cli.subprocess.run", lambda *a, **k: has_session)
         # get_current_session shells out to real tmux and depends on the test
         # runner's own environment ($TMUX_PANE) -- pin it so fallback_sender
         # resolution is deterministic regardless of where tests run.
-        monkeypatch.setattr("agentwire.send_cli.pane_manager.get_current_session", lambda: None)
+        monkeypatch.setattr("hermeswire.send_cli.pane_manager.get_current_session", lambda: None)
         # #845 pre-flight: box is clear unless a test says otherwise (the real
         # one captures a live pane).
         monkeypatch.setattr(session_ready, "box_holds_foreign_draft", lambda *a, **k: False)
 
     def test_happy_path_verified(self, capsys, monkeypatch):
-        from agentwire import session_ready
-        from agentwire.send_cli import cmd_send
+        from hermeswire import session_ready
+        from hermeswire.send_cli import cmd_send
 
         self._mock_has_session(monkeypatch)
         monkeypatch.setattr(session_ready, "wait_for_session_ready", lambda s, timeout: True)
@@ -220,8 +220,8 @@ class TestCmdSendWaitReady:
         and the SAME marker must reach send_verified + the fallback -- that is
         what turns 'already delivered' from a text-similarity guess into a
         fact about this specific send."""
-        from agentwire import send_cli, session_ready
-        from agentwire.send_cli import cmd_send
+        from hermeswire import send_cli, session_ready
+        from hermeswire.send_cli import cmd_send
 
         self._mock_has_session(monkeypatch)
         monkeypatch.setattr(session_ready, "wait_for_session_ready", lambda s, timeout: True)
@@ -243,13 +243,13 @@ class TestCmdSendWaitReady:
         # The inbox copy is the BARE prompt (the drain adds its own ⟨#id⟩),
         # while the marker rides along for the scrollback check.
         recover.assert_called_once_with(
-            "proj", "my idea", "agentwire", marker=seen["marker"])
+            "proj", "my idea", "hermeswire", marker=seen["marker"])
 
     def test_foreign_draft_blocks_the_send_without_clearing(self, capsys, monkeypatch):
         """#845: a draft that was already in the box before we tried anything
         is not ours to paste over OR to erase -- queue and leave it alone."""
-        from agentwire import session_ready
-        from agentwire.send_cli import cmd_send
+        from hermeswire import session_ready
+        from hermeswire.send_cli import cmd_send
 
         self._mock_has_session(monkeypatch)
         monkeypatch.setattr(session_ready, "wait_for_session_ready", lambda s, timeout: True)
@@ -268,11 +268,11 @@ class TestCmdSendWaitReady:
         sent.assert_not_called()      # never pasted on top of the draft
         cleared.assert_not_called()   # and never erased it
         seed.assert_called_once_with(
-            "proj", "my idea", sender="agentwire", clear=False)
+            "proj", "my idea", sender="hermeswire", clear=False)
 
     def test_not_ready_fails(self, capsys, monkeypatch):
-        from agentwire import session_ready
-        from agentwire.send_cli import cmd_send
+        from hermeswire import session_ready
+        from hermeswire.send_cli import cmd_send
 
         self._mock_has_session(monkeypatch)
         monkeypatch.setattr(session_ready, "wait_for_session_ready", lambda s, timeout: False)
@@ -287,8 +287,8 @@ class TestCmdSendWaitReady:
         whichever caller reads the response — it queues to the durable msg
         inbox so delivery is retried and eventually dead-lettered LOUDLY
         instead of silently depending on the caller noticing and resending."""
-        from agentwire import send_cli, session_ready
-        from agentwire.send_cli import cmd_send
+        from hermeswire import send_cli, session_ready
+        from hermeswire.send_cli import cmd_send
 
         self._mock_has_session(monkeypatch)
         monkeypatch.setattr(session_ready, "wait_for_session_ready", lambda s, timeout: True)
@@ -300,11 +300,11 @@ class TestCmdSendWaitReady:
         payload = self._payload(capsys)
         assert payload["verified"] is False
         assert payload["fallback"] == "inbox"
-        recover.assert_called_once_with("proj", "my idea", "agentwire", marker=ANY)
+        recover.assert_called_once_with("proj", "my idea", "hermeswire", marker=ANY)
 
     def test_unverified_and_fallback_fails_is_still_reported(self, capsys, monkeypatch):
-        from agentwire import send_cli, session_ready
-        from agentwire.send_cli import cmd_send
+        from hermeswire import send_cli, session_ready
+        from hermeswire.send_cli import cmd_send
 
         self._mock_has_session(monkeypatch)
         monkeypatch.setattr(session_ready, "wait_for_session_ready", lambda s, timeout: True)
@@ -319,10 +319,10 @@ class TestCmdSendWaitReady:
     def test_caller_session_arg_wins_over_autodetect(self, capsys, monkeypatch):
         """#835 review: attribute a fallback's msg-inbox entry to the real
         calling session (threaded via --caller-session from the MCP layer),
-        not the generic 'agentwire' -- matters for dead-letter email
+        not the generic 'hermeswire' -- matters for dead-letter email
         attribution and the rendered [MSG from ...] header."""
-        from agentwire import send_cli, session_ready
-        from agentwire.send_cli import cmd_send
+        from hermeswire import send_cli, session_ready
+        from hermeswire.send_cli import cmd_send
 
         self._mock_has_session(monkeypatch)
         monkeypatch.setattr(session_ready, "wait_for_session_ready", lambda s, timeout: True)
@@ -337,8 +337,8 @@ class TestCmdSendWaitReady:
         """#843: an "inbox_stuck" fallback (queued, but the stale draft in
         the input box could not be confirmed cleared) must propagate through
         untouched -- never collapsed into the plain "inbox" success case."""
-        from agentwire import send_cli, session_ready
-        from agentwire.send_cli import cmd_send
+        from hermeswire import send_cli, session_ready
+        from hermeswire.send_cli import cmd_send
 
         self._mock_has_session(monkeypatch)
         monkeypatch.setattr(session_ready, "wait_for_session_ready", lambda s, timeout: True)
@@ -352,14 +352,14 @@ class TestCmdSendWaitReady:
         assert payload["fallback"] == "inbox_stuck"
 
     def test_remote_rejected(self, capsys):
-        from agentwire.send_cli import cmd_send
+        from hermeswire.send_cli import cmd_send
 
         assert cmd_send(self._args(session="proj@gpu")) == 1
         payload = self._payload(capsys)
         assert "local-only" in payload["error"]
 
     def test_pane_combo_rejected(self, capsys):
-        from agentwire.send_cli import cmd_send
+        from hermeswire.send_cli import cmd_send
 
         assert cmd_send(self._args(pane=1)) == 1
         payload = self._payload(capsys)
@@ -381,16 +381,16 @@ class TestCmdSendVerify:
         return json.loads(capsys.readouterr().out.strip())
 
     def _mock_has_session(self, monkeypatch):
-        from agentwire import session_ready
+        from hermeswire import session_ready
 
         has_session = MagicMock(returncode=0)
-        monkeypatch.setattr("agentwire.send_cli.subprocess.run", lambda *a, **k: has_session)
-        monkeypatch.setattr("agentwire.send_cli.pane_manager.get_current_session", lambda: None)
+        monkeypatch.setattr("hermeswire.send_cli.subprocess.run", lambda *a, **k: has_session)
+        monkeypatch.setattr("hermeswire.send_cli.pane_manager.get_current_session", lambda: None)
         monkeypatch.setattr(session_ready, "box_holds_foreign_draft", lambda *a, **k: False)
 
     def test_happy_path_verified_skips_fallback(self, capsys, monkeypatch):
-        from agentwire import send_cli, session_ready
-        from agentwire.send_cli import cmd_send
+        from hermeswire import send_cli, session_ready
+        from hermeswire.send_cli import cmd_send
 
         self._mock_has_session(monkeypatch)
         monkeypatch.setattr(session_ready, "send_verified", lambda s, m, marker=None, retries=1: True)
@@ -405,8 +405,8 @@ class TestCmdSendVerify:
 
     def test_unverified_falls_back_to_inbox(self, capsys, monkeypatch):
         """#834: same durable-fallback guarantee as --wait-ready."""
-        from agentwire import send_cli, session_ready
-        from agentwire.send_cli import cmd_send
+        from hermeswire import send_cli, session_ready
+        from hermeswire.send_cli import cmd_send
 
         self._mock_has_session(monkeypatch)
         monkeypatch.setattr(session_ready, "send_verified", lambda s, m, marker=None, retries=1: False)
@@ -417,23 +417,23 @@ class TestCmdSendVerify:
         payload = self._payload(capsys)
         assert payload["verified"] is False
         assert payload["fallback"] == "inbox"
-        recover.assert_called_once_with("proj", "my idea", "agentwire", marker=ANY)
+        recover.assert_called_once_with("proj", "my idea", "hermeswire", marker=ANY)
 
     def test_remote_with_verify_never_touches_the_fallback(self, capsys, monkeypatch):
         """Remote (session@machine) sends return from an earlier branch
         entirely -- verify=True there only marks the result unverifiable
         across SSH, and must never reach the new fallback machinery."""
-        from agentwire import send_cli
-        from agentwire.send_cli import cmd_send
+        from hermeswire import send_cli
+        from hermeswire.send_cli import cmd_send
 
         recover = MagicMock()
         monkeypatch.setattr(send_cli, "_recover_unverified_send", recover)
         monkeypatch.setattr(
-            "agentwire.send_cli._run_remote",
+            "hermeswire.send_cli._run_remote",
             lambda machine_id, cmd: MagicMock(returncode=0),
         )
         monkeypatch.setattr(
-            "agentwire.send_cli._get_machine_config",
+            "hermeswire.send_cli._get_machine_config",
             lambda machine_id: {"host": "example.com"},
         )
 
@@ -450,26 +450,26 @@ class TestFallbackSuffix:
     be confirmed cleared from the input box."""
 
     def test_inbox_suffix_says_guaranteed_delivery(self):
-        from agentwire.send_cli import _fallback_suffix
+        from hermeswire.send_cli import _fallback_suffix
 
         assert "guaranteed delivery" in _fallback_suffix("inbox")
 
     def test_inbox_stuck_suffix_warns_of_leftover_draft(self):
-        from agentwire.send_cli import _fallback_suffix
+        from hermeswire.send_cli import _fallback_suffix
 
         suffix = _fallback_suffix("inbox_stuck")
         assert "could NOT be confirmed cleared" in suffix
         assert "guaranteed delivery" not in suffix
 
     def test_none_suffix_says_resend_manually(self):
-        from agentwire.send_cli import _fallback_suffix
+        from hermeswire.send_cli import _fallback_suffix
 
         assert "resend manually" in _fallback_suffix(None)
 
     def test_inbox_blocked_suffix_says_the_draft_was_left_alone(self):
         """#845: distinct from inbox_stuck -- nothing was pasted and nothing
         was erased, so the operator should NOT go hunting for our wreckage."""
-        from agentwire.send_cli import _fallback_suffix
+        from hermeswire.send_cli import _fallback_suffix
 
         suffix = _fallback_suffix("inbox_blocked")
         assert "left untouched" in suffix
@@ -485,20 +485,20 @@ class TestRecoverUnverifiedSend:
     checking scrollback for the bare message first."""
 
     def test_already_on_scrollback_skips_the_inbox_enqueue(self, monkeypatch):
-        from agentwire import session_ready
-        from agentwire.send_cli import _recover_unverified_send
+        from hermeswire import session_ready
+        from hermeswire.send_cli import _recover_unverified_send
 
         monkeypatch.setattr(session_ready, "scrollback", lambda s, pane_index=0: "...fake capture...")
         monkeypatch.setattr(session_ready, "message_on_scrollback", lambda cap, msg: True)
         recover = MagicMock()
         monkeypatch.setattr(session_ready, "recover_failed_seed", recover)
 
-        assert _recover_unverified_send("proj", "already sent", "agentwire") == "already_delivered"
+        assert _recover_unverified_send("proj", "already sent", "hermeswire") == "already_delivered"
         recover.assert_not_called()
 
     def test_not_on_scrollback_falls_back_to_the_inbox(self, monkeypatch):
-        from agentwire import session_ready
-        from agentwire.send_cli import _recover_unverified_send
+        from hermeswire import session_ready
+        from hermeswire.send_cli import _recover_unverified_send
 
         monkeypatch.setattr(session_ready, "scrollback", lambda s, pane_index=0: "...fake capture...")
         monkeypatch.setattr(session_ready, "message_on_scrollback", lambda cap, msg: False)
@@ -511,8 +511,8 @@ class TestRecoverUnverifiedSend:
     def test_marker_is_what_gets_matched_when_supplied(self, monkeypatch):
         """#839: with a per-attempt marker, 'already delivered' keys on THIS
         attempt's token, not on how much the prompt resembles the scrollback."""
-        from agentwire import session_ready
-        from agentwire.send_cli import _recover_unverified_send
+        from hermeswire import session_ready
+        from hermeswire.send_cli import _recover_unverified_send
 
         monkeypatch.setattr(session_ready, "scrollback", lambda s, pane_index=0: "cap")
         needles = []
@@ -523,7 +523,7 @@ class TestRecoverUnverifiedSend:
             session_ready, "recover_failed_seed",
             lambda *a, **k: "inbox")
 
-        _recover_unverified_send("proj", "continue", "agentwire", marker="⟨#send-abc123⟩")
+        _recover_unverified_send("proj", "continue", "hermeswire", marker="⟨#send-abc123⟩")
         assert needles == ["⟨#send-abc123⟩"]
 
     def test_generic_prompt_on_scrollback_no_longer_swallows_a_failed_send(
@@ -533,8 +533,8 @@ class TestRecoverUnverifiedSend:
         text reports already_delivered and skips the inbox enqueue entirely --
         silently dropping a send that never landed. The marker makes the
         difference."""
-        from agentwire import session_ready
-        from agentwire.send_cli import _recover_unverified_send
+        from hermeswire import session_ready
+        from hermeswire.send_cli import _recover_unverified_send
 
         old_marker = session_ready.new_delivery_marker()
         this_marker = session_ready.new_delivery_marker()
@@ -545,19 +545,19 @@ class TestRecoverUnverifiedSend:
             session_ready, "recover_failed_seed", lambda *a, **k: "inbox")
 
         # Bare text (the pre-#839 behavior): the unrelated echo swallows it.
-        assert _recover_unverified_send("proj", "continue", "agentwire") == "already_delivered"
+        assert _recover_unverified_send("proj", "continue", "hermeswire") == "already_delivered"
         # Per-attempt marker: this send is correctly recognized as NOT delivered.
         assert _recover_unverified_send(
-            "proj", "continue", "agentwire", marker=this_marker) == "inbox"
+            "proj", "continue", "hermeswire", marker=this_marker) == "inbox"
 
 
 # --- cmd_new --first-message ---
 
 class TestCmdNewFirstMessage:
     def test_remote_rejected(self, capsys, monkeypatch):
-        from agentwire.session_cli import cmd_new
+        from hermeswire.session_cli import cmd_new
 
-        monkeypatch.setattr("agentwire.session_cli._check_tmux_installed", lambda: True)
+        monkeypatch.setattr("hermeswire.session_cli._check_tmux_installed", lambda: True)
         args = argparse.Namespace(
             session="proj@gpu", path=None, force=False, json=True,
             roles=None, no_soul=True, first_message="an idea",
@@ -576,8 +576,8 @@ class TestCmdNewSeedFallback:
                      foreign_draft=False, on_scrollback=False):
         from types import SimpleNamespace
 
-        from agentwire import session_cli as m
-        from agentwire import session_ready
+        from hermeswire import session_cli as m
+        from hermeswire import session_ready
 
         # Hermetic stubs: no tmux, no roles from disk, no portal.
         monkeypatch.setattr(m, "_check_tmux_installed", lambda: True)
@@ -748,7 +748,7 @@ class TestCmdNewSeedGuardedPath:
 
 
 class TestCmdNewWorktreeMissingDirFailsLoud:
-    """#739 — `agentwire new --json` must never report success with a `path`
+    """#739 — `hermeswire new --json` must never report success with a `path`
     that doesn't back a real worktree on disk. Two guards, two failure
     windows: (1) worktree creation reports ok but the dir never landed, (2)
     the dir existed right after creation but vanished before the pane
@@ -762,9 +762,9 @@ class TestCmdNewWorktreeMissingDirFailsLoud:
 
     def test_ensure_worktree_lies_about_success(self, capsys, monkeypatch, tmp_path):
         """Worktree creation reports ok without the dir existing (the #739
-        symptom: `agentwire new` proceeded past worktree creation with a path
+        symptom: `hermeswire new` proceeded past worktree creation with a path
         whose directory was never actually created)."""
-        from agentwire import session_cli as m
+        from hermeswire import session_cli as m
 
         project_path = tmp_path / "proj"
         project_path.mkdir()
@@ -788,7 +788,7 @@ class TestCmdNewWorktreeMissingDirFailsLoud:
         import shutil
         from types import SimpleNamespace
 
-        from agentwire import session_cli as m
+        from hermeswire import session_cli as m
 
         project_path = tmp_path / "proj"
         project_path.mkdir()
@@ -834,8 +834,8 @@ class TestCmdNewDefaultCreatedByRooting:
              kind=None, session="proj"):
         from types import SimpleNamespace
 
-        from agentwire import core
-        from agentwire import session_cli as m
+        from hermeswire import core
+        from hermeswire import session_cli as m
 
         monkeypatch.setattr(m, "_check_tmux_installed", lambda: True)
         monkeypatch.setattr(
@@ -896,10 +896,10 @@ class TestCmdNewDefaultCreatedByRooting:
 
     def test_explicit_kind_orchestrator_roots_even_same_project_caller(self, monkeypatch, tmp_path):
         # #716: cmd_new is the ONE place this joint default lives — it must
-        # fire whether cmd_new is reached directly (`agentwire new --kind
+        # fire whether cmd_new is reached directly (`hermeswire new --kind
         # orchestrator` / `session_create(kind="orchestrator")`) or via
         # cmd_worktree's _launch_session, which just forwards --kind through.
-        # Without this, a durable orchestrator created via `agentwire new`
+        # Without this, a durable orchestrator created via `hermeswire new`
         # directly (skipping cmd_worktree) would silently inherit the caller
         # as parent whenever same-project — contradicting its own "roots by
         # default" contract.
@@ -914,7 +914,7 @@ class TestCmdNewDefaultCreatedByRooting:
         # The joint default is gated on the EXPLICIT --kind flag, not the
         # resolved kind (a plain branchless name always derives to
         # "orchestrator" via derive_session_kind) — otherwise every ordinary
-        # `agentwire new -s name` call would stop inheriting same-project
+        # `hermeswire new -s name` call would stop inheriting same-project
         # callers, a much bigger behavior change than #716 asked for.
         recorded = self._run(
             monkeypatch, tmp_path,
@@ -950,8 +950,8 @@ class TestCmdNewCohortEnrollment:
              session="memrev-playchek"):
         from types import SimpleNamespace
 
-        from agentwire import cohort, core
-        from agentwire import session_cli as m
+        from hermeswire import cohort, core
+        from hermeswire import session_cli as m
 
         monkeypatch.setattr(m, "_check_tmux_installed", lambda: True)
         monkeypatch.setattr(
@@ -1039,8 +1039,8 @@ def _patch_role_pipeline(monkeypatch, projects_dir, project_config_roles):
     """
     from types import SimpleNamespace
 
-    import agentwire.session_cli as mod
-    from agentwire.core import AgentCommand
+    import hermeswire.session_cli as mod
+    from hermeswire.core import AgentCommand
 
     cap = _RoleCapture()
 
@@ -1097,7 +1097,7 @@ class TestRecreateRoutesThroughResolveRoles:
     def test_worktree_recreate_reinjects_etiquette_even_without_saved_roles(
         self, monkeypatch, tmp_path
     ):
-        import agentwire.session_cli as mod
+        import hermeswire.session_cli as mod
 
         projects = tmp_path / "projects"
         (projects / "proj").mkdir(parents=True)
@@ -1117,7 +1117,7 @@ class TestRecreateRoutesThroughResolveRoles:
     def test_worktree_recreate_stacks_saved_roles_under_etiquette(
         self, monkeypatch, tmp_path
     ):
-        import agentwire.session_cli as mod
+        import hermeswire.session_cli as mod
 
         projects = tmp_path / "projects"
         (projects / "proj").mkdir(parents=True)
@@ -1133,7 +1133,7 @@ class TestRecreateRoutesThroughResolveRoles:
         assert "domain" in cap.role_names
 
     def test_plain_recreate_is_orchestrator_replaceable(self, monkeypatch, tmp_path):
-        import agentwire.session_cli as mod
+        import hermeswire.session_cli as mod
 
         projects = tmp_path / "projects"
         (projects / "proj").mkdir(parents=True)
@@ -1147,7 +1147,7 @@ class TestRecreateRoutesThroughResolveRoles:
         assert "custom" in cap.role_names
 
     def test_plain_recreate_zero_config_is_orchestrator(self, monkeypatch, tmp_path):
-        import agentwire.session_cli as mod
+        import hermeswire.session_cli as mod
 
         projects = tmp_path / "projects"
         (projects / "proj").mkdir(parents=True)
@@ -1161,7 +1161,7 @@ class TestRecreateRoutesThroughResolveRoles:
 
 class TestForkRoutesThroughResolveRoles:
     def test_worktree_fork_injects_worker_worktree_etiquette(self, monkeypatch, tmp_path):
-        import agentwire.session_cli as mod
+        import hermeswire.session_cli as mod
 
         projects = tmp_path / "projects"
         (projects / "proj").mkdir(parents=True)  # source_path (no source branch)
@@ -1177,7 +1177,7 @@ class TestForkRoutesThroughResolveRoles:
         assert cap.role_names[0] == "worker-worktree"
 
     def test_worktree_fork_stacks_source_roles_under_etiquette(self, monkeypatch, tmp_path):
-        import agentwire.session_cli as mod
+        import hermeswire.session_cli as mod
 
         projects = tmp_path / "projects"
         (projects / "proj").mkdir(parents=True)
@@ -1193,7 +1193,7 @@ class TestForkRoutesThroughResolveRoles:
         assert "domain" in cap.role_names
 
     def test_non_worktree_fork_is_orchestrator_replaceable(self, monkeypatch, tmp_path):
-        import agentwire.session_cli as mod
+        import hermeswire.session_cli as mod
 
         projects = tmp_path / "projects"
         projects.mkdir(parents=True)
@@ -1218,7 +1218,7 @@ class TestForkRoutesThroughResolveRoles:
 #
 # history-resume used to copy `project_config.roles` raw, bypassing
 # resolve_roles + kind-derivation — so a zero-config resume got an empty role
-# list instead of the orchestrator etiquette a fresh `agentwire new` would.
+# list instead of the orchestrator etiquette a fresh `hermeswire new` would.
 # A history-resume has no branch, so its kind is always "orchestrator".
 
 def _patch_history_resume(monkeypatch, tmp_path, project_config_roles):
@@ -1229,8 +1229,8 @@ def _patch_history_resume(monkeypatch, tmp_path, project_config_roles):
     """
     from types import SimpleNamespace
 
-    import agentwire.history as hist
-    import agentwire.history_cli as mod
+    import hermeswire.history as hist
+    import hermeswire.history_cli as mod
 
     cap = _RoleCapture()
 
@@ -1269,7 +1269,7 @@ def _patch_history_resume(monkeypatch, tmp_path, project_config_roles):
 
 class TestHistoryResumeRoutesThroughResolveRoles:
     def test_zero_config_resume_is_orchestrator(self, monkeypatch, tmp_path):
-        import agentwire.history_cli as mod
+        import hermeswire.history_cli as mod
 
         cap, project_dir = _patch_history_resume(
             monkeypatch, tmp_path, project_config_roles=None
@@ -1285,7 +1285,7 @@ class TestHistoryResumeRoutesThroughResolveRoles:
         assert "soul" not in cap.role_names  # soul is SOUL.md identity (#15)
 
     def test_saved_roles_replace_orchestrator_persona(self, monkeypatch, tmp_path):
-        import agentwire.history_cli as mod
+        import hermeswire.history_cli as mod
 
         cap, project_dir = _patch_history_resume(
             monkeypatch, tmp_path, project_config_roles=["custom"]

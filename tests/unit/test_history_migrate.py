@@ -1,4 +1,4 @@
-"""Tests for agentwire/history_migrate.py — now a deprecated no-op (#9).
+"""Tests for hermeswire/history_migrate.py — now a deprecated no-op (#9).
 
 Hermes sessions are keyed by id in ``~/.hermes/state.db`` with cwd as a data
 column, so a moved directory can no longer orphan a transcript. The migrate
@@ -7,7 +7,7 @@ safe no-op that says so.
 """
 
 
-from agentwire import history_migrate as hm
+from hermeswire import history_migrate as hm
 
 
 def test_plan_reports_obsolete():
@@ -47,7 +47,7 @@ class _Fake:
 
 
 def test_resumable_delegates_to_the_store(monkeypatch):
-    from agentwire import history
+    from hermeswire import history
 
     monkeypatch.setattr(history, "_db", lambda: _Fake({"abc"}))
     assert hm.resumable("abc", "/place") is True
@@ -55,7 +55,7 @@ def test_resumable_delegates_to_the_store(monkeypatch):
 
 
 def test_known_sessions_delegates_to_core(monkeypatch, tmp_path):
-    from agentwire import core
+    from hermeswire import core
 
     monkeypatch.setattr(core, "CONFIG_DIR", tmp_path)
     for name in ("alpha", "beta"):

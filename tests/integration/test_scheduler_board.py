@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import yaml
 
-from agentwire.scheduler import (
+from hermeswire.scheduler import (
     Board,
     Schedule,
     SchedulerTask,
@@ -54,7 +54,7 @@ def board_env(tmp_path):
         error_backoff_base = 30
         error_backoff_max = 1800
 
-    with patch("agentwire.scheduler._sched_config", return_value=FakeSchedulerConfig()):
+    with patch("hermeswire.scheduler._sched_config", return_value=FakeSchedulerConfig()):
         yield board_path
 
 
@@ -155,19 +155,19 @@ class TestSchedulerBoardRoundTrip:
 class TestInTimeWindow:
     def test_within_window(self):
         sched = Schedule(not_before="06:00", not_after="22:00")
-        with patch("agentwire.scheduler.datetime") as mock_dt:
+        with patch("hermeswire.scheduler.datetime") as mock_dt:
             mock_dt.now.return_value = datetime(2026, 2, 16, 12, 0)
             assert _in_time_window(sched) is True
 
     def test_before_window(self):
         sched = Schedule(not_before="08:00", not_after="22:00")
-        with patch("agentwire.scheduler.datetime") as mock_dt:
+        with patch("hermeswire.scheduler.datetime") as mock_dt:
             mock_dt.now.return_value = datetime(2026, 2, 16, 5, 0)
             assert _in_time_window(sched) is False
 
     def test_after_window(self):
         sched = Schedule(not_before="08:00", not_after="22:00")
-        with patch("agentwire.scheduler.datetime") as mock_dt:
+        with patch("hermeswire.scheduler.datetime") as mock_dt:
             mock_dt.now.return_value = datetime(2026, 2, 16, 23, 0)
             assert _in_time_window(sched) is False
 
@@ -412,15 +412,15 @@ class TestSchedulerWorktreeDispatchOptsOutOfPR:
             roles=["task-runner"],
             base="main",
         )
-        with patch("agentwire.scheduler._kill_session"), \
-             patch("agentwire.locking.remove_stale_lock"), \
-             patch("agentwire.scheduler.subprocess.run", side_effect=fake_run):
+        with patch("hermeswire.scheduler._kill_session"), \
+             patch("hermeswire.locking.remove_stale_lock"), \
+             patch("hermeswire.scheduler.subprocess.run", side_effect=fake_run):
             # Worktree path is empty in our fake → dispatch bails after the
             # `new` command, which is all we need to inspect.
             _dispatch_worktree_task(MagicMock(), task, TaskState())
 
-        new_cmds = [c for c in calls if isinstance(c, list) and c[:2] == ["agentwire", "new"]]
-        assert new_cmds, "scheduler never issued an `agentwire new` worktree dispatch"
+        new_cmds = [c for c in calls if isinstance(c, list) and c[:2] == ["hermeswire", "new"]]
+        assert new_cmds, "scheduler never issued an `hermeswire new` worktree dispatch"
         cmd = new_cmds[0]
         # The opt-out: explicit orchestrator kind so task-runner replaces it.
         assert "--kind" in cmd and cmd[cmd.index("--kind") + 1] == "orchestrator"
@@ -508,7 +508,7 @@ class TestAtomicWrites:
         board = load_board()
         state_file = tmp_path / "scheduler-state.yaml"
         # Force yaml.dump to emit garbage that won't re-parse as the expected shape.
-        monkeypatch.setattr("agentwire.scheduler.yaml.dump",
+        monkeypatch.setattr("hermeswire.scheduler.yaml.dump",
                             lambda *a, **k: "::: not valid yaml :::\n")
         with pytest.raises((ValueError, Exception)):
             save_board(board)
@@ -569,7 +569,7 @@ class TestCrashLoopGuard:
             load_board()
 
     def test_blocking_load_backs_off_then_succeeds_without_exit(self, board_env, monkeypatch):
-        import agentwire.scheduler as sched
+        import hermeswire.scheduler as sched
         sleeps = []
         monkeypatch.setattr(sched.time, "sleep", lambda s: sleeps.append(s))
 

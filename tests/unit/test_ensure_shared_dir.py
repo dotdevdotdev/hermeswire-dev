@@ -10,9 +10,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from agentwire import ensure_cli
-from agentwire.ensure_cli import ENSURE_EXIT_SESSION_ERROR, _dispatch_shares_dir
-from agentwire.tasks import parse_task_config
+from hermeswire import ensure_cli
+from hermeswire.ensure_cli import ENSURE_EXIT_SESSION_ERROR, _dispatch_shares_dir
+from hermeswire.tasks import parse_task_config
 
 
 def _task(**overrides):
@@ -65,7 +65,7 @@ class _Ctx:
 @pytest.fixture
 def captured_new_args(monkeypatch, tmp_path):
     """Drive `_run_ensure_task` far enough to capture the NewArgs it builds."""
-    from agentwire import session_cli
+    from hermeswire import session_cli
 
     seen = {}
     monkeypatch.setattr(ensure_cli, "tmux_session_exists", lambda _s: False)

@@ -6,8 +6,8 @@
 ## TL;DR
 
 The portal used to **force** every tmux window to the browser's exact size on
-every resize. As of v1.33+ ([#258](https://github.com/dotdevdotdev/agentwire-dev/issues/258),
-[PR #263](https://github.com/dotdevdotdev/agentwire-dev/pull/263)) it no longer
+every resize. As of v1.33+ ([#258](https://github.com/dotdevdotdev/hermeswire-dev/issues/258),
+[PR #263](https://github.com/dotdevdotdev/hermeswire-dev/pull/263)) it no longer
 does — the portal is now a polite tmux client that reports its size and lets
 **your configured `window-size` policy** decide. Previously-stuck windows heal
 automatically the next time you open them in the portal. If you ever wrote
@@ -45,7 +45,7 @@ tmux show-options -w -t <session> window-size   # "window-size manual" = stuck
    unsets any window-level `window-size` override. Windows pinned by older
    portal versions snap back to policy-governed sizing the moment you open
    them in the portal.
-3. **`agentwire resize` (and the `pane_resize` MCP tool) heal too.** They
+3. **`hermeswire resize` (and the `pane_resize` MCP tool) heal too.** They
    now clear the manual pin and re-fit per policy. (The old implementation
    used `resize-window -A`, which — counterintuitively — resizes once but
    *leaves* manual mode set.)
@@ -96,7 +96,7 @@ set-hook -g after-new-session 'set-option window-size largest'
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Window ignores all client resizes | Still pinned (portal not attached since upgrade) | Open it in the portal once, or run `agentwire resize -s <session>` |
+| Window ignores all client resizes | Still pinned (portal not attached since upgrade) | Open it in the portal once, or run `hermeswire resize -s <session>` |
 | Window smaller than my terminal | Another (smaller) client is attached under `smallest` | Detach the other client (`tmux detach-client`), or switch policy |
 | Browser resize doesn't reflow the window | Bigger client attached under `largest` | Expected — see policy table; use `latest` for last-touch-wins |
 | `show-options -w` still says `manual` | Something re-pinned it | Check `~/.tmux.conf` for old workaround hooks (above) |

@@ -11,7 +11,7 @@ session-name axis. ``:`` is the second separator and had the identical hole
 
 import pytest
 
-from agentwire.worktree import (
+from hermeswire.worktree import (
     safe_worktree_name,
     teardown_session_note,
     tmux_safe_name,

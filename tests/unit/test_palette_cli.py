@@ -1,4 +1,4 @@
-"""Tests for ``agentwire palette`` — user-defined command-palette items (#676).
+"""Tests for ``hermeswire palette`` — user-defined command-palette items (#676).
 
 Covers config validation (ids, fields, undeclared placeholders), and the run
 path: template substitution with shell-quoted field values, defaults, missing
@@ -10,8 +10,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from agentwire import palette_cli
-from agentwire.palette_cli import cmd_palette_list, cmd_palette_run, load_palette_items
+from hermeswire import palette_cli
+from hermeswire.palette_cli import cmd_palette_list, cmd_palette_run, load_palette_items
 
 
 @pytest.fixture
