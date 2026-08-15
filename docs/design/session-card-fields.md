@@ -28,7 +28,7 @@ pass). Each field tagged by availability:
 | topology | derive→plumb | `main` \| `worktree` \| `pane` |
 | rooting | live | `root` \| `parented` (`created_by`) |
 | parent | live | `created_by` / display parent |
-| roles[] | live | persona/etiquette list from `.agentwire.yml` — `soul`, `correspondent`, `anchor`, … |
+| roles[] | live | persona/etiquette list from `.hermeswire.yml` — `soul`, `correspondent`, `anchor`, … |
 | posture | live | `bypass` \| `prompted` \| `auto` \| `bare` (#729) |
 | children count | derive | from the tree |
 | depth / sibling index | derive | row + nesting position |
@@ -71,7 +71,7 @@ pass). Each field tagged by availability:
 | Field | Avail | Notes |
 |-------|-------|-------|
 | PTT / mic available | derive | voice enabled for the session |
-| unread inbox count | plumb | `msg` channel — `~/.agentwire/inbox/<session>/` |
+| unread inbox count | plumb | `msg` channel — `~/.hermeswire/inbox/<session>/` |
 | pending routed prompt | plumb | a prompt awaiting an answer (#276) |
 
 ## Ghost / orphan — phantom cards (session-less worktree)

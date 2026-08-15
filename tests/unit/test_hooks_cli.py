@@ -1,14 +1,14 @@
-"""Tests for `agentwire hooks install` — managed hook files and drift handling.
+"""Tests for `hermeswire hooks install` — managed hook files and drift handling.
 
-Issue #10: `hooks install` now deploys agentwire-owned files into Hermes Agent
+Issue #10: `hooks install` now deploys hermeswire-owned files into Hermes Agent
 targets (``~/.hermes/hooks/`` + a ``hooks:`` block in ``~/.hermes/config.yaml``)
 instead of Claude's ``~/.claude/hooks/`` + ``settings.json``. The Claude events
 are re-mapped (PermissionRequest/PreToolUse -> pre_tool_call, Notification ->
-on_session_end) and every agentwire-owned file is installed/refreshed whenever
+on_session_end) and every hermeswire-owned file is installed/refreshed whenever
 it differs from the packaged source, with doctor/status reporting drift.
 
 Issue #238 (kept): installed copies of idle-handler.sh and queue-processor.sh
-silently drifted stale; now all agentwire-owned files are refreshed.
+silently drifted stale; now all hermeswire-owned files are refreshed.
 """
 
 from pathlib import Path
@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from agentwire.hooks_cli import (
+from hermeswire.hooks_cli import (
     _install_managed_file,
     _managed_file_state,
     _managed_hook_files,
@@ -91,7 +91,7 @@ class TestInstallManagedFile:
         """#947: chmod follows symlinks, so a chmod aimed at the installed
         link lands on the SOURCE — which, in a dev checkout, is a tracked
         file. The suite itself was the reproducer: every run flipped
-        ``agentwire/hooks/queue-processor.sh`` to 755 in every dev's tree.
+        ``hermeswire/hooks/queue-processor.sh`` to 755 in every dev's tree.
         The symlink path must leave the source's mode alone entirely."""
         import os
 
@@ -138,7 +138,7 @@ class TestManagedHookFiles:
 
     def test_events_remapped_to_hermes(self):
         files = {name: (dir_, event) for name, dir_, event in _managed_hook_files()}
-        perm_dir, perm_ev = files["agentwire-permission.sh"]
+        perm_dir, perm_ev = files["hermeswire-permission.sh"]
         idle_dir, idle_ev = files["idle-handler.sh"]
         queue_dir, queue_ev = files["queue-processor.sh"]
 
@@ -148,7 +148,7 @@ class TestManagedHookFiles:
 
         assert perm_dir.name == "hooks" and perm_dir.parent.name == ".hermes"
         assert idle_dir.name == "hooks" and idle_dir.parent.name == ".hermes"
-        assert queue_dir.name == ".agentwire"
+        assert queue_dir.name == ".hermeswire"
 
 
 class TestInstallHooks:
@@ -156,7 +156,7 @@ class TestInstallHooks:
 
     @pytest.fixture
     def env(self, tmp_path, monkeypatch):
-        from agentwire import hooks_cli as main_mod
+        from hermeswire import hooks_cli as main_mod
 
         home = tmp_path / "home"
         home.mkdir()
@@ -172,10 +172,10 @@ class TestInstallHooks:
         # install and not the guard, and behave identically in a worktree
         # (package root's .git is a FILE) and in CI's plain clone.
         monkeypatch.delenv("UV_TOOL_DIR", raising=False)
-        from agentwire.safety import provenance as _prov
+        from hermeswire.safety import provenance as _prov
         monkeypatch.setattr(
             _prov, "canonical_package_dir",
-            lambda: Path(__import__("agentwire").__file__).parent.resolve(),
+            lambda: Path(__import__("hermeswire").__file__).parent.resolve(),
         )
 
         hooks_src = tmp_path / "pkg-hooks"
@@ -186,7 +186,7 @@ class TestInstallHooks:
 
         # Damage-control healing is the safety domain (#11), not hooks install;
         # stub it so this test exercises only the Hermes hook wiring.
-        import agentwire.safety_commands as cs
+        import hermeswire.safety_commands as cs
         monkeypatch.setattr(cs, "heal_damage_control", lambda **kw: {})
 
         return home, hooks_src
@@ -195,14 +195,14 @@ class TestInstallHooks:
         home, _src = env
         results = install_hooks()
         assert set(results.values()) == {"installed"}
-        assert (home / ".hermes" / "hooks" / "agentwire-permission.sh").exists()
+        assert (home / ".hermes" / "hooks" / "hermeswire-permission.sh").exists()
         assert (home / ".hermes" / "hooks" / "idle-handler.sh").exists()
-        assert (home / ".agentwire" / "queue-processor.sh").exists()
+        assert (home / ".hermeswire" / "queue-processor.sh").exists()
         assert not (home / ".claude").exists()  # no Claude targets are created
 
         config = yaml.safe_load((home / ".hermes" / "config.yaml").read_text())
         events = config["hooks"]
-        assert any(h["command"].endswith("agentwire-permission.sh")
+        assert any(h["command"].endswith("hermeswire-permission.sh")
                    for h in events["pre_tool_call"])
         assert any(h["command"].endswith("idle-handler.sh")
                    for h in events["on_session_end"])
@@ -236,7 +236,7 @@ class TestConfigRegistration:
 
     @pytest.fixture(autouse=True)
     def fake_home(self, tmp_path, monkeypatch):
-        from agentwire import hooks_cli as main_mod
+        from hermeswire import hooks_cli as main_mod
 
         home = tmp_path / "home"
         home.mkdir()
@@ -257,10 +257,10 @@ class TestConfigRegistration:
 
     def test_unregister_removes_only_target_event(self):
         register_hook_in_config("on_session_end", "idle-handler.sh")
-        register_hook_in_config("pre_tool_call", "agentwire-permission.sh")
+        register_hook_in_config("pre_tool_call", "hermeswire-permission.sh")
         assert unregister_hook_from_config("on_session_end", "idle-handler.sh") is True
         assert is_hook_registered("on_session_end", "idle-handler.sh") is False
-        assert is_hook_registered("pre_tool_call", "agentwire-permission.sh") is True
+        assert is_hook_registered("pre_tool_call", "hermeswire-permission.sh") is True
 
     def test_unregister_missing_returns_false(self):
         assert unregister_hook_from_config("on_session_end", "idle-handler.sh") is False
@@ -280,10 +280,10 @@ class TestConfigRegistration:
 
     def test_pre_tool_call_entry_has_timeout(self, fake_home):
         home = fake_home
-        register_hook_in_config("pre_tool_call", "agentwire-permission.sh")
+        register_hook_in_config("pre_tool_call", "hermeswire-permission.sh")
         config = yaml.safe_load((home / ".hermes" / "config.yaml").read_text())
         entry = config["hooks"]["pre_tool_call"][0]
-        assert entry["command"].endswith("agentwire-permission.sh")
+        assert entry["command"].endswith("hermeswire-permission.sh")
         assert entry["timeout"] == 60
 
     def test_lifecycle_entry_has_no_matcher(self, fake_home):
@@ -298,7 +298,7 @@ class TestPackagedHooksPresent:
     """The managed-files table must match what actually ships in the package."""
 
     def test_all_managed_files_exist_in_source(self):
-        from agentwire.hooks_cli import get_hooks_source
+        from hermeswire.hooks_cli import get_hooks_source
         hooks_source = get_hooks_source()
         for name, _dir, _event in _managed_hook_files():
-            assert (hooks_source / name).exists(), f"{name} missing from agentwire/hooks/"
+            assert (hooks_source / name).exists(), f"{name} missing from hermeswire/hooks/"

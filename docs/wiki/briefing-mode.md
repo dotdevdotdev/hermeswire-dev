@@ -19,10 +19,10 @@ The anchor is the calm funnel: pushed only by the human, pulling from correspond
 
 | Role | Spawn | Behavior |
 |---|---|---|
-| **`anchor`** | `agentwire new -s <name> --roles anchor` | Replaces the orchestrator persona. Terse with the human; fans out correspondents; **acts only on the human's cue**; briefs asymmetrically; tears down. |
-| **`correspondent`** | `worktree_create(name, roles="correspondent", prompt=…)` (or `agentwire worktree <name> --roles correspondent`) | Stacks on the worker-worktree safety rail. Exhaustive; files a report to the dropbox; signals passively. |
+| **`anchor`** | `hermeswire new -s <name> --roles anchor` | Replaces the orchestrator persona. Terse with the human; fans out correspondents; **acts only on the human's cue**; briefs asymmetrically; tears down. |
+| **`correspondent`** | `worktree_create(name, roles="correspondent", prompt=…)` (or `hermeswire worktree <name> --roles correspondent`) | Stacks on the worker-worktree safety rail. Exhaustive; files a report to the dropbox; signals passively. |
 
-`anchor` *replaces* the persona (persona kind); `correspondent` *adds to* the worker-worktree etiquette (safety-rail kind) — see the role docs in the `agentwire-project-config` skill and CLAUDE.md.
+`anchor` *replaces* the persona (persona kind); `correspondent` *adds to* the worker-worktree etiquette (safety-rail kind) — see the role docs in the `hermeswire-project-config` skill and CLAUDE.md.
 
 ## The two channels (asymmetric brief)
 
@@ -42,7 +42,7 @@ Need a toast without speaking? `notify_user(text, priority="high")`.
 Correspondents never interrupt the anchor. They drop a **passive** pointer:
 
 ```
-agentwire msg send --to <anchor> --kind ingest --ref "<report-path>" "<topic>"
+hermeswire msg send --to <anchor> --kind ingest --ref "<report-path>" "<topic>"
 ```
 
 `ingest` is never auto-delivered (see [messaging](sessions/messaging.md)). The anchor collects pointers only when the human cues it:
@@ -58,7 +58,7 @@ msg_pull()        # consumes the ingest pointers; each carries a typed ref: path
 Correspondents file into a per-anchor directory, resolved (and created) by:
 
 ```
-agentwire research ensure -s <anchor>     # CLI → ~/.agentwire/research/<anchor>/
+hermeswire research ensure -s <anchor>     # CLI → ~/.hermeswire/research/<anchor>/
 research_dir()                            # MCP, defaults to the calling session
 ```
 
@@ -74,7 +74,7 @@ worktree_prune()             # GC stale registry entries after many spawn/teardo
 ## Surface added for Briefing Mode
 
 - **MCP:** `worktree_create` / `worktree_status` / `worktree_list` / `worktree_remove` / `worktree_prune`; `msg_pull` / `msg_flush`; `research_dir`; `say(display=)`; `notify_user` / `notify_parent` / `notify_event`.
-- **CLI:** `agentwire worktree --status` / `--prune` / `--prompt`; `agentwire msg pull`; `agentwire research dir|ensure`; `agentwire say --display`; `agentwire notify-user`.
+- **CLI:** `hermeswire worktree --status` / `--prune` / `--prompt`; `hermeswire msg pull`; `hermeswire research dir|ensure`; `hermeswire say --display`; `hermeswire notify-user`.
 - **Inbox:** the passive `ingest` kind + typed `ref` field.
 
 Shipped across three phases (#430-group → #433 → #435 → #437).

@@ -1,6 +1,6 @@
 """doctor must notice a world-readable secrets file (#887).
 
-`chmod 600 ~/.agentwire/.env` was documented convention and nothing else — the
+`chmod 600 ~/.hermeswire/.env` was documented convention and nothing else — the
 machine PR #881 was written on had it at 0644, holding every API key, and no
 diagnostic anywhere said so. These tests pin the check, its counting, and its
 opt-in heal.
@@ -11,8 +11,8 @@ import stat
 
 import pytest
 
-from agentwire import core, security
-from agentwire.doctor_cli import (
+from hermeswire import core, security
+from hermeswire.doctor_cli import (
     _overly_permissive_secret_paths,
     _render_secrets_permissions_section,
 )
@@ -20,8 +20,8 @@ from agentwire.doctor_cli import (
 
 @pytest.fixture
 def config_dir(tmp_path, monkeypatch):
-    """A fake ~/.agentwire with every owner-only path present and correct."""
-    cfg = tmp_path / ".agentwire"
+    """A fake ~/.hermeswire with every owner-only path present and correct."""
+    cfg = tmp_path / ".hermeswire"
     cfg.mkdir(mode=0o700)
     (cfg / ".env").write_text("RESEND_API_KEY=sk-test\n")
     (cfg / ".env").chmod(0o600)
@@ -77,7 +77,7 @@ class TestDetection:
 class TestRendering:
     def test_counts_toward_issues_and_names_the_fix(
             self, config_dir, capsys, monkeypatch):
-        monkeypatch.setattr("agentwire.doctor_cli._confirm", lambda prompt: False)
+        monkeypatch.setattr("hermeswire.doctor_cli._confirm", lambda prompt: False)
         (config_dir / ".env").chmod(0o644)
         found, fixed = _render_secrets_permissions_section()
         out = capsys.readouterr().out
@@ -109,7 +109,7 @@ class TestRendering:
         assert _overly_permissive_secret_paths() == []
 
     def test_without_confirmation_nothing_is_changed(self, config_dir, monkeypatch):
-        monkeypatch.setattr("agentwire.doctor_cli._confirm", lambda prompt: False)
+        monkeypatch.setattr("hermeswire.doctor_cli._confirm", lambda prompt: False)
         (config_dir / ".env").chmod(0o644)
         found, fixed = _render_secrets_permissions_section()
         assert (found, fixed) == (1, 0)

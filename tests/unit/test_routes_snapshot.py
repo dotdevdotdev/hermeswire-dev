@@ -14,10 +14,10 @@ genuinely change (a real feature add/remove) — diff the assertion delta first
 to confirm the change is exactly what you intended.
 """
 
-from agentwire.config import Config
-from agentwire.server import AgentWireServer
+from hermeswire.config import Config
+from hermeswire.server import HermesWireServer
 
-# Complete (method, canonical-path) set registered by a fresh AgentWireServer.
+# Complete (method, canonical-path) set registered by a fresh HermesWireServer.
 # Frozen baseline — see module docstring before editing.
 BASELINE_ROUTES = frozenset({
     ("DELETE", "/api/artifacts/{filename}"),
@@ -200,7 +200,7 @@ def test_route_table_unchanged():
     handlers, the set is invariant. A dropped route (missing from the new
     registrar) or a stray addition fails here with an explicit delta.
     """
-    server = AgentWireServer(Config())
+    server = HermesWireServer(Config())
     actual = _route_set(server.app)
 
     missing = BASELINE_ROUTES - actual

@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 RICH_TEXT_JS = (
-    Path(__file__).resolve().parents[2] / "agentwire" / "static" / "js" / "utils" / "rich-text.js"
+    Path(__file__).resolve().parents[2] / "hermeswire" / "static" / "js" / "utils" / "rich-text.js"
 )
 
 pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="node not on PATH")

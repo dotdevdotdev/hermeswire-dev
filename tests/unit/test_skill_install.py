@@ -1,4 +1,4 @@
-"""Tests for agentwire-owned GLOBAL skill install/drift (issue #475).
+"""Tests for hermeswire-owned GLOBAL skill install/drift (issue #475).
 
 Global skills (currently just `/wiki`) were hand-placed at wiki-setup and never
 resynced, so a stale or missing copy rotted invisibly. These tests cover the
@@ -11,9 +11,9 @@ import shutil
 
 import pytest
 
-import agentwire.hooks_cli as m
-from agentwire.doctor_cli import _render_skill_section
-from agentwire.hooks_cli import (
+import hermeswire.hooks_cli as m
+from hermeswire.doctor_cli import _render_skill_section
+from hermeswire.hooks_cli import (
     _managed_global_skills,
     _managed_skill_state,
     install_hooks,
@@ -176,17 +176,17 @@ def test_install_hooks_installs_skills(env, tmp_path, monkeypatch):
     # Stub out the hook half so we exercise only the skill wiring, and keep
     # damage-control healing from touching the real machine.
     monkeypatch.setattr(m, "get_hooks_source", lambda: tmp_path / "no-hooks")
-    import agentwire.safety_commands as cs
+    import hermeswire.safety_commands as cs
     monkeypatch.setattr(cs, "heal_damage_control", lambda **kw: {})
     # install_hooks now refuses outright from a non-canonical package (#936).
     # Pin the running package AS canonical so this measures the skill wiring
     # and not the guard — and so it behaves identically in a worktree (package
     # root's .git is a FILE) and in CI's plain clone.
     monkeypatch.delenv("UV_TOOL_DIR", raising=False)
-    from agentwire.safety import provenance as _prov
+    from hermeswire.safety import provenance as _prov
     monkeypatch.setattr(
         _prov, "canonical_package_dir",
-        lambda: pathlib.Path(__import__("agentwire").__file__).parent.resolve(),
+        lambda: pathlib.Path(__import__("hermeswire").__file__).parent.resolve(),
     )
     _, target_root = env
     target = target_root / "wiki"

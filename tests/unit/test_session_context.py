@@ -13,8 +13,8 @@ from unittest.mock import patch
 
 import pytest
 
-from agentwire import session_context as sc
-from agentwire.config import CustomServiceConfig
+from hermeswire import session_context as sc
+from hermeswire.config import CustomServiceConfig
 
 
 @pytest.fixture(autouse=True)
@@ -145,32 +145,32 @@ def _svc(name, policy="none"):
 def test_resolve_policy_service_default_on():
     cfg = _cfg()
     with patch.object(sc, "_warn_threshold", return_value=20), patch(
-        "agentwire.services.registry",
-        return_value=[_svc("agentwire-notifications", "clear")],
+        "hermeswire.services.registry",
+        return_value=[_svc("hermeswire-notifications", "clear")],
     ):
-        assert sc.resolve_policy("agentwire-notifications", cfg) == "clear"
+        assert sc.resolve_policy("hermeswire-notifications", cfg) == "clear"
 
 
 def test_resolve_policy_config_override_wins():
-    cfg = _cfg(policies={"agentwire-notifications": "compact"})
+    cfg = _cfg(policies={"hermeswire-notifications": "compact"})
     with patch(
-        "agentwire.services.registry",
-        return_value=[_svc("agentwire-notifications", "clear")],
+        "hermeswire.services.registry",
+        return_value=[_svc("hermeswire-notifications", "clear")],
     ):
         # Explicit per-session override beats the service-registry default.
-        assert sc.resolve_policy("agentwire-notifications", cfg) == "compact"
+        assert sc.resolve_policy("hermeswire-notifications", cfg) == "compact"
 
 
 def test_resolve_policy_unknown_session_is_none():
     cfg = _cfg()
-    with patch("agentwire.services.registry", return_value=[]):
+    with patch("hermeswire.services.registry", return_value=[]):
         assert sc.resolve_policy("some-random-session", cfg) == "none"
 
 
 def test_resolve_policy_invalid_service_value_is_none():
     cfg = _cfg()
     with patch(
-        "agentwire.services.registry",
+        "hermeswire.services.registry",
         return_value=[_svc("svc", "nonsense")],
     ):
         assert sc.resolve_policy("svc", cfg) == "none"
@@ -223,7 +223,7 @@ def test_act_acts_after_two_low_ticks():
     with patch.object(sc, "session_context", return_value=_ctx_obj(10)):
         assert sc.act_on_session("s", "clear", threshold=20)["deferred"] == "first_low_sighting"
     with patch.object(sc, "session_context", return_value=_ctx_obj(10)), patch(
-        "agentwire.prompt_router.safe_deliver", return_value=(True, "delivered")
+        "hermeswire.prompt_router.safe_deliver", return_value=(True, "delivered")
     ) as deliver:
         r = sc.act_on_session("s", "clear", threshold=20)
     assert r["acted"] is True
@@ -235,7 +235,7 @@ def test_act_acts_after_two_low_ticks():
 def test_act_compact_routes_compress():
     sc._mark_low("s")
     with patch.object(sc, "session_context", return_value=_ctx_obj(5)), patch(
-        "agentwire.prompt_router.safe_deliver", return_value=(True, "delivered")
+        "hermeswire.prompt_router.safe_deliver", return_value=(True, "delivered")
     ) as deliver:
         r = sc.act_on_session("s", "compact", threshold=20)
     assert r["acted"] is True
@@ -246,7 +246,7 @@ def test_act_compact_routes_compress():
 def test_act_defers_when_safe_deliver_refuses():
     sc._mark_low("s")
     with patch.object(sc, "session_context", return_value=_ctx_obj(10)), patch(
-        "agentwire.prompt_router.safe_deliver",
+        "hermeswire.prompt_router.safe_deliver",
         return_value=(False, "delivery_unverified"),
     ):
         r = sc.act_on_session("s", "clear", threshold=20)
@@ -257,7 +257,7 @@ def test_act_defers_when_safe_deliver_refuses():
 def test_act_defers_when_send_raises():
     sc._mark_low("s")
     with patch.object(sc, "session_context", return_value=_ctx_obj(10)), patch(
-        "agentwire.prompt_router.safe_deliver", side_effect=RuntimeError("boom")
+        "hermeswire.prompt_router.safe_deliver", side_effect=RuntimeError("boom")
     ):
         r = sc.act_on_session("s", "clear", threshold=20)
     assert r["acted"] is False
@@ -270,7 +270,7 @@ def test_act_defers_when_send_raises():
 def test_tick_skips_when_auto_disabled():
     cfg = _cfg()
     cfg.session_context.auto_enabled = False
-    with patch("agentwire.config.get_config", return_value=cfg):
+    with patch("hermeswire.config.get_config", return_value=cfg):
         assert sc.tick() == {"skipped": "disabled"}
 
 
@@ -284,16 +284,16 @@ def test_tick_acts_only_on_opted_in_sessions():
                 "remaining_pct": 10, "policy": policy}
 
     def fake_resolve(session, c):
-        return "clear" if session == "agentwire-notifications" else "none"
+        return "clear" if session == "hermeswire-notifications" else "none"
 
-    with patch("agentwire.config.get_config", return_value=cfg), patch.object(
+    with patch("hermeswire.config.get_config", return_value=cfg), patch.object(
         sc, "_list_local_sessions",
-        return_value=["agentwire-notifications", "fragmentz", "agentwire-scheduler"],
+        return_value=["hermeswire-notifications", "fragmentz", "hermeswire-scheduler"],
     ), patch.object(sc, "resolve_policy", side_effect=fake_resolve), patch.object(
         sc, "act_on_session", side_effect=fake_act
     ):
         result = sc.tick()
 
     # Only the opted-in session was evaluated/acted on — never fragmentz.
-    assert calls == [("agentwire-notifications", "clear")]
-    assert [e["session"] for e in result["acted"]] == ["agentwire-notifications"]
+    assert calls == [("hermeswire-notifications", "clear")]
+    assert [e["session"] for e in result["acted"]] == ["hermeswire-notifications"]

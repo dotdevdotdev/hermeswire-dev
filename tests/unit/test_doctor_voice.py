@@ -1,4 +1,4 @@
-"""Voice-loop preflight stage checks (agentwire/doctor_voice.py).
+"""Voice-loop preflight stage checks (hermeswire/doctor_voice.py).
 
 Each stage is exercised in isolation, proving the issue's verification
 contract: break one dependency and EXACTLY that stage goes red while the
@@ -7,7 +7,7 @@ others stay green — without disrupting the live :8101 shim / :8765 portal.
 
 from types import SimpleNamespace
 
-from agentwire import doctor_voice as dv
+from hermeswire import doctor_voice as dv
 
 
 def _cfg(**stt):
@@ -69,20 +69,20 @@ def test_mic_info_when_enumeration_unparseable(monkeypatch):
 
 
 def test_stt_default_fails_when_shim_down(monkeypatch):
-    import agentwire.voice_status as vs
+    import hermeswire.voice_status as vs
     monkeypatch.setattr(vs, "_probe", lambda url, endpoint="/health", timeout=2.0: (False, "connection refused"))
-    import agentwire.stt as stt_mod
+    import hermeswire.stt as stt_mod
     monkeypatch.setattr(stt_mod, "moonshine_importable", lambda: True)
     r = dv.check_stt(_cfg())
     assert r.failed
     assert "not responding" in r.detail
-    assert any("agentwire stt start" in f for f in r.fixes)
+    assert any("hermeswire stt start" in f for f in r.fixes)
 
 
 def test_stt_default_ok_when_shim_healthy(monkeypatch):
-    import agentwire.voice_status as vs
+    import hermeswire.voice_status as vs
     monkeypatch.setattr(vs, "_probe", lambda url, endpoint="/health", timeout=2.0: (True, None))
-    import agentwire.stt as stt_mod
+    import hermeswire.stt as stt_mod
     monkeypatch.setattr(stt_mod, "moonshine_importable", lambda: True)
     r = dv.check_stt(_cfg())
     assert r.status == "ok"
@@ -91,7 +91,7 @@ def test_stt_default_ok_when_shim_healthy(monkeypatch):
 
 
 def test_stt_default_info_when_moonshine_absent(monkeypatch):
-    import agentwire.stt as stt_mod
+    import hermeswire.stt as stt_mod
     monkeypatch.setattr(stt_mod, "moonshine_importable", lambda: False)
     r = dv.check_stt(_cfg())
     assert r.status == "info"
@@ -99,7 +99,7 @@ def test_stt_default_info_when_moonshine_absent(monkeypatch):
 
 
 def test_stt_custom_fails_when_shim_down(monkeypatch):
-    import agentwire.voice_status as vs
+    import hermeswire.voice_status as vs
     monkeypatch.setattr(vs, "_probe", lambda url, endpoint="/health", timeout=2.0: (False, "connection refused"))
     r = dv.check_stt(_cfg(backend="custom", url="http://localhost:9"))
     assert r.failed
@@ -127,7 +127,7 @@ def test_portal_fails_when_down(monkeypatch):
     r = dv.check_portal(_cfg())
     assert r.failed
     assert "not responding" in r.detail
-    assert any("agentwire portal start" in f for f in r.fixes)
+    assert any("hermeswire portal start" in f for f in r.fixes)
 
 
 def test_portal_ok_when_up_no_tunnels(monkeypatch):
@@ -146,7 +146,7 @@ def test_portal_fails_when_tunnel_down(monkeypatch):
         def check_tunnel(self, s):
             return SimpleNamespace(status="down")
 
-    import agentwire.tunnels as tunnels_mod
+    import hermeswire.tunnels as tunnels_mod
     monkeypatch.setattr(tunnels_mod, "TunnelManager", _TM)
     r = dv.check_portal(_cfg(), ctx=ctx)
     assert r.failed
@@ -189,13 +189,13 @@ def test_only_stt_red_when_shim_down(monkeypatch):
     monkeypatch.setattr(dv, "_find_ffmpeg", lambda: "/usr/bin/ffmpeg")
     monkeypatch.setattr(dv.platform, "system", lambda: "Linux")  # skip device enum
 
-    import agentwire.stt as stt_mod
+    import hermeswire.stt as stt_mod
     monkeypatch.setattr(stt_mod, "moonshine_importable", lambda: True)
     monkeypatch.setattr(dv.shutil, "which", lambda n: "/usr/bin/tmux")
     monkeypatch.setattr(dv, "_tmux_server_running", lambda: True)
 
     # STT shim down (dead) — resolver probes via voice_status._probe.
-    import agentwire.voice_status as vs
+    import hermeswire.voice_status as vs
     monkeypatch.setattr(vs, "_probe", lambda url, endpoint="/health", timeout=2.0: (False, "connection refused"))
 
     # Portal up — check_portal still uses dv._http_health.

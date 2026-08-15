@@ -2,7 +2,7 @@
 
 > Living document. Update this, don't create new versions.
 
-A playbook for splitting one very large file — or otherwise reshaping a big chunk of a codebase — by fanning the work out across **parallel worktree sessions** that PR back into a shared feature branch. It exists because several lessons from the #495 CLI-monolith extraction (12,854-line `agentwire/__main__.py` → 26 `*_cli.py` modules + `core.py`, PRs #529–#538) proved load-bearing and reusable, and re-deriving them each time is expensive.
+A playbook for splitting one very large file — or otherwise reshaping a big chunk of a codebase — by fanning the work out across **parallel worktree sessions** that PR back into a shared feature branch. It exists because several lessons from the #495 CLI-monolith extraction (12,854-line `hermeswire/__main__.py` → 26 `*_cli.py` modules + `core.py`, PRs #529–#538) proved load-bearing and reusable, and re-deriving them each time is expensive.
 
 **When this applies:** you're about to extract / move / mechanically transform many functions out of one large file (or across many files) and want to parallelize for wall-clock speed. One orchestrator session drives N worker worktrees, each owning a disjoint slice, each opening a draft PR into a feature branch the orchestrator controls.
 
@@ -39,7 +39,7 @@ Merge the branches **one at a time**. After each merge, the next branch **regene
 git fetch origin <feature-branch>
 
 # 1. Take the shared file fresh from the base (discards this branch's stale copy)
-git checkout origin/<feature-branch> -- agentwire/__main__.py
+git checkout origin/<feature-branch> -- hermeswire/__main__.py
 
 # 2. Re-apply ONLY this group's own removal. This is now CLEAN: with the other
 #    already-merged groups gone, this group's functions are contiguous, so the
@@ -71,13 +71,13 @@ Only then fan out the waves. Each group's worker owns a disjoint, self-contained
 
 ## Verification discipline
 
-**Run the FULL suite, never a subset.** `uv run --extra dev pytest tests/unit tests/integration`. Integration tests reach into moved symbols by module attribute — `from agentwire import __main__ as m; m.cmd_foo` — and when a symbol moves, its **patch target must be repointed** to the module the system-under-test now resolves it from. Scoping a worker's verify to `tests/unit` silently passes while integration patches break; that reddened a #495 PR's CI *after* it looked green locally. Test changes in a pure extraction should be **only** patch-target updates — no assertion changes.
+**Run the FULL suite, never a subset.** `uv run --extra dev pytest tests/unit tests/integration`. Integration tests reach into moved symbols by module attribute — `from hermeswire import __main__ as m; m.cmd_foo` — and when a symbol moves, its **patch target must be repointed** to the module the system-under-test now resolves it from. Scoping a worker's verify to `tests/unit` silently passes while integration patches break; that reddened a #495 PR's CI *after* it looked green locally. Test changes in a pure extraction should be **only** patch-target updates — no assertion changes.
 
 **Verify coupling claims with `grep`, not a recon model's prose.** When planning the partition, a sub-agent (recon) hallucinated a large cross-domain "call mesh" that would have forced a much more conservative split. A deterministic grep showed the *real* graph was **5 inter-command edges**. Trust the grep:
 
 ```bash
 # inter-command calls = real coupling the partition must respect
-grep -nE "\bcmd_[a-z_]+\(" agentwire/__main__.py | grep -vE "set_defaults|^def "
+grep -nE "\bcmd_[a-z_]+\(" hermeswire/__main__.py | grep -vE "set_defaults|^def "
 ```
 
 The partition rides on this graph; derive it mechanically, don't take a model's word for the shape of the code.
@@ -88,10 +88,10 @@ The partition rides on this graph; derive it mechanically, don't take a model's 
 
 What worked for driving the fleet:
 
-- **One worktree session per group**, each PR'ing into the shared **feature branch** (never `main`), so the orchestrator stays in control of integration. Dispatch: `agentwire worktree <group> --base <feature-branch> -p <repo> --prompt "…"`. The `worker-worktree` role (auto-injected by the verb's default role) already encodes isolation + draft-PR + notify-back, so prompts only carry the task.
+- **One worktree session per group**, each PR'ing into the shared **feature branch** (never `main`), so the orchestrator stays in control of integration. Dispatch: `hermeswire worktree <group> --base <feature-branch> -p <repo> --prompt "…"`. The `worker-worktree` role (auto-injected by the verb's default role) already encodes isolation + draft-PR + notify-back, so prompts only carry the task.
 - **Independent review gate per PR**, all mechanical: ① diff scope is only the expected files; ② **dangling-ref grep** — every moved name is absent from the monolith except its import + registrar line; ③ **no-redefine grep** — `core` helpers are *imported*, not copied into the new module; ④ CI green.
 - **Backstop with polls, not notifications.** Worktree-completion notifications are unreliable (a polite report-back can dead-letter against a busy orchestrator — see [messaging](../sessions/messaging.md) and #523). Run a background `gh pr …` poll for each expected PR rather than waiting to be told.
-- **`send --wait-ready --verify` "could not be verified" is a false negative.** It frequently reports failure on a delivery that landed. Confirm via `agentwire output` before re-sending — a blind retry double-drives the session.
+- **`send --wait-ready --verify` "could not be verified" is a false negative.** It frequently reports failure on a delivery that landed. Confirm via `hermeswire output` before re-sending — a blind retry double-drives the session.
 - **Merges need `--admin`.** Branch protection counts advisory checks as required, so `gh pr merge N --squash --admin`. Mark `gh pr ready N` first if it's a draft (a re-push reverts a PR to draft).
 
 ---

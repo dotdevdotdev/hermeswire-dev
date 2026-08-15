@@ -1,12 +1,12 @@
 # Orchestration transport alternatives: do we need a non-SSH transport?
 
-> Research note for [#297](https://github.com/dotdevdotdev/agentwire-dev/issues/297). Investigates the "we don't use SSH — we use something faster/more secure" pitch from competing agent-orchestration tools, separates real engineering from marketing, and recommends what (if anything) AgentWire should adopt. **This is a recon report, not a transport rewrite.**
+> Research note for [#297](https://github.com/dotdevdotdev/hermeswire-dev/issues/297). Investigates the "we don't use SSH — we use something faster/more secure" pitch from competing agent-orchestration tools, separates real engineering from marketing, and recommends what (if anything) HermesWire should adopt. **This is a recon report, not a transport rewrite.**
 >
-> **Update (shipped):** both cheap wins below are now implemented, in the same PR (#300/#303). Cheap win #1 — `agentwire/ssh.py::ssh_base_opts()` supplies `ControlMaster`/`ControlPersist` multiplexing and is wired into every remote call site (`agents/tmux.py`, `tunnels.py`, `server.py`, `projects.py`). Cheap win #2 — the Tailscale mesh underlay is documented and supported; see [Tailscale Mesh Underlay](../deployment/remote-machines.md#tailscale-mesh-underlay-no-inbound-port-22). The present-tense "no `ControlMaster` anywhere / fresh process per command" baseline below describes the pre-#297 state and is kept for historical context.
+> **Update (shipped):** both cheap wins below are now implemented, in the same PR (#300/#303). Cheap win #1 — `hermeswire/ssh.py::ssh_base_opts()` supplies `ControlMaster`/`ControlPersist` multiplexing and is wired into every remote call site (`agents/tmux.py`, `tunnels.py`, `server.py`, `projects.py`). Cheap win #2 — the Tailscale mesh underlay is documented and supported; see [Tailscale Mesh Underlay](../deployment/remote-machines.md#tailscale-mesh-underlay-no-inbound-port-22). The present-tense "no `ControlMaster` anywhere / fresh process per command" baseline below describes the pre-#297 state and is kept for historical context.
 
 ## TL;DR — Recommendation (b): cheap hardening, no transport change
 
-SSH is **not** a real limitation for AgentWire at our scale (personal/small-team, a handful of machines on a LAN plus a few remote boxes). The competitor "no SSH" marketing is mostly about a problem we already solved a different way (mobile push + structured agent events → our portal/WebSocket layer), not about raw transport speed or security. Two cheap wins close the only gaps that are real:
+SSH is **not** a real limitation for HermesWire at our scale (personal/small-team, a handful of machines on a LAN plus a few remote boxes). The competitor "no SSH" marketing is mostly about a problem we already solved a different way (mobile push + structured agent events → our portal/WebSocket layer), not about raw transport speed or security. Two cheap wins close the only gaps that are real:
 
 1. **Enable SSH `ControlMaster`/`ControlPersist` multiplexing** in our own `ssh` invocations (a few `-o` flags). Measured locally: this cuts per-command handshake from **~90 ms to ~10 ms even on loopback with zero network latency** — and the gap widens to hundreds of ms over a real network. No transport change, no new code paths.
 2. **Document running our existing SSH *over* a Tailscale/WireGuard mesh.** This buys the entire marketed "no inbound port / identity-based / NAT-traversal" security story while changing **zero application code** — the answer to "more secure than SSH?" is "keep SSH, change the network underneath."
@@ -17,15 +17,15 @@ A persistent per-machine daemon (gRPC/QUIC/WebSocket) is **not** worth it for us
 
 ## 1. What we do today (the baseline cost surface)
 
-AgentWire is **all SSH** for cross-machine work — a fresh `ssh user@host "<cmd>"` process per command, no connection reuse:
+HermesWire is **all SSH** for cross-machine work — a fresh `ssh user@host "<cmd>"` process per command, no connection reuse:
 
 | Concern | Where | Mechanism |
 |---|---|---|
-| Remote command exec | `agentwire/agents/tmux.py:135` (`_run_remote`) | `ssh -o BatchMode=yes -o ConnectTimeout=5 user@host <cmd>` — **fresh process per command** |
+| Remote command exec | `hermeswire/agents/tmux.py:135` (`_run_remote`) | `ssh -o BatchMode=yes -o ConnectTimeout=5 user@host <cmd>` — **fresh process per command** |
 | Other remote exec | `server.py:73,574,632,689,863`, `projects.py:80` | same per-command `ssh` pattern |
 | Port forwarding | `tunnels.py:104` (`create_tunnel`) | `ssh -L local:localhost:remote -N -f` background tunnel, PID-tracked via pgrep |
 | Connectivity check | `tunnels.py:308` (`test_ssh_connectivity`) | `ssh -o BatchMode … echo` |
-| Topology | `network.py` (`NetworkContext`) | services → machines → SSH targets → tunnels; registry in `~/.agentwire/machines.json` |
+| Topology | `network.py` (`NetworkContext`) | services → machines → SSH targets → tunnels; registry in `~/.hermeswire/machines.json` |
 
 **No `ControlMaster`/`ControlPath`/`ControlPersist` is set anywhere in the code.** The docs *recommend* it as a `~/.ssh/config` tip ([`remote-machines.md:139`](../deployment/remote-machines.md), [`troubleshooting.md:320`](../internals/troubleshooting.md)), and because `ssh(1)` reads `~/.ssh/config` by default that tip *would* apply to all our subprocess calls — but it's opt-in and off by default, so out of the box every remote op pays a full handshake.
 
@@ -138,12 +138,12 @@ Over a real LAN/VPN the absolute saving is far larger (a cold handshake is sever
 **What a long-lived daemon (gRPC/QUIC/WebSocket) would buy:** server-push notifications, native streaming of agent events, sub-handshake command latency, structured "agent is thinking / awaiting approval" semantics (the `rivet-dev/sandbox-agent` and `tacticremote` model).
 
 **Why it's wrong for us right now:**
-- **We already have the event/push layer** — the portal's WebSocket + the idle/notification hooks + channels (email/SMS) already deliver "agent needs you" to a human. The daemon's headline benefit is something AgentWire solved at the *portal* tier, not the transport tier. Adding a transport daemon duplicates it.
+- **We already have the event/push layer** — the portal's WebSocket + the idle/notification hooks + channels (email/SMS) already deliver "agent needs you" to a human. The daemon's headline benefit is something HermesWire solved at the *portal* tier, not the transport tier. Adding a transport daemon duplicates it.
 - **It's a new service on every machine** to deploy, secure (now *it* needs an identity + open port or its own outbound tunnel), version, health-check, and restart. That is precisely the surface SSH lets us avoid — `sshd` is already there, already hardened, already managed by the OS.
 - **It fights our architecture.** CLAUDE.md is explicit: *the CLI is the single source of truth; the portal and everything else are thin wrappers that shell out to it.* A stateful long-lived daemon that owns remote execution inverts that. The latency win it offers is the same win `ControlMaster` gives us for ~5 lines of flags.
 - **Multiplexed SSH already gives ~10 ms commands.** The daemon's *only* unique remaining advantage is server-initiated push to the machine — which we don't need, because our orchestrator polls/pushes from the *control* side and the portal handles human push.
 
-**When to revisit:** if AgentWire ever becomes a multi-tenant hosted product (agents in *our* cloud, customers who never touch a shell), the cloud-sandbox-daemon model (rivet/Warp/Devin) becomes the right shape. At personal/small-team scale it's pure overhead.
+**When to revisit:** if HermesWire ever becomes a multi-tenant hosted product (agents in *our* cloud, customers who never touch a shell), the cloud-sandbox-daemon model (rivet/Warp/Devin) becomes the right shape. At personal/small-team scale it's pure overhead.
 
 ---
 

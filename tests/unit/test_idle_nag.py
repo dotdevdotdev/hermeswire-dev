@@ -6,7 +6,7 @@ session should be included in the nag batch this scan, given its current
 tests exercise it without the async loop / tmux.
 """
 
-from agentwire.server import should_nag_idle_session
+from hermeswire.server import should_nag_idle_session
 
 
 def test_never_nagged_session_is_included():

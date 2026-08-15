@@ -24,11 +24,11 @@ import subprocess
 
 import pytest
 
-from agentwire.core import tmux_session_cwd
+from hermeswire.core import tmux_session_cwd
 
 pytestmark = pytest.mark.requires_tmux
 
-SOCKET = "agentwire-test-cwd"
+SOCKET = "hermeswire-test-cwd"
 
 
 def tmux(*args, check=True):

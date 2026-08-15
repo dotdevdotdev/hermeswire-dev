@@ -7,7 +7,7 @@ so these stay hermetic (no real gh CLI / network dependency).
 
 import subprocess
 
-from agentwire import session_cli as m
+from hermeswire import session_cli as m
 
 
 def _git(repo, *a):
@@ -71,7 +71,7 @@ class TestBranchMergeState:
     def test_merged_verdict_requires_matching_head_sha(self, tmp_path, monkeypatch):
         """`gh pr view <branch>` resolves by head-branch NAME, not ref identity —
         a long-merged PR whose remote branch was since deleted can still be the
-        match if a LATER branch reuses the same name (agentwire's own worktree
+        match if a LATER branch reuses the same name (hermeswire's own worktree
         naming defaults recur: "fix-bug", "cleanup", ...). Trusting MERGED
         without checking headRefOid against the branch's actual tip would
         force-delete real, never-merged work under the reused name (#718 review)."""

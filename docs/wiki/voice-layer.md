@@ -2,8 +2,8 @@
 
 > **Status: beta, opt-in** (owner ruling 2026-08-10, reversing "never merges").
 > The code ships on `main`; the feature is off until you set
-> **`beta.voice_layer: true`** in `~/.agentwire/config.yaml` and put
-> `OPENAI_API_KEY` in `~/.agentwire/.env`. It runs on **your own** API key.
+> **`beta.voice_layer: true`** in `~/.hermeswire/config.yaml` and put
+> `OPENAI_API_KEY` in `~/.hermeswire/.env`. It runs on **your own** API key.
 > Nothing here is wired into the portal or the scheduler. The one hook into
 > existing code is inert for every session that has not opted in (see
 > [The one seam](#the-one-seam)).
@@ -21,14 +21,14 @@ Two steps, and it needs both. The buddy CLI refuses until the first is done and
 cannot mint a realtime session without the second, so a half-done setup fails
 loudly at the step it is missing rather than at the microphone.
 
-**1. Turn the flag on** — `~/.agentwire/config.yaml`:
+**1. Turn the flag on** — `~/.hermeswire/config.yaml`:
 
 ```yaml
 beta:
   voice_layer: true
 ```
 
-**2. Provide the key** — `~/.agentwire/.env`, `chmod 600`, the one blessed spot
+**2. Provide the key** — `~/.hermeswire/.env`, `chmod 600`, the one blessed spot
 for secrets ([security/secrets.md](security/secrets.md)):
 
 ```
@@ -38,12 +38,12 @@ OPENAI_API_KEY=sk-...
 Then:
 
 ```bash
-agentwire doctor                # reports the flag, and whether the key is present
-agentwire buddy register buddy  # the session identity (no tmux session)
-agentwire buddy serve buddy     # the bridge, on 127.0.0.1:8788
+hermeswire doctor                # reports the flag, and whether the key is present
+hermeswire buddy register buddy  # the session identity (no tmux session)
+hermeswire buddy serve buddy     # the bridge, on 127.0.0.1:8788
 ```
 
-`agentwire doctor` reports the flag's state either way — including "off",
+`hermeswire doctor` reports the flag's state either way — including "off",
 because "is this costing me anything?" is a question a doctor run should
 answer without you first enabling the thing. It reports only whether the key is
 **present**; it never prints the key or any prefix of it.
@@ -55,7 +55,7 @@ tokens every session pays for**. There are **two** model-facing surfaces, and
 the count is the interesting part: the first review of the gate found the
 second one.
 
-1. **Role prompts** — ~10 lines of voice-buddy etiquette in `agentwire.md`,
+1. **Role prompts** — ~10 lines of voice-buddy etiquette in `hermeswire.md`,
    `orchestrator.md`, `worker.md`, `worker-worktree.md`.
 2. **The `msg_send` MCP tool description** — ~316 characters documenting the
    `voice` kind, which loads into **every agent session in every install**, and
@@ -66,9 +66,9 @@ second one.
    description changed) — established by diffing the whole schema, not by
    reading the diff of the file we already knew about.
 
-Both go through one mechanism, `agentwire/beta.py`: `<!-- beta:voice_layer -->`
+Both go through one mechanism, `hermeswire/beta.py`: `<!-- beta:voice_layer -->`
 markers resolved by `beta.render`, called from `roles.parse_role_file` (the one
-funnel every role reader goes through, so `agentwire roles show` and a live
+funnel every role reader goes through, so `hermeswire roles show` and a live
 session launch agree) and from the `beta.gated_doc` decorator, applied *below*
 `@mcp.tool()` so FastMCP registers the resolved text.
 
@@ -109,7 +109,7 @@ only if you paste it yourself.
 
 The ordering is worth stating, though, because the failure is confusing rather
 than loud: paste that entry while the flag is off and the supervised process is
-`agentwire buddy serve`, which now **refuses and exits** — so the watchdog sees
+`hermeswire buddy serve`, which now **refuses and exits** — so the watchdog sees
 a dead tmux session and `doctor` reports the service unhealthy on every run.
 Turn the flag on first. (The pasted block ships `autostart: false`, so it does
 not boot on portal launch until you flip that too.)
@@ -125,7 +125,7 @@ data. Where the design hypothesis and the docs disagreed, the docs won.
 | Question | The answer | vs. what was assumed |
 |---|---|---|
 | **Model id** | `gpt-realtime-2.1` (GA flagship, shipped 2026-07). Siblings: `gpt-realtime-2.1-mini`, `gpt-realtime-translate`, `gpt-live-transcribe`. | ❌ The owner called it **"gpt-voice-2"**. That name does not exist. |
-| **Transport** | Three: **WebRTC** for clients that capture/play audio directly, **WebSocket** for servers already holding raw audio from a media pipeline, **SIP** for telephony. | ⚠️ Open question in the prompt. WebRTC is right here — the audio is captured in a browser, not by agentwire. |
+| **Transport** | Three: **WebRTC** for clients that capture/play audio directly, **WebSocket** for servers already holding raw audio from a media pipeline, **SIP** for telephony. | ⚠️ Open question in the prompt. WebRTC is right here — the audio is captured in a browser, not by hermeswire. |
 | **Auth** | `POST /v1/realtime/client_secrets` mints a short-lived **ephemeral client secret**. Response quirk: `value` and `expires_at` are **top-level**, `session.id` is nested. | ⚠️ Unstated. Matters: it's why minting is server-side. The API key never reaches the browser. |
 | **Connect** | Browser POSTs its SDP offer to `POST /v1/realtime/calls` with the client secret as bearer; gets an SDP answer back. | — |
 | **Tool execution** | **Client-side.** The docs are explicit: "the client detects conversation items that contain function call arguments, it will execute custom code using those arguments." OpenAI never runs anything. | ✅ Assumption held — and it's the whole reason the security story works. |
@@ -173,9 +173,9 @@ all three surfaces the owner can meet: `--help` on `register`/`mint`/`serve`,
 the picker on the buddy page, and the refusal text when a name is wrong.
 
 ```bash
-agentwire buddy register buddy --voice marin   # persisted on the record
-agentwire buddy serve buddy --voice ash        # explicit flag wins for this run
-agentwire buddy serve buddy --voice cedarr
+hermeswire buddy register buddy --voice marin   # persisted on the record
+hermeswire buddy serve buddy --voice ash        # explicit flag wins for this run
+hermeswire buddy serve buddy --voice cedarr
 # → unknown realtime voice 'cedarr' — valid voices are: cedar, marin, alloy,
 #   ash, ballad, coral, echo, sage, shimmer, verse (default: cedar)
 ```
@@ -292,7 +292,7 @@ things, not from acting itself.
 
 ### The write path exists now, and it is not guarded by anything but itself
 
-Slice 1 gives the buddy exactly one write: `agentwire msg send` to a session
+Slice 1 gives the buddy exactly one write: `hermeswire msg send` to a session
 that is already running. Until it landed, "has no such guards" was a
 theoretical statement about a read-only tool surface. It is now a live property
 of a write path, so it is worth stating exactly, and **every shorter version of
@@ -305,8 +305,8 @@ this rounds up**:
 and it is wrong twice over:
 
 - **Coverage.** The recipient's `PreToolUse` hooks cover `Bash`, `Edit`,
-  `Write`, `Read`, `Grep`, `Glob` and `mcp__agentwire__(email_send|quo_send)`.
-  A recipient acting through any other `mcp__agentwire__*` tool —
+  `Write`, `Read`, `Grep`, `Glob` and `mcp__hermeswire__(email_send|quo_send)`.
+  A recipient acting through any other `mcp__hermeswire__*` tool —
   `session_send`, `pane_spawn`, `msg_send`, `worktree_*` — is not guarded at
   all.
 - **Kind, which matters more.** Damage control guards *operations*. It cannot
@@ -321,8 +321,8 @@ What actually constrains the buddy is the frozen argv and the confirm gate
 #### The empirical result
 
 Reproducible with `tools/voice_dc_probe.py`. Measured 2026-08-06 against the
-**live** rules at `~/.agentwire/damage-control` (15 files, sha `af286f2c`) and
-tooldefs at `~/.agentwire/tooldefs` (10 files, sha `3da4c920`) — both named
+**live** rules at `~/.hermeswire/damage-control` (15 files, sha `af286f2c`) and
+tooldefs at `~/.hermeswire/tooldefs` (10 files, sha `3da4c920`) — both named
 because per #916 they drift independently, and a safety claim that does not say
 what it was measured against is not a claim.
 
@@ -347,7 +347,7 @@ weaken this result.
 
 Two adjacent consequences worth carrying forward:
 
-- **`mcp__agentwire__msg_send` is not in the matcher list either.** So the "fix"
+- **`mcp__hermeswire__msg_send` is not in the matcher list either.** So the "fix"
   a future reader reaches for is the MCP tool, and that path is *also*
   unguarded. The choice is not "unguarded vs guarded-but-over-blocking" — it is
   **unguarded, unguarded, or over-blocking**. `msg send` has no damage-control
@@ -394,13 +394,13 @@ a block.
          │ allowlisted argv only
          ▼
 ┌──────────────────────────────────────────┐
-│  agentwire CLI  (the documented SSOT)    │
+│  hermeswire CLI  (the documented SSOT)    │
 │  list --sessions · worktree --list/--dangling · scheduler board · …
 └──────────────────────────────────────────┘
 
-   buddy identity: ~/.agentwire/sessions/buddy/metadata.json
-   buddy inbox:    ~/.agentwire/inbox/buddy/     ──drain──▶  inbox-spool.jsonl
-   buddy outbox:   ~/.agentwire/sessions/buddy/outbox.jsonl  (what it SENT, #958)
+   buddy identity: ~/.hermeswire/sessions/buddy/metadata.json
+   buddy inbox:    ~/.hermeswire/inbox/buddy/     ──drain──▶  inbox-spool.jsonl
+   buddy outbox:   ~/.hermeswire/sessions/buddy/outbox.jsonl  (what it SENT, #958)
 ```
 
 `/utterance` and `/anchor` are not plumbing — they are the confirm gate's
@@ -414,7 +414,7 @@ of pending writes would outlive the conversation that proposed them.
 The buddy registers a session **name** and a metadata record. That is all the
 existing machinery needs: `msg send --to buddy`, `notify_parent`, cohort
 enrollment, `wait --children` and dangling-PR detection all key off a name plus
-`~/.agentwire/sessions/<name>/metadata.json` (#871's SSOT) — none of them
+`~/.hermeswire/sessions/<name>/metadata.json` (#871's SSOT) — none of them
 require tmux.
 
 Deliberately **not** recorded, because absent keys mean *unknown* and that is
@@ -451,7 +451,7 @@ lock → list_messages → cohort hold → ⟨ADAPTER⟩ → gone gate → box g
 ```
 
 - **After the cohort hold** — a report from a child the buddy is waiting on
-  belongs to `agentwire wait --children`, which reads it straight off disk.
+  belongs to `hermeswire wait --children`, which reads it straight off disk.
   Spooling it first would consume it out from under that collection.
 - **Before the gone gate** — that is the gate that would kill the mail.
 
@@ -523,12 +523,12 @@ Hence two tiers:
 
 | | Where | Who reads it | Spoken? |
 |---|---|---|---|
-| **Awareness** | `~/.agentwire/fleet-activity.jsonl` (`agentwire activity list`, tool `fleet_activity`) | pulled, on a question | never |
+| **Awareness** | `~/.hermeswire/fleet-activity.jsonl` (`hermeswire activity list`, tool `fleet_activity`) | pulled, on a question | never |
 | **News** | the buddy's spool, as ordinary typed mail | pushed, by `fleet_alerts.emit` | at a gap |
 
 The ledger is a **pull**, not a fourth push — which is what keeps the closed
 list of unprompted paths in `instructions.VOICE_MODE` closed. It is also what
-makes the two audio surfaces one: every `agentwire say` is recorded, and the
+makes the two audio surfaces one: every `hermeswire say` is recorded, and the
 instructions tell the buddy that a `spoke` entry was *already heard by the
 owner*, so it refers back to one rather than delivering it as news.
 
@@ -540,7 +540,7 @@ its kind in `fleet_alerts.DETECTOR_KINDS`:
   them: an interactive role (`orchestrator` on the role axis, `anchor` on the
   persona axis) is never delegated *whatever its location*, and only then does
   a recorded parent / a worker-or-reviewer role / a worktree checkout count.
-  The OR got this wrong in a way worth remembering: `agentwire orchestrator` is
+  The OR got this wrong in a way worth remembering: `hermeswire orchestrator` is
   sugar for `worktree --kind orchestrator`, so the owner's durable window has
   `role: orchestrator`, `created_by: ''` **and** `worktree_path` set — the
   location axis overruled the role, and the buddy announced "… is idle and done
@@ -578,9 +578,9 @@ producer's job is its own job:
 | Surface | Seam | Recorded |
 |---|---|---|
 | idle hook | `cmd_notify_parent`, `--on-idle`, **above** the no-target return | `session_idle` |
-| `agentwire say` | `cmd_say`, per successfully-played chunk | `spoke` (+ the sink) |
+| `hermeswire say` | `cmd_say`, per successfully-played chunk | `spoke` (+ the sink) |
 | text toasts — CLI `notify-user`, **MCP `notify_user`**, `say --display`, and the scheduler's zombie reaper (`priority=high`) | `core.post_desktop_notification`, below all four | `toast` / `toast_high` |
-| `agentwire notify-event` | `cmd_notify`, three events only | `session_created` / `session_closed` / `pane_died` |
+| `hermeswire notify-event` | `cmd_notify`, three events only | `session_created` / `session_closed` / `pane_died` |
 | scheduler | `report._log_event("task_completed")`, the one seam both dispatchers use | `task_completed` |
 
 Three of those placements are the whole point.
@@ -632,7 +632,7 @@ already relies on. The notice says "And N more waiting", because a capped batch
 must not sound like a complete one. This was pre-existing in the notifier;
 #1016 is the first producer that reaches that scale with no human in the loop.
 
-`agentwire notify-event`'s other vocabulary — `client_attached`,
+`hermeswire notify-event`'s other vocabulary — `client_attached`,
 `pane_focused`, `window_activity` — is deliberately absent: it fires on every
 glance at a terminal, and recording it would bury the events that mean
 something under events that mean somebody moved a mouse.
@@ -645,14 +645,14 @@ its own argv from validated parameters.
 The live surface is **27 read tools plus one gated write spec**, and the spec
 generates three tools (`propose_` / `send_` / `cancel_session_message`), so the
 model sees 30 names. **Do not maintain a list of them here** — an enumeration in
-prose is what went stale last time, and `agentwire buddy tools` prints the exact
+prose is what went stale last time, and `hermeswire buddy tools` prints the exact
 array handed to the model. What belongs in a wiki is the rule that decides what
 may ever appear.
 
 #### The tier audit is the ruling document
 
-`agentwire/voice_layer/surface.py` (#966, extended by #979) places **every** tool
-name in `agentwire/mcp_*.py` in exactly one tier, and a test parses those modules
+`hermeswire/voice_layer/surface.py` (#966, extended by #979) places **every** tool
+name in `hermeswire/mcp_*.py` in exactly one tier, and a test parses those modules
 and fails the moment a new tool ships untiered. Classify by what the action
 touches; first clause that applies wins:
 
@@ -668,11 +668,11 @@ to the owner, (c) publishes outward, (d) authors work product, (e) mutates
 infrastructure identity. Two of those clauses are subtler than they read, and
 both were re-argued once already:
 
-- **(a) keys on the DISPATCH PATH, not the verb.** Anything reaching `agentwire
+- **(a) keys on the DISPATCH PATH, not the verb.** Anything reaching `hermeswire
   ensure` — `task_run`, `scheduler_run` — creates the session when it is missing
   and then drives it to completion, so it is (a) whatever it is called. The
   carve-out "but the task content is owner-authored, in the protected
-  `.agentwire.tasks.yml`, behind a nonce" was considered and **rejected**:
+  `.hermeswire.tasks.yml`, behind a nonce" was considered and **rejected**:
   authorship of the prompt does not change who instantiated and drove the
   session. A test walks every tier-1/2 tool's argv into the CLI call graph, so
   the next ensure-shaped verb cannot land under an innocuous name.
@@ -1377,7 +1377,7 @@ may well have heard.
 
 ### Success must not over-claim either
 
-`agentwire msg send` **queues** — delivery happens at the recipient's next safe
+`hermeswire msg send` **queues** — delivery happens at the recipient's next safe
 boundary and can defer behind the box gates. From the owner's ear, "I told the
 orchestrator" followed by nothing is indistinguishable from a silent refusal and
 **worse**, because success was affirmatively claimed. So the buddy says
@@ -1396,7 +1396,7 @@ Since **Slice 1b (#985)** attribution lives in the **kind slot**:
 
 ```
 [MSG from buddy · voice] restart the portal ┃ said: "can you tell the
-orchestrator to restart the portal" ┃ reply: agentwire msg send --to buddy
+orchestrator to restart the portal" ┃ reply: hermeswire msg send --to buddy
 --kind done "<answer>" ┃ #a1b2c3  ⟨#f3a9c1⟩
 ```
 
@@ -1422,7 +1422,7 @@ This resolves an internal tension the page used to hold both halves of: §4b
 argues the nonce must be structurally unreachable from any echo-able channel,
 while the example above showed it shipped to a terminal.
 
-**The reply-path slot** (`reply: agentwire msg send --to buddy --kind done
+**The reply-path slot** (`reply: hermeswire msg send --to buddy --kind done
 "<answer>"`) rides in every body that fits. #962's live failure: the recipient
 answered a buddy request IN ITS OWN TERMINAL and the reply never came back — the
 owner is listening, not watching that pane, so an on-screen answer is a lost one.
@@ -1484,7 +1484,7 @@ The rule that generalises furthest out of this work, and it is cheap to check.
 
 `dispatch_failed` said *"…so nothing was sent. Ask me again."* That reads as
 helpful and it is a **definite claim the system cannot verify**:
-`run_agentwire_cmd` reports `success: False` on `subprocess.TimeoutExpired`, and
+`run_hermeswire_cmd` reports `success: False` on `subprocess.TimeoutExpired`, and
 a timed-out CLI may already have enqueued. Worse, pairing false certainty with
 "ask me again" invites a re-propose that **double-delivers** — the acting-twice
 failure, arrived at through a spoken line asserting more than the system knows.
@@ -1897,7 +1897,7 @@ so the heal fires."
 ### Why backticks and quotes in a body are safe — and how that could silently stop being true
 
 Hops 1 through 3 are clean, measured: the bridge builds a **list argv**
-(`subprocess.run(["agentwire", *args])`, no `shell=True`), the inbox round-trips
+(`subprocess.run(["hermeswire", *args])`, no `shell=True`), the inbox round-trips
 through `json.dumps`/`loads`, and the tmux buffer path carries backticks,
 `$(…)`, quotes, semicolons and backslashes intact. **That safety is a property
 of using list argv, not of the content being harmless** — refactoring any hop to
@@ -1981,8 +1981,8 @@ text** — the pane is one channel, the filesystem is another, and the recipient
 an agent that reads files.
 
 So every buddy write now persists the WHOLE request to
-`~/.agentwire/voice/relays/<proposal-id>.md`
-(`agentwire/voice_layer/relay.py`) — full instruction, full verbatim utterance,
+`~/.hermeswire/voice/relays/<proposal-id>.md`
+(`hermeswire/voice_layer/relay.py`) — full instruction, full verbatim utterance,
 nothing clipped — and the delivered line carries a `full: <path>` slot pointing
 at it. The same `--ref` rides on the `msg send` argv, the way `ingest` messages
 already carry a report path. The inline text is demoted to what it always
@@ -2109,11 +2109,11 @@ a spoken answer works today, and so does asking it to pass a message on.
 
 **Two loose ends, distinct from the deferred slices above:**
 
-- **Not wired to a lifecycle host.** `agentwire buddy serve` is a foreground
+- **Not wired to a lifecycle host.** `hermeswire buddy serve` is a foreground
   process started by hand. See §6 — deliberate, but unfinished.
 - **`gh` is the one non-CLI dependency.** `fleet_pull_requests` shells out to
-  `gh` directly because agentwire has no wrapper for it. Every other tool goes
-  through the `agentwire` CLI as SSOT. If a `agentwire pr list --json` ever
+  `gh` directly because hermeswire has no wrapper for it. Every other tool goes
+  through the `hermeswire` CLI as SSOT. If a `hermeswire pr list --json` ever
   lands, this tool should move to it.
 
 ---
@@ -2146,7 +2146,7 @@ changing underneath the conversation.**
   equivalent failure here is "three sessions need attention" — *which* three.
 - **One tool definition set, not two.** They bridge voice into the *same* tool
   definitions the text orchestrator uses. Same instinct here: everything routes
-  through the `agentwire` CLI, the documented SSOT, rather than a parallel
+  through the `hermeswire` CLI, the documented SSOT, rather than a parallel
   implementation.
 
 ### Where it went wrong, and what that bought us
@@ -2209,7 +2209,7 @@ The buddy is not an agent session, so it needs somewhere to live. The
 [custom-services registry](services.md) is the natural home — autostart on
 portal launch, watchdog health checks, restart with backoff. What that registry
 had, until #983, was only *agent* services: every entry was an
-`agentwire new` session, and there was nowhere to declare a process. So the
+`hermeswire new` session, and there was nowhere to declare a process. So the
 registry grew a second kind, `command`, which is entirely generic — it
 supervises a process and has no idea the voice layer exists. The buddy is one
 caller of it.
@@ -2219,11 +2219,11 @@ The entry, ready to paste. It is **not** written into the owner's
 and a spike must not add itself to a startup path); wiring it up is one edit:
 
 ```yaml
-# ~/.agentwire/config.yaml
+# ~/.hermeswire/config.yaml
 services:
   custom:
     - name: buddy
-      command: agentwire buddy serve buddy --port 8788
+      command: hermeswire buddy serve buddy --port 8788
       autostart: false        # flip to true when you want it on the startup path
       restart: on-failure
       healthcheck:
@@ -2264,7 +2264,7 @@ service's argv — doctor flags one that looks like it does, in both the
 
 ### The failure the buddy hits first
 
-`agentwire buddy serve <name>` with an unregistered name refuses and exits at
+`hermeswire buddy serve <name>` with an unregistered name refuses and exits at
 once — and with `autostart: false` shipped above, opting in is precisely when
 the owner meets it. A supervisor that reported that as a successful start would
 hand them a success line, a `[!!] unhealthy` from doctor a second later
@@ -2278,7 +2278,7 @@ clearing it. Still no file, still 0700.
 
 Those last lines are **redacted before they leave the pane**, because they do
 not stay on a terminal: the healthcheck detail built from them is toasted by
-the portal watchdog and spoken through `agentwire say`, so a bridge printing
+the portal watchdog and spoken through `hermeswire say`, so a bridge printing
 `bearer eyJ…` on the way down would otherwise have had that read aloud. Same
 pattern set as the argv check, value masked and the message kept — and it masks
 a value that follows a key it recognises, nothing more; the exact boundary
@@ -2293,7 +2293,7 @@ and neither `confirm.py` nor `transcript.py` touches disk — so a watchdog kill
 between a proposal being anchored and its spoken nonce arriving leaves a
 proposal that exists nowhere. `tests/unit/test_buddy_restart.py` asserts both
 halves: the second run's spine and ring are empty and the dead run's token is
-refused, AND nothing under `~/.agentwire` gained the proposal's token, nonce or
+refused, AND nothing under `~/.hermeswire` gained the proposal's token, nonce or
 instruction. The second assertion is the one that survives someone deciding
 proposals should be durable; the first alone would still pass if a restart
 merely *reloaded* them.
@@ -2323,26 +2323,26 @@ sharing one extractor (`tests/page_slice.py`) rather than a second idiom.
 
 ```bash
 # one-time: give the buddy an identity
-agentwire buddy register buddy
+hermeswire buddy register buddy
 
 # inspect the tool surface handed to the model
-agentwire buddy tools
+hermeswire buddy tools
 
 # exercise a tool with no microphone — same dispatch path the model reaches
-agentwire buddy call fleet_dangling
-agentwire buddy call fleet_session_output --arg session=agentwire --arg lines=40
+hermeswire buddy call fleet_dangling
+hermeswire buddy call fleet_session_output --arg session=hermeswire --arg lines=40
 
 # other sessions can now reach it
-agentwire msg send --to buddy --kind done "PR #900 is up"
-agentwire buddy inbox            # read
-agentwire buddy inbox --ack      # read and mark read
+hermeswire msg send --to buddy --kind done "PR #900 is up"
+hermeswire buddy inbox            # read
+hermeswire buddy inbox --ack      # read and mark read
 
-# talk to it (needs OPENAI_API_KEY in ~/.agentwire/.env, chmod 600)
-agentwire buddy serve buddy      # → http://127.0.0.1:8788/
+# talk to it (needs OPENAI_API_KEY in ~/.hermeswire/.env, chmod 600)
+hermeswire buddy serve buddy      # → http://127.0.0.1:8788/
 
 # pick a voice — see `--help` for the list, or the picker on the page
-agentwire buddy register buddy --voice marin   # sticks; prints "updated voice → marin"
-agentwire buddy serve buddy --voice ash        # just this run
+hermeswire buddy register buddy --voice marin   # sticks; prints "updated voice → marin"
+hermeswire buddy serve buddy --voice ash        # just this run
 ```
 
 The page carries a **voice picker** (#1017): changing it reconnects in one
@@ -2488,7 +2488,7 @@ undecided. A next session that picks an answer silently is the failure mode.
       waits, and the re-raise ledger carries insistence without interrupting
       anything. **The producer half landed in #982** — the tier no longer fires
       only for what other sessions choose to escalate. Four fleet detectors now
-      address the buddy directly through `agentwire/fleet_alerts.py` (generic
+      address the buddy directly through `hermeswire/fleet_alerts.py` (generic
       typed-kind messaging; the ruling table and the throttle bounds live in
       [`sessions/messaging.md`](sessions/messaging.md#fleet-alerts--detectors-as-senders-982)).
       Two things about that wiring belong here rather than there:

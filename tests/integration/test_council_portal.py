@@ -1,12 +1,12 @@
 """Integration tests for the council board portal surface — the read API and
-the watcher delta loop, exercised against a real AgentWireServer app."""
+the watcher delta loop, exercised against a real HermesWireServer app."""
 
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
-from agentwire.config import load_config
-from agentwire.council import inbox, state
-from agentwire.server import AgentWireServer
+from hermeswire.config import load_config
+from hermeswire.council import inbox, state
+from hermeswire.server import HermesWireServer
 
 ROSTER = ["brain", "gut", "critic"]
 NAME = "proj"
@@ -42,7 +42,7 @@ def sitting():
 
 @pytest.fixture
 async def client(tmp_path):
-    server = AgentWireServer(_make_config(tmp_path))
+    server = HermesWireServer(_make_config(tmp_path))
     async with TestClient(TestServer(server.app)) as c:
         yield c, server
 
@@ -103,14 +103,14 @@ class TestCouncilWatcher:
         seen = {}
         # First tick: new round → reset signal, no tiles yet.
         await server._council_tick(NAME, seen, inbox, state,
-                                   __import__("agentwire.council.view", fromlist=["x"]))
+                                   __import__("hermeswire.council.view", fromlist=["x"]))
         assert ("council_update", {"sitting": NAME, "prompt_id": sitting, "reset": True}) in sent
 
         # A reply lands; next tick emits exactly that soul's tile.
         sent.clear()
         inbox.write_reply(NAME, sitting, "brain", "take", "ship it")
         await server._council_tick(NAME, seen, inbox, state,
-                                   __import__("agentwire.council.view", fromlist=["x"]))
+                                   __import__("hermeswire.council.view", fromlist=["x"]))
         tiles = [d["tile"] for (t, d) in sent if t == "council_update" and "tile" in d]
         assert len(tiles) == 1
         assert tiles[0]["soul"] == "brain"
@@ -120,5 +120,5 @@ class TestCouncilWatcher:
         # No change → no further deltas (the board rests between events).
         sent.clear()
         await server._council_tick(NAME, seen, inbox, state,
-                                   __import__("agentwire.council.view", fromlist=["x"]))
+                                   __import__("hermeswire.council.view", fromlist=["x"]))
         assert sent == []

@@ -2,24 +2,24 @@
 
 # Hermes Safety Posture
 
-Hermes Agent has **no "Auto Mode" classifier.** The old AgentWire docs described
+Hermes Agent has **no "Auto Mode" classifier.** The old HermesWire docs described
 Claude Code's Auto Mode (a Sonnet 4.6 classifier reviewing every tool call) as the
 "safest default for autonomous work." That classifier does not exist on Hermes, and
 there is **no flag that reproduces it** — `--enable-auto-mode` / `--permission-mode auto`
 have no Hermes analog and should not be mapped to anything. The honest equivalent is a
 **posture assembled from four layers**, each of which is a real, configurable Hermes or
-AgentWire mechanism.
+HermesWire mechanism.
 
 ---
 
 ## The four layers
 
-1. **Damage-control `pre_tool_call` hooks** — ported from AgentWire's 300+ rules.
-   Installed via `agentwire hooks install` and registered as `pre_tool_call` in
+1. **Damage-control `pre_tool_call` hooks** — ported from HermesWire's 300+ rules.
+   Installed via `hermeswire hooks install` and registered as `pre_tool_call` in
    `~/.hermes/config.yaml` (see [Damage control](../internals/damage-control.md)).
    These classify every tool call (`terminal`, `write_file`, `patch`, `read_file`,
    `search_files`, outbound MCP) as allow / ask / block at the tool boundary — the
-   same shell-aware matcher and path protections AgentWire always enforced, now firing
+   same shell-aware matcher and path protections HermesWire always enforced, now firing
    through Hermes's hook contract instead of Claude's PreToolUse hooks.
 
 2. **Hermes's native dangerous-command approval gate** — `tools/approval.py` ships a
@@ -33,7 +33,7 @@ AgentWire mechanism.
    lived with.
 
 4. **`--yolo`** — bypasses the interactive dangerous-command approval prompts for
-   fully-trusted runs. It is what AgentWire's `bypass` and `auto` postures map to
+   fully-trusted runs. It is what HermesWire's `bypass` and `auto` postures map to
    (see [Hermes integration](../internals/hermes-integration.md)). Critically, `--yolo`
    does **not** bypass the HARDLINE floor or the damage-control hard blocks — those fire
    regardless of approval mode.
@@ -46,10 +46,10 @@ blocklist rather than an AI reviewing its own transcript.
 
 ## CLI flags
 
-The `auto` posture in AgentWire maps to `--yolo`, not to any classifier:
+The `auto` posture in HermesWire maps to `--yolo`, not to any classifier:
 
 ```bash
-# AgentWire posture: auto  →  Hermes launch (built by agentwire)
+# HermesWire posture: auto  →  Hermes launch (built by hermeswire)
 hermes chat --cli --source tool --yolo
 ```
 
@@ -104,14 +104,14 @@ allowed.
 
 ---
 
-## Using the posture in AgentWire
+## Using the posture in HermesWire
 
-The posture is wired through every entry point — `.agentwire.yml`, the CLI, and MCP —
-and `build_agent_command()` in `agentwire/core.py` maps `posture:` to Hermes flags at
+The posture is wired through every entry point — `.hermeswire.yml`, the CLI, and MCP —
+and `build_agent_command()` in `hermeswire/core.py` maps `posture:` to Hermes flags at
 launch (`auto` and `bypass` both become `--yolo`; `prompted` relies on
 `approvals.mode: smart`).
 
-**`.agentwire.yml`:**
+**`.hermeswire.yml`:**
 ```yaml
 posture: auto
 roles:
@@ -120,7 +120,7 @@ roles:
 
 **CLI:**
 ```bash
-agentwire new myproject --posture auto
+hermeswire new myproject --posture auto
 ```
 
 **MCP:**
@@ -139,19 +139,19 @@ which is the point of `--yolo`.
 
 **An unattended run hits a `block`-tier hook match:** the hook returns a block
 directive, the model sees the reason, and — if it can't proceed — goes idle.
-AgentWire's `idle_timeout` reaps the session; the scheduler reports it and (for
+HermesWire's `idle_timeout` reaps the session; the scheduler reports it and (for
 `ask`-tier rules that fail closed unattended) the owner is emailed. See
 [Damage control § Unattended guardrail](../internals/damage-control.md#unattended-no-human-present-guardrail).
 
 **Mixed postures:** some tasks use `auto` (production repos), others `bypass`
 (sandboxed experiments). Both map to `--yolo` today, so the real difference between
 them is **nothing at the flag level** — safety comes from the hooks and the rule set,
-which are identical for both. Keep the distinction in `.agentwire.yml` for clarity and
+which are identical for both. Keep the distinction in `.hermeswire.yml` for clarity and
 future fidelity; it currently changes nothing about enforcement.
 
 **`approvals.mode: smart` for a prompted session:** interactive non-`--yolo` sessions
-get Hermes's DANGEROUS-command prompts routed through AgentWire's portal
-(`agentwire-permission.sh`), and damage-control `ask`-tier matches escalate to the same
+get Hermes's DANGEROUS-command prompts routed through HermesWire's portal
+(`hermeswire-permission.sh`), and damage-control `ask`-tier matches escalate to the same
 gate. That is the `prompted` posture, not this one.
 
 ---

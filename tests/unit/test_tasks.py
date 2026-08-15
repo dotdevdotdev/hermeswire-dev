@@ -1,10 +1,10 @@
-"""Tests for agentwire/tasks.py — Task parsing, validation, loading."""
+"""Tests for hermeswire/tasks.py — Task parsing, validation, loading."""
 
 
 import pytest
 import yaml
 
-from agentwire.tasks import (
+from hermeswire.tasks import (
     PreCommand,
     TaskConfig,
     TaskNotFound,
@@ -165,7 +165,7 @@ class TestValidateTask:
 
 class TestLoadTask:
     def test_load_from_yml(self, project_dir):
-        config_path = project_dir / ".agentwire.tasks.yml"
+        config_path = project_dir / ".hermeswire.tasks.yml"
         data = {
             "tasks": {
                 "lint": {"prompt": "Run lint."},
@@ -180,7 +180,7 @@ class TestLoadTask:
         assert task.prompt == "Run lint."
 
     def test_task_not_found(self, project_dir):
-        config_path = project_dir / ".agentwire.tasks.yml"
+        config_path = project_dir / ".hermeswire.tasks.yml"
         data = {"tasks": {"lint": {"prompt": "Run lint."}}}
         with open(config_path, "w") as f:
             yaml.safe_dump(data, f)
@@ -189,15 +189,15 @@ class TestLoadTask:
             load_task(project_dir, "nonexistent")
 
     def test_no_config_file(self, tmp_path):
-        with pytest.raises(TaskNotFound, match="No .agentwire.tasks.yml"):
+        with pytest.raises(TaskNotFound, match="No .hermeswire.tasks.yml"):
             load_task(tmp_path, "anything")
 
-    def test_does_not_read_agentwire_yml(self, project_dir):
-        """Tasks live in .agentwire.tasks.yml only — .agentwire.yml is ignored (#720)."""
-        (project_dir / ".agentwire.yml").write_text(
+    def test_does_not_read_hermeswire_yml(self, project_dir):
+        """Tasks live in .hermeswire.tasks.yml only — .hermeswire.yml is ignored (#720)."""
+        (project_dir / ".hermeswire.yml").write_text(
             "posture: bypass\ntasks:\n  lint:\n    prompt: Run lint.\n"
         )
-        with pytest.raises(TaskNotFound, match="No .agentwire.tasks.yml"):
+        with pytest.raises(TaskNotFound, match="No .hermeswire.tasks.yml"):
             load_task(project_dir, "lint")
 
 
@@ -205,7 +205,7 @@ class TestLoadTask:
 
 class TestListTasks:
     def test_lists_all(self, project_dir):
-        config_path = project_dir / ".agentwire.tasks.yml"
+        config_path = project_dir / ".hermeswire.tasks.yml"
         data = {
             "tasks": {
                 "a": {"prompt": "p", "pre": {"x": "echo"}, "mode": "loop"},
@@ -221,7 +221,7 @@ class TestListTasks:
         assert names == {"a", "b"}
 
     def test_empty_when_no_tasks(self, project_dir):
-        config_path = project_dir / ".agentwire.tasks.yml"
+        config_path = project_dir / ".hermeswire.tasks.yml"
         with open(config_path, "w") as f:
             yaml.safe_dump({"shell": "/bin/sh"}, f)
 

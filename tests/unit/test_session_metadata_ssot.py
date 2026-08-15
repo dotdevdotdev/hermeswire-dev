@@ -1,7 +1,7 @@
 """``session_metadata_path`` must be the SSOT in fact, not by declaration (#899).
 
 The helper's docstring claimed "one implementation, both directions" while
-``load_session_metadata`` and ``agentwire kill`` each rebuilt the path by hand.
+``load_session_metadata`` and ``hermeswire kill`` each rebuilt the path by hand.
 That is this repo's most-repeated defect class — ``tmux_safe_name`` took four
 rounds (#865 → #868 → #870 → #878) and ``encode_project_path`` shipped a second
 incorrect copy beside its callers (#892). In every case the helper existed and
@@ -18,7 +18,7 @@ import os
 
 import pytest
 
-from agentwire import core
+from hermeswire import core
 
 
 @pytest.fixture
@@ -58,10 +58,10 @@ class TestEveryCallerRoutesThroughTheHelper:
         assert core.load_session_metadata("alpha")["role"] == "worker"
 
     def test_kill_removes_the_record_the_helper_names(self, redirected, monkeypatch):
-        """``agentwire kill`` unlinks the record; it must unlink the real one."""
+        """``hermeswire kill`` unlinks the record; it must unlink the real one."""
         import subprocess
 
-        from agentwire import pane_cli
+        from hermeswire import pane_cli
 
         core.store_session_metadata("alpha", {"role": "worker"})
         assert (redirected / "alpha.json").is_file()
@@ -120,7 +120,7 @@ class TestContainment:
 
     def test_kill_cannot_unlink_outside_the_store(self, tmp_path, monkeypatch):
         """The concrete consequence: an unlink aimed outside the store."""
-        from agentwire import pane_cli
+        from hermeswire import pane_cli
 
         monkeypatch.setattr(core, "CONFIG_DIR", tmp_path / "cfg")
         victim = tmp_path / "precious.json"
@@ -142,7 +142,7 @@ class TestSessionsDirIsAlsoShared:
     """The leaf had a helper; the ROOT was still built by hand in two places."""
 
     def test_enumeration_follows_the_shared_root(self, tmp_path, monkeypatch):
-        from agentwire import history_migrate
+        from hermeswire import history_migrate
 
         monkeypatch.setattr(core, "CONFIG_DIR", tmp_path)
         root = core.sessions_dir()

@@ -19,7 +19,7 @@ You are uniquely positioned to do this well: you already have full conversation 
 Call the MCP tool to create the bundle dir and pre-fill the template with git state and the CLAUDE.md/rules/memory chain:
 
 ```
-mcp__agentwire__handoff_init(title="<short slug>")
+mcp__hermeswire__handoff_init(title="<short slug>")
 ```
 
 The tool returns a `bundle_dir` and an `ai_handoff_path`. The pre-filled template at `ai_handoff_path` already has:
@@ -113,7 +113,7 @@ Tips:
 After writing `ai-handoff.md`, render the HTML:
 
 ```
-mcp__agentwire__handoff_render(bundle_dir="<from step 1>", story=true)
+mcp__hermeswire__handoff_render(bundle_dir="<from step 1>", story=true)
 ```
 
 If render fails, the parser will tell you which tag is missing or malformed — fix and re-run.

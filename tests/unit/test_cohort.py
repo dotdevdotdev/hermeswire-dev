@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from agentwire import cohort, inbox
+from hermeswire import cohort, inbox
 
 
 @pytest.fixture
@@ -119,7 +119,7 @@ class TestCollect:
         assert isolate["killed"] == [children[0]]
 
     def test_report_is_consumed_before_the_kill(self, isolate, monkeypatch):
-        # Ordering is load-bearing: `agentwire kill` runs inbox.gc_sender(),
+        # Ordering is load-bearing: `hermeswire kill` runs inbox.gc_sender(),
         # which dead-letters the killed session's pending outbound AND emails
         # the owner. Kill-before-collect turns every child's `done` report into
         # owner email for work that succeeded.
@@ -229,7 +229,7 @@ class TestWorktreeChildrenAreNotTornDown:
     """#756 — a worktree child holds a branch and possibly an open PR, whose
     teardown follows merge verification, and its session is where a reviewer
     sends fix-ups. Cohort teardown must never kill it; an abandoned one is
-    already surfaced by `worktree --dangling`. The `agentwire new` children of
+    already surfaced by `worktree --dangling`. The `hermeswire new` children of
     the 2026-08-01 leak are main topology and DO get torn down."""
 
     def _worktree_fan_out(self, state, parent="orchestrator"):
@@ -388,7 +388,7 @@ class TestDrainHold:
 
 class TestWaitCli:
     def test_exit_status_reflects_resolution(self, isolate, capsys):
-        from agentwire import wait_cli
+        from hermeswire import wait_cli
 
         children = _fan_out(isolate, n=1)
         args = SimpleNamespace(session="memory-manager", timeout=0, json=False,
@@ -401,7 +401,7 @@ class TestWaitCli:
     def test_idle_without_report_is_said_loudly(self, isolate, capsys):
         # #952: "cohort resolved: 2 reported, 0 failed" for a child that did
         # nothing is exactly the false all-clear this exists to prevent.
-        from agentwire import wait_cli
+        from hermeswire import wait_cli
 
         children = _fan_out(isolate, n=2)
         inbox.enqueue("memory-manager", "real report", kind="done", sender=children[0])

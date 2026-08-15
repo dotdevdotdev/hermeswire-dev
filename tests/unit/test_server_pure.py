@@ -1,8 +1,8 @@
-"""Tests for pure functions and dataclasses in agentwire/server.py."""
+"""Tests for pure functions and dataclasses in hermeswire/server.py."""
 
 import asyncio
 
-from agentwire.server import PendingPermission, SessionConfig
+from hermeswire.server import PendingPermission, SessionConfig
 
 # ---------------------------------------------------------------------------
 # SessionConfig

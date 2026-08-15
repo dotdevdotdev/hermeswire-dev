@@ -6,7 +6,7 @@ it SENT. Asked "did the code word end up in the message you sent?" it had no
 instrument that could answer, scraped the recipient's terminal instead, and
 confabulated. Two halves land together:
 
-1. **The outbox** (:mod:`agentwire.voice_layer.outbox`): every executed write
+1. **The outbox** (:mod:`hermeswire.voice_layer.outbox`): every executed write
    is recorded — proposal id, recipient, THE EXACT RENDERED BODY THAT RAN, the
    argv, timestamp, dispatch outcome — and per-message delivery state is
    computed from the recipient's real inbox, never stored and never guessed.
@@ -27,8 +27,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from agentwire import core, inbox
-from agentwire.voice_layer import (
+from hermeswire import core, inbox
+from hermeswire.voice_layer import (
     confirm,
     instructions,
     outbox,

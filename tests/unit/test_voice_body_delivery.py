@@ -33,8 +33,8 @@ import inspect
 
 import pytest
 
-from agentwire import inbox, session_ready
-from agentwire.voice_layer import confirm, write_tools
+from hermeswire import inbox, session_ready
+from hermeswire.voice_layer import confirm, write_tools
 
 #: A realistic worst case: a long instruction, a long verbatim utterance, and
 #: the longest session name in the wild (a worktree session name nests).
@@ -49,7 +49,7 @@ def rendered_message(body: str) -> inbox.Message:
     return inbox.Message(
         id="1700000000000000000-abc123",
         sender="buddy",
-        to="agentwire-dev-voice-confirm-spine",
+        to="hermeswire-dev-voice-confirm-spine",
         kind=write_tools.WRITE_KIND,
         text=body,
         ts=1700000000000,
@@ -70,7 +70,7 @@ def worst_case_body():
 REAL_PROMPT_GLYPH = "❯ "
 REAL_WIDTH = 80
 REAL_FOOTER = (
-    "  opus  …/agentwire-dev/voice-control  voice-control\n"
+    "  opus  …/hermeswire-dev/voice-control  voice-control\n"
     "  ⏵⏵ bypass permissions on · 3 shells · ← for agents"
 )
 
@@ -183,7 +183,7 @@ class TestTheBodySurvivesTheRealPastePath:
         The worst case is a maxed-out body plus the longest sender name in the
         wild — a worktree session, which nests.
         """
-        long_sender = "agentwire-dev-voice-confirm-spine"
+        long_sender = "hermeswire-dev-voice-confirm-spine"
         body = confirm.render_body("x" * 5000, "y" * 5000, "a1b2c3")
         worst = inbox.Message(
             id="1700000000000000000-abc123",
@@ -206,7 +206,7 @@ class TestTheBodySurvivesTheRealPastePath:
         paste primitive shows up here rather than as a corrupted write."""
         source = inspect.getsource(session_ready.paste_no_enter)
         assert "enter=False" in source
-        from agentwire import pane_manager
+        from hermeswire import pane_manager
 
         send_source = inspect.getsource(pane_manager.send_to_target)
         assert "paste-buffer" in send_source and '"-p"' in send_source
@@ -246,8 +246,8 @@ class TestControlCharacters:
         """The realistic carrier is ``instruction`` — model-supplied and only
         length-bounded. Stripping at propose keeps the frozen argv clean by
         construction, so "frozen" still means what it claims."""
-        from agentwire.voice_layer import transcript
-        from agentwire.voice_layer import write_tools as wt
+        from hermeswire.voice_layer import transcript
+        from hermeswire.voice_layer import write_tools as wt
 
         monkeypatch.setattr(inbox, "live_sessions", lambda: {"orchestrator"})
         spine = confirm.ConfirmSpine(transcript.TranscriptRing(), wait_s=0.0)
@@ -320,7 +320,7 @@ class TestTheCohortInteraction:
         SENDER, so such a message is held but not harvested — pending until the
         cohort resolves, never consumed into someone else's report.
         """
-        from agentwire import cohort
+        from hermeswire import cohort
 
         monkeypatch.setattr(inbox, "INBOX_ROOT", tmp_path / "inbox")
         monkeypatch.setattr(inbox, "EVENTS_FILE", tmp_path / "events.jsonl")
@@ -340,12 +340,12 @@ class TestTheCohortInteraction:
     def test_the_buddy_is_never_enrolled_in_a_cohort(self):
         """Why the above does not bite: nothing enrols the buddy.
 
-        Cohort membership is written by ``agentwire new`` / ``worktree``, and
+        Cohort membership is written by ``hermeswire new`` / ``worktree``, and
         the buddy is registered by ``identity.register``, which does not enrol.
         If that ever changes, this test fails and the interaction above becomes
         live — which is the point of asserting it.
         """
-        from agentwire.voice_layer import identity
+        from hermeswire.voice_layer import identity
 
         source = inspect.getsource(identity.register)
         assert "cohort" not in source

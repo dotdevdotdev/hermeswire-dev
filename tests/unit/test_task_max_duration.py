@@ -2,7 +2,7 @@
 
 `memory-manager` ran 2h unattended and reported `incomplete — Timeout waiting
 for task completion`, having set `max_duration: 1800` in its
-`.agentwire.tasks.yml`. That field was read by nothing: completion is agent-
+`.hermeswire.tasks.yml`. That field was read by nothing: completion is agent-
 driven (idle hook → summary file), and the wait had no wall clock at all, so an
 agent that never goes idle was waited on until something else killed it.
 
@@ -10,7 +10,7 @@ Two things are covered here:
 
 * `max_duration` is enforced, and its expiry is distinguishable on the board
   from "the session died" — the two used to share one summary line.
-* A key in a task block that agentwire doesn't read is reported rather than
+* A key in a task block that hermeswire doesn't read is reported rather than
   silently dropped, which is what let `max_duration` look configured for the
   whole life of the file.
 """
@@ -19,8 +19,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agentwire.completion import CompletionTimeout, wait_for_completion_signal
-from agentwire.tasks import KNOWN_TASK_KEYS, parse_task_config, validate_task
+from hermeswire.completion import CompletionTimeout, wait_for_completion_signal
+from hermeswire.tasks import KNOWN_TASK_KEYS, parse_task_config, validate_task
 
 
 class TestMaxDurationParsing:
@@ -82,15 +82,15 @@ class _Clock:
 class TestWaitHonorsMaxDuration:
     def _patches(self, has_agent=True):
         return (
-            patch("agentwire.completion._session_has_agent", return_value=has_agent),
-            patch("agentwire.usage_limit.check_and_park", return_value=False),
+            patch("hermeswire.completion._session_has_agent", return_value=has_agent),
+            patch("hermeswire.usage_limit.check_and_park", return_value=False),
         )
 
     def test_expiry_raises_with_a_named_reason(self):
         agent, park = self._patches()
         with agent, park, \
-             patch("agentwire.completion.time.sleep"), \
-             patch("agentwire.completion.time.time", _Clock(step=10.0)):
+             patch("hermeswire.completion.time.sleep"), \
+             patch("hermeswire.completion.time.time", _Clock(step=10.0)):
             with pytest.raises(CompletionTimeout) as exc:
                 wait_for_completion_signal("s", poll_interval=0, max_duration=10)
         assert "max_duration (10s)" in str(exc.value)
@@ -101,8 +101,8 @@ class TestWaitHonorsMaxDuration:
         agent, park = self._patches()
         clock = _Clock(step=1.0)
         with agent, park, \
-             patch("agentwire.completion.time.sleep") as sleep, \
-             patch("agentwire.completion.time.time", clock):
+             patch("hermeswire.completion.time.sleep") as sleep, \
+             patch("hermeswire.completion.time.time", clock):
             with pytest.raises(CompletionTimeout):
                 wait_for_completion_signal("s", poll_interval=0, max_duration=5)
         # started=1; expiry at t=6 → polls at 2,3,4,5 slept through first.
@@ -120,7 +120,7 @@ class TestWaitHonorsMaxDuration:
 
     def test_a_dead_session_still_wins_over_the_clock(self):
         agent, park = self._patches(has_agent=False)
-        with agent, park, patch("agentwire.completion.time.sleep"):
+        with agent, park, patch("hermeswire.completion.time.sleep"):
             with pytest.raises(CompletionTimeout) as exc:
                 wait_for_completion_signal("s", poll_interval=0, max_duration=1)
         assert "died or agent exited" in str(exc.value)
@@ -130,7 +130,7 @@ class TestWaitHonorsMaxDuration:
         summary.write_text("---\nstatus: complete\nsummary: done\n---\n")
         agent, park = self._patches()
         with agent, park, \
-             patch("agentwire.completion.TASKS_DIR", tmp_path / "nope"):
+             patch("hermeswire.completion.TASKS_DIR", tmp_path / "nope"):
             result = wait_for_completion_signal(
                 "s", poll_interval=0, summary_path=summary, max_duration=1800)
         assert result["status"] == "complete"
@@ -141,7 +141,7 @@ class TestVacuousWaitDoesNotHang:
     leave the parent blocked on a join that never resolves."""
 
     def test_wait_with_no_ledger_returns_immediately_resolved(self, tmp_path, monkeypatch):
-        from agentwire import cohort
+        from hermeswire import cohort
 
         monkeypatch.setattr(cohort, "COHORT_ROOT", tmp_path / "cohorts")
         result = cohort.wait("memory-manager", timeout=999)
@@ -150,16 +150,16 @@ class TestVacuousWaitDoesNotHang:
         assert result["pending"] == []
 
     def test_wait_does_not_sleep_when_there_is_no_cohort(self, tmp_path, monkeypatch):
-        from agentwire import cohort
+        from hermeswire import cohort
 
         monkeypatch.setattr(cohort, "COHORT_ROOT", tmp_path / "cohorts")
-        with patch("agentwire.cohort.time.sleep") as sleep:
+        with patch("hermeswire.cohort.time.sleep") as sleep:
             cohort.wait("memory-manager", timeout=999)
         sleep.assert_not_called()
 
     def test_cli_reports_nothing_to_wait_on_and_exits_zero(self, tmp_path, monkeypatch, capsys):
-        from agentwire import cohort
-        from agentwire.wait_cli import cmd_wait
+        from hermeswire import cohort
+        from hermeswire.wait_cli import cmd_wait
 
         monkeypatch.setattr(cohort, "COHORT_ROOT", tmp_path / "cohorts")
         args = MagicMock()

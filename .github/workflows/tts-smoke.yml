@@ -13,13 +13,13 @@ on:
     paths:
       - "pyproject.toml"
       - "uv.lock"
-      - "agentwire/tts/**"
+      - "hermeswire/tts/**"
       - ".github/workflows/tts-smoke.yml"
   pull_request:
     paths:
       - "pyproject.toml"
       - "uv.lock"
-      - "agentwire/tts/**"
+      - "hermeswire/tts/**"
       - ".github/workflows/tts-smoke.yml"
   # Transitive wheel/onnxruntime changes can break Intel-mac resolution without
   # touching any path above; a weekly cron catches that proactively (#487).
@@ -47,10 +47,10 @@ jobs:
         # install and import there.
         run: >
           python -c "import sys;
-          import agentwire.tts.engines.kokoro;
-          import agentwire.tts.local;
+          import hermeswire.tts.engines.kokoro;
+          import hermeswire.tts.local;
           assert 'torch' not in sys.modules, 'torch leaked into the kokoro import path';
-          assert 'agentwire.tts.engines.chatterbox' not in sys.modules, 'chatterbox eagerly imported';
+          assert 'hermeswire.tts.engines.chatterbox' not in sys.modules, 'chatterbox eagerly imported';
           print('torch-free kokoro import OK')"
 
   intel-mac-wheels:
@@ -95,14 +95,14 @@ jobs:
       - name: Synthesize a sentence
         run: |
           python - <<'EOF'
-          from agentwire.tts.engines.kokoro import KokoroEngine
-          from agentwire.tts.base import TTSRequest
-          from agentwire.tts.audio import pcm_float_to_wav_bytes
+          from hermeswire.tts.engines.kokoro import KokoroEngine
+          from hermeswire.tts.base import TTSRequest
+          from hermeswire.tts.audio import pcm_float_to_wav_bytes
 
           KokoroEngine.download_models()
           engine = KokoroEngine()
           result = engine.generate(
-              TTSRequest(text="AgentWire speaks with Kokoro out of the box.", voice="af_heart")
+              TTSRequest(text="HermesWire speaks with Kokoro out of the box.", voice="af_heart")
           )
           wav = pcm_float_to_wav_bytes(result.audio, result.sample_rate)
           assert wav[:4] == b"RIFF" and len(wav) > 50_000, f"suspicious WAV ({len(wav)} bytes)"

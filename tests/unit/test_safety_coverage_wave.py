@@ -1,7 +1,7 @@
 """Safety-coverage wave: #934, #938, #923, #921, #924.
 
 RULE SET UNDER TEST: the BUNDLED rules + BUNDLED tooldefs (what a hermetic CI
-checkout ships), never this machine's live ``~/.agentwire`` config — a pin
+checkout ships), never this machine's live ``~/.hermeswire`` config — a pin
 that encodes the live environment goes red in CI (#916, and the exact mistake
 PR #1028's first CI run made).
 """
@@ -16,8 +16,8 @@ import pytest
 from tests.conftest import HOOKS_DIR
 
 REPO = Path(__file__).resolve().parent.parent.parent
-RULES_DIR = REPO / "agentwire" / "hooks" / "damage-control" / "rules"
-TOOLDEFS_DIR = REPO / "agentwire" / "tooldefs"
+RULES_DIR = REPO / "hermeswire" / "hooks" / "damage-control" / "rules"
+TOOLDEFS_DIR = REPO / "hermeswire" / "tooldefs"
 
 REFUSED = {"block", "ask"}
 
@@ -135,7 +135,7 @@ class TestGitExecConfigKeys:
         ('git -c core.sshCommand="rm -rf /srv/x" fetch',
          "core.rm-with-recursive-or-force-flags"),
         ('git -c core.fsmonitor="tmux kill-server" status',
-         "agentwire.tmux-kill-server"),
+         "hermeswire.tmux-kill-server"),
         ('git -c alias.z="!rm -rf /srv/x" z',
          "core.rm-with-recursive-or-force-flags"),
         ('git -ccore.pager="rm -rf /srv/x" log',   # attached -ckey=value form
@@ -234,7 +234,7 @@ class TestUnverifiableTier:
             "HOME": str(tmp),
         }
         if unattended:
-            env["AGENTWIRE_UNATTENDED"] = "1"
+            env["HERMESWIRE_UNATTENDED"] = "1"
         payload = {
             "tool_name": "terminal",
             "tool_input": {"command": command},
@@ -302,11 +302,11 @@ class TestControlPlaneAllowlistOverlap:
         parsed = [bash_hook._parse_allowed_entry(e) for e in entries]
         return bash_hook.control_plane_allowlist_overlaps(parsed)
 
-    def test_broad_agentwire_glob_is_flagged(self, bash_hook):
-        overlaps = self._overlaps(bash_hook, [{"path": "*/.agentwire/*", "allow": "all"}])
+    def test_broad_hermeswire_glob_is_flagged(self, bash_hook):
+        overlaps = self._overlaps(bash_hook, [{"path": "*/.hermeswire/*", "allow": "all"}])
         flagged = {prot for _, prot in overlaps}
-        assert "~/.agentwire/damagecontrol.yml" in flagged      # the kill switch
-        assert "~/.agentwire/damage-control/*.yaml" in flagged  # the rule files
+        assert "~/.hermeswire/damagecontrol.yml" in flagged      # the kill switch
+        assert "~/.hermeswire/damage-control/*.yaml" in flagged  # the rule files
 
     def test_claude_glob_takes_hook_registration(self, bash_hook):
         overlaps = self._overlaps(bash_hook, [{"path": "~/.hermes/*", "allow": "all"}])
@@ -318,7 +318,7 @@ class TestControlPlaneAllowlistOverlap:
     def test_read_only_entry_is_not_flagged(self, bash_hook):
         """The control plane is readable by design — only writes are the risk."""
         assert not self._overlaps(
-            bash_hook, [{"path": "*/.agentwire/*", "allow": ["read"]}]
+            bash_hook, [{"path": "*/.hermeswire/*", "allow": ["read"]}]
         )
 
     def test_shipped_allowlist_is_clean(self, bash_hook):
@@ -339,7 +339,7 @@ class TestControlPlaneAllowlistOverlap:
         break the matcher and the overlap disappears, proving there is no
         second glob implementation to drift."""
         monkeypatch.setattr(bash_hook, "match_path", lambda p, pat: False)
-        assert not self._overlaps(bash_hook, [{"path": "*/.agentwire/*", "allow": "all"}])
+        assert not self._overlaps(bash_hook, [{"path": "*/.hermeswire/*", "allow": "all"}])
 
 
 # ---------------------------------------------------------------------------
@@ -352,15 +352,15 @@ class TestControlPlaneAllowlistOverlap:
 # build-artifact entry then re-permits every probe target — the exact
 # environment-shaped green/red split #938 documents from #920. The path never
 # needs to exist (the hooks match strings, they don't stat), and audit logs
-# are redirected into the real tmp dir via AGENTWIRE_DIR.
-HERMETIC_HOME = "/home/agentwire-hermetic"
+# are redirected into the real tmp dir via HERMESWIRE_DIR.
+HERMETIC_HOME = "/home/hermeswire-hermetic"
 
 
 def _hook_env(tmp_path):
     return {
         "PATH": "/usr/bin:/bin:/usr/local/bin",
         "HOME": HERMETIC_HOME,
-        "AGENTWIRE_DIR": str(tmp_path / ".agentwire"),
+        "HERMESWIRE_DIR": str(tmp_path / ".hermeswire"),
     }
 
 
@@ -395,7 +395,7 @@ class TestNotebookEditCoverage:
         assert proc.returncode == 0
 
     def test_matcher_table_names_hermes_tools(self):
-        from agentwire.safety_commands import DAMAGE_CONTROL_MATCHERS
+        from hermeswire.safety_commands import DAMAGE_CONTROL_MATCHERS
         assert DAMAGE_CONTROL_MATCHERS.get("patch") == "edit-tool-damage-control.py"
         assert DAMAGE_CONTROL_MATCHERS.get("write_file") == "write-tool-damage-control.py"
         assert DAMAGE_CONTROL_MATCHERS.get("terminal") == "bash-tool-damage-control.py"
@@ -416,7 +416,7 @@ class TestMcpPathScreening:
         )
 
     def test_zero_access_arg_blocks_for_any_tool(self, tmp_path):
-        # ~/.ssh/ rather than ~/.agentwire/.env: the bundled allowlist
+        # ~/.ssh/ rather than ~/.hermeswire/.env: the bundled allowlist
         # deliberately re-permits the owner's own .env, so that path would
         # test the allowlist, not the screen.
         proc = self._run(
@@ -447,8 +447,8 @@ class TestMcpPathScreening:
 
     def test_prose_and_urls_are_not_paths(self, tmp_path):
         proc = self._run(
-            "mcp__agentwire__msg_send",
-            {"to": "orch", "message": "see ~/.agentwire/.env and docs/x.md",
+            "mcp__hermeswire__msg_send",
+            {"to": "orch", "message": "see ~/.hermeswire/.env and docs/x.md",
              "ref": "https://example.com/a/b"},
             tmp_path,
         )
@@ -456,7 +456,7 @@ class TestMcpPathScreening:
 
     def test_ordinary_tool_call_passes(self, tmp_path):
         proc = self._run(
-            "mcp__agentwire__worktree_remove",
+            "mcp__hermeswire__worktree_remove",
             {"name": "feature-x"},
             tmp_path,
         )

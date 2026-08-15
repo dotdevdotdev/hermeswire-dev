@@ -2,7 +2,7 @@
 
 import os
 
-from agentwire.session_cli import _shared_dir_conflicts
+from hermeswire.session_cli import _shared_dir_conflicts
 
 REPO = os.path.realpath(os.getcwd())
 
@@ -13,32 +13,32 @@ def _panes(*pairs: tuple[str, str]) -> str:
 
 def test_services_excluded():
     out = _panes(
-        ("agentwire-portal", REPO),
-        ("agentwire-tts", REPO),
-        ("agentwire-stt", REPO),
-        ("agentwire-kokoro", REPO),
-        ("agentwire-scheduler", REPO),
-        ("agentwire-notifications", REPO),
+        ("hermeswire-portal", REPO),
+        ("hermeswire-tts", REPO),
+        ("hermeswire-stt", REPO),
+        ("hermeswire-kokoro", REPO),
+        ("hermeswire-scheduler", REPO),
+        ("hermeswire-notifications", REPO),
     )
-    assert _shared_dir_conflicts(out, "agentwire-dev", REPO) == set()
+    assert _shared_dir_conflicts(out, "hermeswire-dev", REPO) == set()
 
 
 def test_dev_orchestrator_still_conflicts():
-    # The hardcoded `agentwire` dev session is NOT a service — must still trip.
-    out = _panes(("agentwire", REPO), ("agentwire-portal", REPO))
-    assert _shared_dir_conflicts(out, "agentwire-dev", REPO) == {"agentwire"}
+    # The hardcoded `hermeswire` dev session is NOT a service — must still trip.
+    out = _panes(("hermeswire", REPO), ("hermeswire-portal", REPO))
+    assert _shared_dir_conflicts(out, "hermeswire-dev", REPO) == {"hermeswire"}
 
 
 def test_self_skipped():
-    out = _panes(("agentwire-dev", REPO))
-    assert _shared_dir_conflicts(out, "agentwire-dev", REPO) == set()
+    out = _panes(("hermeswire-dev", REPO))
+    assert _shared_dir_conflicts(out, "hermeswire-dev", REPO) == set()
 
 
 def test_machine_suffixed_service_excluded():
-    out = _panes(("agentwire-portal@box", REPO))
-    assert _shared_dir_conflicts(out, "agentwire-dev", REPO) == set()
+    out = _panes(("hermeswire-portal@box", REPO))
+    assert _shared_dir_conflicts(out, "hermeswire-dev", REPO) == set()
 
 
 def test_non_matching_path_ignored():
     out = _panes(("other-agent", "/some/other/dir"))
-    assert _shared_dir_conflicts(out, "agentwire-dev", REPO) == set()
+    assert _shared_dir_conflicts(out, "hermeswire-dev", REPO) == set()

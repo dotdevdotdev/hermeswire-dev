@@ -1,6 +1,6 @@
 """Bypass-resistance regression corpus for the damage-control matcher.
 
-Loads the REAL bundled rule YAMLs (``agentwire/hooks/damage-control/rules``) — not
+Loads the REAL bundled rule YAMLs (``hermeswire/hooks/damage-control/rules``) — not
 synthetic inline patterns — and asserts two things at once:
 
   * a corpus of known evasion vectors (quoting/escaping, ``$VAR`` indirection,
@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from agentwire.safety._core import check_command, load_config
+from hermeswire.safety._core import check_command, load_config
 
 # This corpus asserts on ``~``-form secret paths (``cat ~/.ssh/id_rsa``), so it
 # needs ``$HOME`` to look like a real home. The #893 redirect points HOME at a
@@ -27,10 +27,10 @@ from agentwire.safety._core import check_command, load_config
 # reason that had nothing to do with the matcher. (macOS temp is
 # ``/private/var/folders``, which is not allowlisted — hence it only showed up
 # on CI.) Reads only; the audit backstop still catches any write.
-pytestmark = pytest.mark.real_agentwire_home
+pytestmark = pytest.mark.real_hermeswire_home
 
 REPO = Path(__file__).resolve().parent.parent.parent
-RULES_DIR = REPO / "agentwire" / "hooks" / "damage-control" / "rules"
+RULES_DIR = REPO / "hermeswire" / "hooks" / "damage-control" / "rules"
 
 # Built without literal "rm -<flags>" substrings where convenient so the live
 # damage-control hook does not block the test file itself being written/read.
@@ -107,7 +107,7 @@ SAFE_COMMANDS = [
     "ls -la",
     "cd /tmp && echo hi",
     "cat README.md",
-    "grep -r environ agentwire",
+    "grep -r environ hermeswire",
     "docker compose up -d",
     "echo hello world",
     "mkdir -p build/out",
@@ -127,7 +127,7 @@ def test_safe_command_allowed(cfg, command):
 # Read-surface policing (Read/Grep/Glob) via check_read_path.
 # ---------------------------------------------------------------------------
 
-# Note: ~/.agentwire/.env is intentionally allowlisted (read/write/edit) in
+# Note: ~/.hermeswire/.env is intentionally allowlisted (read/write/edit) in
 # core.yaml so the agent can load its own env — it is NOT in this list.
 ZERO_ACCESS_READS = [
     "~/.ssh/id_rsa",
@@ -139,14 +139,14 @@ ZERO_ACCESS_READS = [
 
 @pytest.mark.parametrize("path", ZERO_ACCESS_READS)
 def test_zero_access_read_blocked(cfg, path):
-    from agentwire.safety._core import check_read_path
+    from hermeswire.safety._core import check_read_path
 
     blocked, _reason = check_read_path(path, cfg)
     assert blocked is True, f"zero-access read not blocked: {path}"
 
 
 def test_normal_file_read_allowed(cfg):
-    from agentwire.safety._core import check_read_path
+    from hermeswire.safety._core import check_read_path
 
     blocked, _ = check_read_path("/repo/src/main.py", cfg)
     assert blocked is False
@@ -155,7 +155,7 @@ def test_normal_file_read_allowed(cfg):
 def test_every_content_reading_tool_is_policed():
     """Each native content-reading tool must route to the read-tool hook, or a
     secret could be exfiltrated without traversing damage control."""
-    from agentwire.safety_commands import DAMAGE_CONTROL_MATCHERS
+    from hermeswire.safety_commands import DAMAGE_CONTROL_MATCHERS
 
     for tool in ("read_file", "search_files"):
         assert DAMAGE_CONTROL_MATCHERS.get(tool) == "read-tool-damage-control.py", (
@@ -169,7 +169,7 @@ def test_every_content_reading_tool_is_policed():
 
 
 def test_missing_parser_fails_closed(monkeypatch):
-    import agentwire.safety._core as core
+    import hermeswire.safety._core as core
 
     monkeypatch.setattr(core, "yaml", None)
     merged = core.load_config(RULES_DIR)

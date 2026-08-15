@@ -24,7 +24,7 @@ from pathlib import Path
 
 from PIL import Image
 
-ICONS_DIR = Path(__file__).resolve().parent.parent / "agentwire" / "static" / "icons"
+ICONS_DIR = Path(__file__).resolve().parent.parent / "hermeswire" / "static" / "icons"
 SOURCE_SUFFIXES = {".png", ".jpeg", ".jpg"}
 MAX_DIM = 128  # longest edge in px; sidebar avatars render at 48px
 QUALITY = 80

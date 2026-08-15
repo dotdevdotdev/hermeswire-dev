@@ -9,12 +9,12 @@ from pathlib import Path
 
 import pytest
 
-from agentwire import safety_commands
+from hermeswire import safety_commands
 
 
 @pytest.fixture
 def fake_env(tmp_path, monkeypatch):
-    """Redirect every ~/.agentwire and ~/.claude path used by the heal."""
+    """Redirect every ~/.hermeswire and ~/.claude path used by the heal."""
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
@@ -22,13 +22,13 @@ def fake_env(tmp_path, monkeypatch):
     # Pin the running package AS canonical so these measure the install, not
     # the guard, and behave the same in a worktree as in CI's plain clone.
     monkeypatch.delenv("UV_TOOL_DIR", raising=False)
-    from agentwire.safety import provenance as _prov
+    from hermeswire.safety import provenance as _prov
     monkeypatch.setattr(
         _prov, "canonical_package_dir",
-        lambda: Path(__import__("agentwire").__file__).parent.resolve(),
+        lambda: Path(__import__("hermeswire").__file__).parent.resolve(),
     )
 
-    cfg = home / ".agentwire"
+    cfg = home / ".hermeswire"
     monkeypatch.setattr(safety_commands, "CONFIG_DIR", cfg)
     monkeypatch.setattr(safety_commands, "HOOKS_DIR", cfg / "hooks" / "damage-control")
     monkeypatch.setattr(safety_commands, "LOGS_DIR", cfg / "logs" / "damage-control")
@@ -115,7 +115,7 @@ class TestDriftDetectors:
 
         config = Path.home() / ".hermes" / "config.yaml"
         config.parent.mkdir(parents=True, exist_ok=True)
-        cmd = "~/.agentwire/hooks/damage-control/read-tool-damage-control.py"
+        cmd = "~/.hermeswire/hooks/damage-control/read-tool-damage-control.py"
         config.write_text(_yaml.safe_dump({"hooks": {"pre_tool_call": [
             {"matcher": "read_file", "command": cmd, "timeout": 60},
         ]}}))
@@ -148,7 +148,7 @@ class TestDoctorDamageControlSection:
         )
 
     def test_clean_when_healed_and_enabled(self, monkeypatch, capsys):
-        from agentwire.doctor_cli import _render_damage_control_section
+        from hermeswire.doctor_cli import _render_damage_control_section
         self._patch_safety_enabled(monkeypatch, True)
         issues = _render_damage_control_section()
         out = capsys.readouterr().out
@@ -156,7 +156,7 @@ class TestDoctorDamageControlSection:
         assert "[ok] Damage control enabled" in out
 
     def test_disabled_kill_switch_flagged(self, monkeypatch, capsys):
-        from agentwire.doctor_cli import _render_damage_control_section
+        from hermeswire.doctor_cli import _render_damage_control_section
         self._patch_safety_enabled(monkeypatch, False)
         issues = _render_damage_control_section()
         out = capsys.readouterr().out
@@ -164,7 +164,7 @@ class TestDoctorDamageControlSection:
         assert "DISABLED" in out
 
     def test_missing_rule_flagged(self, monkeypatch, capsys):
-        from agentwire.doctor_cli import _render_damage_control_section
+        from hermeswire.doctor_cli import _render_damage_control_section
         self._patch_safety_enabled(monkeypatch, True)
         next(safety_commands.RULES_DIR.glob("*.yaml")).unlink()
         issues = _render_damage_control_section()
@@ -173,7 +173,7 @@ class TestDoctorDamageControlSection:
         assert "rules NOT installed" in out
 
     def test_missing_matcher_flagged(self, monkeypatch, capsys):
-        from agentwire.doctor_cli import _render_damage_control_section
+        from hermeswire.doctor_cli import _render_damage_control_section
         self._patch_safety_enabled(monkeypatch, True)
         config = Path.home() / ".hermes" / "config.yaml"
         config.write_text("hooks: {}\n")

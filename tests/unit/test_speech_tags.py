@@ -1,6 +1,6 @@
-"""Tests for agentwire.utils.speech.strip_speech_tags."""
+"""Tests for hermeswire.utils.speech.strip_speech_tags."""
 
-from agentwire.utils.speech import strip_speech_tags
+from hermeswire.utils.speech import strip_speech_tags
 
 
 class TestStripSpeechTags:

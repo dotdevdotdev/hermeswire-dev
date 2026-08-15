@@ -6,7 +6,7 @@ F3 (or the `desktop_collage` MCP tool, or the command palette → "Window collag
 
 Grid cells are **families** (a session + its descendants), not raw windows (#748): a session with no open children renders as a plain singleton tile, one with open children renders as a tinted cluster — parent tile on top, children nested in a wrapping row below, hued from the shared `--lineage-tint-1..6` palette so relatedness reads at a glance. See [Session topology](session-topology.md) for the grouping mechanics and the sibling placement/connector-overlay/live-appearance features it shares a palette with.
 
-Module: `agentwire/static/js/collage.js`. Styles: the `.collage-*` block in `agentwire/static/css/desktop.css`. Hotkey wiring: `setupCollage()` in `agentwire/static/js/desktop.js`.
+Module: `hermeswire/static/js/collage.js`. Styles: the `.collage-*` block in `hermeswire/static/css/desktop.css`. Hotkey wiring: `setupCollage()` in `hermeswire/static/js/desktop.js`.
 
 ## The one rule
 

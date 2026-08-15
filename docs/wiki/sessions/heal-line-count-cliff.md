@@ -15,7 +15,7 @@ There are two distinct ways the box stops rendering the whole paste, and they
 are governed by *different variables*. The numbers below were measured while
 building an unrelated voice spike; they are written up here because this is
 where they belong, and the fix is owned by
-[#930](https://github.com/dotdevdotdev/agentwire-dev/issues/930).
+[#930](https://github.com/dotdevdotdev/hermeswire-dev/issues/930).
 
 ## The wrong model, and who held it
 
@@ -116,7 +116,7 @@ Two consequences worth stating plainly:
   are careful to avoid, and has since coalescing landed. Combined with a
   swallowed Enter — the condition the #689 heal exists for — the result is a
   **permanent wedge: never healed, never dead-lettered, therefore never
-  emailed**, surfacing only via `agentwire doctor`'s stale-pending report after
+  emailed**, surfacing only via `hermeswire doctor`'s stale-pending report after
   two hours. (Mechanically: with no `stuck` match, the drain falls through to
   the unrecognized-box path, and repeated identical content resolves to
   `box_static` — a *no-penalty* defer reason, so `attempts` never reaches
@@ -147,7 +147,7 @@ is a number the next person will distrust and re-derive**, so the method is
 recorded here alongside the results.
 
 The probe itself is **not on `main`**, and not merely because of where it was
-written. It imports `agentwire.voice_layer` to render its message bodies and
+written. It imports `hermeswire.voice_layer` to render its message bodies and
 pins the spike worktree by absolute path in its PEP-723 header, so it does not
 *run* on `main` at all. Porting it means rewriting it sender-agnostic — that is
 #930 work, not a copy.

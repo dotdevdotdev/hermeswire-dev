@@ -2,25 +2,25 @@
 
 > Living document. Update this, don't create new versions.
 
-agentwire's voice backends are a tiered model: `default` (built into the
+hermeswire's voice backends are a tiered model: `default` (built into the
 portal, zero setup), `custom` (bring your own model behind a small HTTP
 shim), and — for STT — `cloud` (the portal POSTs audio straight to any
 OpenAI-compatible transcription API; see
 [stt-cloud.md](stt-cloud.md), no shim involved). This page is the contract
 a custom shim implements. The test of this document: you should be able to
-write a working shim from this page alone, without reading agentwire source.
+write a working shim from this page alone, without reading hermeswire source.
 
 ## The tiers
 
 | | `default` | `cloud` (STT only) | `custom` |
 |---|---|---|---|
-| STT | browser SpeechRecognition while the Moonshine shim (tmux `agentwire-stt`, `:8101`) warms up, then host transcription via that shim once ready; + jargon-correction map | audio upload → portal → hosted transcription API (key from env, server-side only) | audio upload → your shim (`POST /transcribe`) |
-| TTS | portal-managed Kokoro-82M shim subprocess (tmux `agentwire-kokoro`, `:8102`, CPU, ~200MB auto-download on first portal start); browser `speechSynthesis` while the model warms up or if it can't load | — | text → your shim (`POST /tts`) → WAV broadcast |
+| STT | browser SpeechRecognition while the Moonshine shim (tmux `hermeswire-stt`, `:8101`) warms up, then host transcription via that shim once ready; + jargon-correction map | audio upload → portal → hosted transcription API (key from env, server-side only) | audio upload → your shim (`POST /transcribe`) |
+| TTS | portal-managed Kokoro-82M shim subprocess (tmux `hermeswire-kokoro`, `:8102`, CPU, ~200MB auto-download on first portal start); browser `speechSynthesis` while the model warms up or if it can't load | — | text → your shim (`POST /tts`) → WAV broadcast |
 | Setup | none | API key in the portal env | run your shim, point config at it |
 | Quality | good neural voice (32 presets, 8 languages), ~90% semantic STT accuracy | provider-grade STT (e.g. `gpt-4o-mini-transcribe`, ~$0.003/min) | whatever your model can do — cloning, emotion control, GPU engines |
 
 ```yaml
-# ~/.agentwire/config.yaml
+# ~/.hermeswire/config.yaml
 tts:
   backend: custom
   url: http://localhost:8100
@@ -31,10 +31,10 @@ stt:
 
 ## Design doctrine: envelope, not vocabulary
 
-agentwire defines the **envelope**, never the model's vocabulary. The
+hermeswire defines the **envelope**, never the model's vocabulary. The
 mandatory surface is tiny — text in / audio out (TTS), audio in / text out
 (STT). Everything model-specific rides in two opaque pass-through fields that
-agentwire transports verbatim and never interprets:
+hermeswire transports verbatim and never interprets:
 
 - **`instructions`** (string) — free text, effectively a prompt riding along
   with the transaction: `"speak warmly, slightly amused"`. Set globally via
@@ -47,7 +47,7 @@ agentwire transports verbatim and never interprets:
 Inline markup is the shim's business: if your model understands `[laughter]`
 or `<emotion:happy>` tags embedded in `text`, consume them. If it doesn't,
 **strip unknown markup rather than speaking it literally** — a capability-blind
-caller must never produce audibly broken output. (agentwire's own `default`
+caller must never produce audibly broken output. (hermeswire's own `default`
 tier strips standalone lowercase `[tag]` / `<tag:value>` tokens before OS or
 browser synthesis.)
 
@@ -70,12 +70,12 @@ Only `text` is guaranteed present. `voice`, `instructions`, `options` are
 optional — handle their absence.
 
 Response: `200` with `Content-Type: audio/wav`, body = WAV bytes.
-agentwire chunks long text into sentences client-side and calls `/tts` per
+hermeswire chunks long text into sentences client-side and calls `/tts` per
 chunk, so latency per call matters more than long-text handling.
 
 ### `GET /health` (required)
 
-`200` with any JSON body when ready to serve. agentwire probes this (1.5s
+`200` with any JSON body when ready to serve. hermeswire probes this (1.5s
 timeout) for availability reporting and fail-fast in the `say` tool.
 
 ### `GET /voices` (optional)
@@ -84,7 +84,7 @@ timeout) for availability reporting and fail-fast in the `say` tool.
 {"voices": [{"name": "amy", "duration": 10.2}]}
 ```
 
-Powers `agentwire tts voices` and voice pickers. Omit if your model has
+Powers `hermeswire tts voices` and voice pickers. Omit if your model has
 no selectable voices.
 
 ### `GET /capabilities` (optional, recommended)
@@ -101,11 +101,11 @@ no selectable voices.
 
 **`tool_prompt` is the most important field** — it closes the capability loop
 at the producer. Discovery downstream is useless if the agent never learns
-what to emit: at MCP-server start, agentwire appends `tool_prompt` verbatim to
+what to emit: at MCP-server start, hermeswire appends `tool_prompt` verbatim to
 the agent-facing `say` tool description, and at session creation it's appended
 to the `voice` role prompt. You (the shim dev) write the prompt, the tooldef
 teaches the agent, the agent emits your tags, the envelope passes them through
-untouched, your shim renders them. agentwire stays a dumb pipe at every step.
+untouched, your shim renders them. hermeswire stays a dumb pipe at every step.
 
 **Caveat:** MCP tooldefs are read at MCP-server start (a separate process
 launched by Claude Code). Swapping shims requires a session restart to
@@ -122,7 +122,7 @@ re-teach running agents.
 ### `POST /transcribe` (required)
 
 Request: `multipart/form-data` with field `file` — WAV, 16 kHz mono PCM16
-(agentwire decodes browser WebM/Opus and resamples before upload). When
+(hermeswire decodes browser WebM/Opus and resamples before upload). When
 configured, `instructions` and `options` (JSON-encoded string) arrive as
 additional form fields — language hints, vocabulary biasing, whatever your
 model takes. Ignore them if not.
@@ -133,11 +133,11 @@ Response:
 {"text": "refactor the auth module and run the tests"}
 ```
 
-Extra keys (`language`, `duration`, …) are fine; agentwire reads `text`.
+Extra keys (`language`, `duration`, …) are fine; hermeswire reads `text`.
 
 ### `GET /health` (required)
 
-`200` when ready. `{"status": "ok"}` by convention; agentwire treats any 200
+`200` when ready. `{"status": "ok"}` by convention; hermeswire treats any 200
 as healthy.
 
 ### `GET /capabilities` (optional)
@@ -151,8 +151,8 @@ examples for this contract:
 
 | Shim | Source | Run | Models |
 |---|---|---|---|
-| TTS | `agentwire/tts_server.py` | `agentwire tts start` (port 8100) | kokoro (CPU), chatterbox (GPU cloning), zonos (emotion via `instructions`) |
-| STT | `agentwire/stt/stt_server.py` | `agentwire stt start` (port 8101) | moonshine ONNX (fast CPU), faster-whisper |
+| TTS | `hermeswire/tts_server.py` | `hermeswire tts start` (port 8100) | kokoro (CPU), chatterbox (GPU cloning), zonos (emotion via `instructions`) |
+| STT | `hermeswire/stt/stt_server.py` | `hermeswire stt start` (port 8101) | moonshine ONNX (fast CPU), faster-whisper |
 
 Smoke-test either with curl:
 

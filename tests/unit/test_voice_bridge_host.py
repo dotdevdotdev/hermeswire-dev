@@ -38,8 +38,8 @@ from http.server import ThreadingHTTPServer
 
 import pytest
 
-from agentwire import core
-from agentwire.voice_layer import server
+from hermeswire import core
+from hermeswire.voice_layer import server
 
 TOKEN = "test-token"
 

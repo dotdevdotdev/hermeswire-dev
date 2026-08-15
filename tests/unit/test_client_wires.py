@@ -40,7 +40,7 @@ import subprocess
 
 import pytest
 
-from agentwire.voice_layer import client
+from hermeswire.voice_layer import client
 from tests.page_slice import page_slice
 
 #: Applied per CLASS rather than per module: the presence checks at the bottom

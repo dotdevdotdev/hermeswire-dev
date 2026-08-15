@@ -2,7 +2,7 @@
 
 Three properties, each asserted structurally rather than by inspection:
 
-1. **The audit cannot drift.** Every ``@mcp.tool`` name in ``agentwire/mcp_*.py``
+1. **The audit cannot drift.** Every ``@mcp.tool`` name in ``hermeswire/mcp_*.py``
    must appear in exactly one tier in ``voice_layer.surface`` — parsed from the
    source at test time, so a new MCP tool fails this file until someone places
    it, and a removed one fails until its tier entry goes too.
@@ -24,8 +24,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from agentwire.voice_layer import confirm, surface, tools, transcript, write_tools
-from agentwire.voice_layer.write_tools import FrozenWrite, WriteSpec, gated_triple
+from hermeswire.voice_layer import confirm, surface, tools, transcript, write_tools
+from hermeswire.voice_layer.write_tools import FrozenWrite, WriteSpec, gated_triple
 
 # =============================================================================
 # Harness (mirrors test_voice_confirm's, minimally)
@@ -74,7 +74,7 @@ def _spine():
 # =============================================================================
 
 def mcp_tool_names(sources: "list[str] | None" = None) -> set[str]:
-    r"""Every ``@mcp.tool`` name in ``agentwire/mcp_*.py``.
+    r"""Every ``@mcp.tool`` name in ``hermeswire/mcp_*.py``.
 
     Delegates to :func:`mcp_tool_defs` rather than running its own regex, and
     that consolidation is a bug fix rather than tidying. The regex it replaced
@@ -139,7 +139,7 @@ class TestTierAudit:
 
     def test_a_report_that_authors_an_artifact_is_not_a_read(self):
         """#979/3: scheduler_report sat in TIER_READ while it writes an HTML
-        artifact into ~/.agentwire/artifacts/ and can push a click-to-open
+        artifact into ~/.hermeswire/artifacts/ and can push a click-to-open
         portal notification — clause (d) and clause (b). 'Expand reads freely'
         would have wired it confirm-free on the strength of the word report."""
         assert surface.tier_of("scheduler_report") == "excluded"
@@ -242,7 +242,7 @@ def _dispatched_argvs(tool_name: str) -> list[list]:
 
     seen: list[list] = []
     with mock.patch(
-        "agentwire.voice_layer.tools.run_agentwire_cmd",
+        "hermeswire.voice_layer.tools.run_hermeswire_cmd",
         lambda argv, **kw: seen.append(list(argv)) or {"success": True},
     ):
         tools.dispatch(tool_name, dict(_SWEEP_ARGS), "buddy")
@@ -426,7 +426,7 @@ class TestEveryWiredToolIsRuled:
 # =============================================================================
 #
 # The wave-3 lesson: `task_run` and `scheduler_run` sat GATED while both
-# dispatch through `agentwire ensure` — which creates the session when it is
+# dispatch through `hermeswire ensure` — which creates the session when it is
 # missing and then drives it — clause (a) under names that don't look like it.
 # A by-name exclusion list cannot catch the next one, so this analyzer keys on
 # the DISPATCH PATH: it walks every MCP tool's argv into the CLI registrars,
@@ -434,7 +434,7 @@ class TestEveryWiredToolIsRuled:
 # that handler can reach session creation. The creation markers are the SSOT
 # helpers themselves (``build_agent_command``, ``create_and_register_worktree``
 # — CLAUDE.md: every launch site routes through them) plus a spawned
-# ``["agentwire", "ensure", ...]`` subprocess (the scheduler's dispatch shape).
+# ``["hermeswire", "ensure", ...]`` subprocess (the scheduler's dispatch shape).
 
 
 def _call_name(node: ast.Call) -> str | None:
@@ -449,11 +449,11 @@ _CREATION_MARKER_CALLS = {"build_agent_command", "create_and_register_worktree"}
 
 
 def _spawns_ensure(fn: ast.AST) -> bool:
-    """A literal ["agentwire", "ensure", ...] anywhere in the function body."""
+    """A literal ["hermeswire", "ensure", ...] anywhere in the function body."""
     for node in ast.walk(fn):
         if isinstance(node, (ast.List, ast.Tuple)):
             vals = [e.value for e in node.elts if isinstance(e, ast.Constant)]
-            if any(a == "agentwire" and b == "ensure"
+            if any(a == "hermeswire" and b == "ensure"
                    for a, b in zip(vals, vals[1:])):
                 return True
     return False
@@ -569,7 +569,7 @@ def mcp_tool_argvs(sources: "list[str] | None" = None) -> dict[str, list[list]]:
 
     **The covered shape, stated** (#979/4): a LIST LITERAL whose first element
     is a string constant, appearing anywhere in the tool's body. That is the
-    shape ``run_agentwire_cmd(["worktree", ...])`` takes and nothing else. An
+    shape ``run_hermeswire_cmd(["worktree", ...])`` takes and nothing else. An
     argv assembled dynamically — built by a helper, extended from a variable,
     chosen by a branch that stores the verb in a name — contributes NOTHING
     here, and a tool with no extracted argv is therefore UNCHECKED by the
@@ -613,7 +613,7 @@ def in_process_creating_tools(sources: "list[str] | None" = None) -> dict[str, s
                  if isinstance(sub, ast.Call) and (n := _call_name(sub))}
         hit = sorted(calls & creating)
         if hit or _spawns_ensure(node):
-            flagged[name] = hit[0] if hit else "agentwire ensure"
+            flagged[name] = hit[0] if hit else "hermeswire ensure"
     return flagged
 
 
@@ -629,7 +629,7 @@ _NON_CREATING_MODES = {
 #: never checked — each one placed in its tier by hand, by reading it. They
 #: reach their work through a Python API rather than a CLI argv: the desktop
 #: family writes the portal's window state, the wiki family calls
-#: ``agentwire.wiki`` directly, ``notify_user``/``transcribe`` go through the
+#: ``hermeswire.wiki`` directly, ``notify_user``/``transcribe`` go through the
 #: portal and the STT backend, ``desktop_write_artifact`` writes a file.
 #: Adding to this set is a claim that a human looked; the leg that asserts it
 #: is the thing stopping a new tool from being unchecked AND unnoticed.
@@ -699,7 +699,7 @@ class TestNoTieredInToolCanCreateASession:
             "@mcp.tool()\n"
             "def sneaky_verb(name: str) -> str:\n"
             "    argv = build_the_argv(name)\n"
-            "    return run_agentwire_cmd(argv)\n"
+            "    return run_hermeswire_cmd(argv)\n"
         )
         assert mcp_tool_argvs([source]) == {"sneaky_verb": []}
 
@@ -871,7 +871,7 @@ class TestDeclaredWriteMechanism:
         and then addressed something else. It compares the WHOLE name now — and
         that is also what makes accepting a local `ops@edge` safe, since every
         layer asks about the name it was given."""
-        monkeypatch.setattr("agentwire.inbox.live_sessions", lambda: {"web"})
+        monkeypatch.setattr("hermeswire.inbox.live_sessions", lambda: {"web"})
         # Called directly: `_session_arg` refuses this name first, so nothing
         # else in the suite can tell a whole-name comparison from a split one,
         # and an unpinned split grows back the moment remotes are revisited.
@@ -891,7 +891,7 @@ class TestDeclaredWriteMechanism:
         """The false-reject half on the write path: `ops@edge` is a creatable,
         addressable LOCAL tmux session, and refusing to message one is the
         buddy declining work it can do."""
-        monkeypatch.setattr("agentwire.inbox.live_sessions", lambda: {"ops@edge"})
+        monkeypatch.setattr("hermeswire.inbox.live_sessions", lambda: {"ops@edge"})
         propose = write_tools.WRITE_TOOL_FNS["propose_session_message"]
         convo, _runner = _spine()
         result = propose(
@@ -910,7 +910,7 @@ class TestDeclaredWriteMechanism:
     def test_an_argv_only_write_reads_as_executed_not_delivered(self):
         """A kind-less outbox entry has no queue to interrogate; claiming
         'delivered' for it would be a category error (§3.6)."""
-        from agentwire.voice_layer import outbox
+        from hermeswire.voice_layer import outbox
 
         entry = {"proposal_id": "abc123", "session": "target",
                  "body": "target", "kind": "", "dispatched": True}
@@ -936,8 +936,8 @@ class TestDeclaredWriteMechanism:
 # =============================================================================
 
 ARGV_CASES = [
-    ("fleet_session_info", {"session": "agentwire-dev"},
-     ["info", "-s", "agentwire-dev"]),
+    ("fleet_session_info", {"session": "hermeswire-dev"},
+     ["info", "-s", "hermeswire-dev"]),
     ("fleet_scheduler_status", {}, ["scheduler", "status"]),
     ("fleet_scheduler_history", {}, ["scheduler", "history", "--json"]),
     ("fleet_scheduler_live", {}, ["scheduler", "live", "--json"]),
@@ -963,7 +963,7 @@ class TestExpandedReads:
     def seen(self, monkeypatch):
         calls: list[list[str]] = []
         monkeypatch.setattr(
-            "agentwire.voice_layer.tools.run_agentwire_cmd",
+            "hermeswire.voice_layer.tools.run_hermeswire_cmd",
             lambda argv, **kw: calls.append(list(argv)) or {"success": True},
         )
         return calls
@@ -1012,7 +1012,7 @@ class TestExpandedReads:
         a creatable local session, and a refusal keyed on the character alone
         told the owner a true local name was remote: a confident falsehood with
         no move from it, in a channel with no screen."""
-        monkeypatch.setattr("agentwire.inbox.live_sessions", lambda: {"ops@edge"})
+        monkeypatch.setattr("hermeswire.inbox.live_sessions", lambda: {"ops@edge"})
         result = tools.dispatch(name, {"session": "web@laptop"}, "buddy")
         assert result["success"] is False
         assert result["must_speak"] is True
@@ -1027,7 +1027,7 @@ class TestExpandedReads:
         base dispatched `['info', '-s', 'ops@edge']` and the first fix refused
         it. `@` is legal in tmux (only `.` and `:` are rewritten, #878) and in
         `inbox._SESSION_RE`, so this name is ordinary local work."""
-        monkeypatch.setattr("agentwire.inbox.live_sessions", lambda: {"ops@edge"})
+        monkeypatch.setattr("hermeswire.inbox.live_sessions", lambda: {"ops@edge"})
         result = tools.dispatch(
             "fleet_session_info", {"session": "ops@edge"}, "buddy"
         )
@@ -1040,7 +1040,7 @@ class TestExpandedReads:
         every local `@` name during a tmux blip, and the CLI reports what it
         finds. Same doctrine as `_require_live` (spec §5): only POSITIVE
         knowledge refuses."""
-        monkeypatch.setattr("agentwire.inbox.live_sessions", lambda: None)
+        monkeypatch.setattr("hermeswire.inbox.live_sessions", lambda: None)
         result = tools.dispatch(
             "fleet_session_info", {"session": "ops@edge"}, "buddy"
         )
@@ -1053,7 +1053,7 @@ class TestExpandedReads:
         so a garbled name that happened to contain one was told it was remote —
         a wrong diagnosis of a mis-transcription, and nothing in the suite
         noticed if the two moved past each other."""
-        monkeypatch.setattr("agentwire.inbox.live_sessions", lambda: set())
+        monkeypatch.setattr("hermeswire.inbox.live_sessions", lambda: set())
         result = tools.dispatch("fleet_session_info", {"session": bad}, "buddy")
         assert result["success"] is False
         assert "valid session name" in result["error"]
@@ -1064,10 +1064,10 @@ class TestExpandedReads:
         """A name with no `@` never consults liveness at all — reads must keep
         working for a session that has since exited."""
         result = tools.dispatch(
-            "fleet_session_info", {"session": "agentwire-dev"}, "buddy"
+            "fleet_session_info", {"session": "hermeswire-dev"}, "buddy"
         )
         assert result.get("success") is not False, result
-        assert seen == [["info", "-s", "agentwire-dev"]]
+        assert seen == [["info", "-s", "hermeswire-dev"]]
 
     @pytest.mark.parametrize("bad", ["-x/y", "-/-", "own er/x", "a/b/c", "o.x/n"])
     def test_a_bad_owner_segment_is_refused_by_the_pattern(self, monkeypatch, bad):
@@ -1080,7 +1080,7 @@ class TestExpandedReads:
         said no', which is exactly how this test passes without the fix."""
         ran: list = []
         monkeypatch.setattr(
-            "agentwire.voice_layer.tools.subprocess.run",
+            "hermeswire.voice_layer.tools.subprocess.run",
             lambda *a, **kw: ran.append(a) or (_ for _ in ()).throw(AssertionError),
         )
         result = tools.dispatch("fleet_pull_requests", {"repo": bad}, "buddy")
@@ -1089,7 +1089,7 @@ class TestExpandedReads:
         assert ran == []
 
     @pytest.mark.parametrize(
-        "repo", ["dotdevdotdev/agentwire-dev", "github/.github", "owner/_name",
+        "repo", ["dotdevdotdev/hermeswire-dev", "github/.github", "owner/_name",
                  "owner/-name"],
     )
     def test_real_repository_names_still_reach_gh(self, monkeypatch, repo):
@@ -1099,7 +1099,7 @@ class TestExpandedReads:
         real repositories is a worse trade than the inconsistency it fixes."""
         seen_cmd: list = []
         monkeypatch.setattr(
-            "agentwire.voice_layer.tools.subprocess.run",
+            "hermeswire.voice_layer.tools.subprocess.run",
             lambda cmd, **kw: seen_cmd.append(cmd)
             or SimpleNamespace(returncode=0, stdout="[]", stderr=""),
         )
@@ -1157,7 +1157,7 @@ class TestRequireLiveNamesTheMechanismItActuallyHas:
         live and refuses one it does not — a liveness gate, not a syntax one.
         If that ever becomes a syntax refusal again, this fails alongside the
         prose that describes it."""
-        monkeypatch.setattr("agentwire.inbox.live_sessions", lambda: {"ops@edge"})
+        monkeypatch.setattr("hermeswire.inbox.live_sessions", lambda: {"ops@edge"})
         assert tools._session_arg({"session": "ops@edge"}) == "ops@edge"
         with pytest.raises(tools.ToolError, match="no live session"):
             tools._session_arg({"session": "web@laptop"})
@@ -1165,7 +1165,7 @@ class TestRequireLiveNamesTheMechanismItActuallyHas:
     def test_an_unreachable_tmux_makes_neither_layer_guess(self, monkeypatch):
         """The one case the rewritten sentence carves out (spec §5): nothing is
         demonstrated, so nothing is refused."""
-        monkeypatch.setattr("agentwire.inbox.live_sessions", lambda: None)
+        monkeypatch.setattr("hermeswire.inbox.live_sessions", lambda: None)
         assert tools._session_arg({"session": "web@laptop"}) == "web@laptop"
         write_tools._require_live("web@laptop", cannot="")
 

@@ -14,7 +14,7 @@ conclusion:
   A  the hook, fed a synthetic PreToolUse payload for a ``msg send`` whose
      BODY discusses a guarded operation                        → expect BLOCK
   B  the identical argv via ``subprocess.run`` from plain Python — exactly what
-     ``mcp_core.run_agentwire_cmd`` does from the bridge        → expect exit 0
+     ``mcp_core.run_hermeswire_cmd`` does from the bridge        → expect exit 0
   C  control: an innocuous ``msg send`` through the hook        → expect ALLOW
   D  control: a genuinely destructive command through the hook  → expect BLOCK
 
@@ -54,9 +54,9 @@ from pathlib import Path
 
 HOME = Path.home()
 HOOK = HOME / ".claude" / "hooks" / "damage-control" / "bash-tool-damage-control.py"
-HOOK_ALT = HOME / ".agentwire" / "hooks" / "damage-control" / "bash-tool-damage-control.py"
-RULES_DIR = HOME / ".agentwire" / "damage-control"
-TOOLDEFS_DIR = HOME / ".agentwire" / "tooldefs"
+HOOK_ALT = HOME / ".hermeswire" / "hooks" / "damage-control" / "bash-tool-damage-control.py"
+RULES_DIR = HOME / ".hermeswire" / "damage-control"
+TOOLDEFS_DIR = HOME / ".hermeswire" / "tooldefs"
 SETTINGS = HOME / ".claude" / "settings.json"
 
 #: The probe recipient. Throwaway, and purged at the end.
@@ -151,12 +151,12 @@ def run_direct(argv: list[str]) -> dict:
 def purge() -> None:
     """Leave nothing queued. The probe writes a real message on purpose."""
     subprocess.run(
-        ["agentwire", "msg", "purge", TARGET],
+        ["hermeswire", "msg", "purge", TARGET],
         capture_output=True,
         text=True,
         timeout=60,
     )
-    box = HOME / ".agentwire" / "inbox" / TARGET
+    box = HOME / ".hermeswire" / "inbox" / TARGET
     if box.exists():
         # Explicit paths only — never a recursive delete.
         for entry in list(box.glob("*.json")):
@@ -178,8 +178,8 @@ def purge() -> None:
 
 def main() -> int:
     as_json = "--json" in sys.argv
-    guarded_cmd = f"agentwire msg send --to {TARGET} --kind note '{GUARDED_PROSE}'"
-    innocuous_cmd = f"agentwire msg send --to {TARGET} --kind note '{INNOCUOUS_PROSE}'"
+    guarded_cmd = f"hermeswire msg send --to {TARGET} --kind note '{GUARDED_PROSE}'"
+    innocuous_cmd = f"hermeswire msg send --to {TARGET} --kind note '{INNOCUOUS_PROSE}'"
     destructive_cmd = "".join(_FRAG) + " /tmp/some-build-dir"
 
     report = {
@@ -198,7 +198,7 @@ def main() -> int:
 
     # Probe B: the bridge's actual path. A real send, then purged.
     argv = [
-        "agentwire", "msg", "send",
+        "hermeswire", "msg", "send",
         "--to", TARGET, "--from", "voice-dc-probe",
         "--kind", "note", GUARDED_PROSE,
     ]
@@ -240,7 +240,7 @@ def main() -> int:
                 print(f"           -> {probe['stdout'].splitlines()[0]}")
     print()
     print(f"PreToolUse matchers: {', '.join(report['pretooluse_matchers'])}")
-    print(f"mcp__agentwire__msg_send matched: {report['msg_send_mcp_tool_is_matched']}")
+    print(f"mcp__hermeswire__msg_send matched: {report['msg_send_mcp_tool_is_matched']}")
 
     a = report["probes"]["A_hook_msg_send_guarded_prose"]
     if not a["valid"]:
@@ -250,5 +250,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    os.environ.setdefault("AGENTWIRE_UNATTENDED", "")
+    os.environ.setdefault("HERMESWIRE_UNATTENDED", "")
     sys.exit(main())

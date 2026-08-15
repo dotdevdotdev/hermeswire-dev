@@ -1,4 +1,4 @@
-"""Watchdog stage isolation (agentwire/limits_cli.py, #490).
+"""Watchdog stage isolation (hermeswire/limits_cli.py, #490).
 
 The 60s watchdog runs five ``*.tick()`` stages sequentially. A raise in one
 must be logged and skipped, not propagate out and starve the rest of the cycle.
@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-from agentwire import limits_cli
+from hermeswire import limits_cli
 
 
 class _Boom(RuntimeError):  # noqa: N818  # test-only stage-failure sentinel, not a public error type
@@ -33,10 +33,10 @@ def stub_stages(monkeypatch):
             return result
         return _tick
 
-    import agentwire.inbox as inbox_mod
-    import agentwire.prompt_router as pr_mod
-    import agentwire.session_context as sc_mod
-    from agentwire.scheduler import zombie as zombie_mod
+    import hermeswire.inbox as inbox_mod
+    import hermeswire.prompt_router as pr_mod
+    import hermeswire.session_context as sc_mod
+    from hermeswire.scheduler import zombie as zombie_mod
 
     monkeypatch.setattr(limits_cli.usage_limit, "tick",
                         make("usage_limit",
@@ -82,7 +82,7 @@ def test_failing_middle_stage_isolated(stub_stages, monkeypatch, capsys, tmp_pat
     """inbox raises — earlier and later stages are unaffected."""
     monkeypatch.setattr(limits_cli, "WATCHDOG_EVENTS_FILE", tmp_path / "watchdog-events.jsonl")
 
-    import agentwire.inbox as inbox_mod
+    import hermeswire.inbox as inbox_mod
 
     def boom():
         raise _Boom("inbox stage exploded")
@@ -111,7 +111,7 @@ def test_unattended_block_digest_stage_is_isolated(stub_stages, monkeypatch, cap
     """
     monkeypatch.setattr(limits_cli, "WATCHDOG_EVENTS_FILE", tmp_path / "watchdog-events.jsonl")
 
-    import agentwire.safety_notify as sn_mod
+    import hermeswire.safety_notify as sn_mod
 
     monkeypatch.setattr(sn_mod, "tick", lambda: (_ for _ in ()).throw(_Boom("digest exploded")))
 

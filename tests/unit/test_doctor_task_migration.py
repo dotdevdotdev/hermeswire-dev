@@ -1,13 +1,13 @@
 """Tests for the doctor task-migration check (#736).
 
 The #720/#721 task-split relocated where tasks are READ from
-(.agentwire.tasks.yml) without migrating existing inline .agentwire.yml
+(.hermeswire.tasks.yml) without migrating existing inline .hermeswire.yml
 `tasks:` data, so those projects' scheduled/ensure tasks silently failed
 (exit 6). Doctor must surface exactly that state.
 """
 
-import agentwire.projects as projects_mod
-from agentwire.doctor_cli import (
+import hermeswire.projects as projects_mod
+from hermeswire.doctor_cli import (
     _find_unmigrated_task_projects,
     _render_task_migration_section,
 )
@@ -20,9 +20,9 @@ def _make_project(tmp_path, name, *, inline_tasks: bool, migrated: bool):
     cfg = "posture: bypass\n"
     if inline_tasks:
         cfg += "tasks:\n  daily:\n    prompt: do the thing\n"
-    (proj_dir / ".agentwire.yml").write_text(cfg)
+    (proj_dir / ".hermeswire.yml").write_text(cfg)
     if migrated:
-        (proj_dir / ".agentwire.tasks.yml").write_text(
+        (proj_dir / ".hermeswire.tasks.yml").write_text(
             "tasks:\n  daily:\n    prompt: do the thing\n"
         )
     return {"name": name, "path": str(proj_dir), "machine": "local"}
@@ -68,7 +68,7 @@ def test_render_section_flags_and_counts(tmp_path, monkeypatch, capsys):
     assert count == 1
     assert "daily-book-report" in out
     assert "will NOT run under ensure/scheduler" in out
-    assert "agentwire tasks migrate" in out
+    assert "hermeswire tasks migrate" in out
 
 
 def test_render_section_ok_when_clean(tmp_path, monkeypatch, capsys):

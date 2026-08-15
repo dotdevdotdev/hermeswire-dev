@@ -1,4 +1,4 @@
-"""Tests for `agentwire history migrate` — obsolete under Hermes (#9).
+"""Tests for `hermeswire history migrate` — obsolete under Hermes (#9).
 
 Claude keyed transcripts by cwd, so a directory move orphaned them and this verb
 re-keyed them. Hermes keys sessions by id in ~/.hermes/state.db (cwd is a data
@@ -7,8 +7,8 @@ column), so nothing can be orphaned and the verb is a reporting no-op.
 
 import json
 
-from agentwire import history_cli
-from agentwire import history_migrate as hm
+from hermeswire import history_cli
+from hermeswire import history_migrate as hm
 
 
 class Args:
@@ -43,7 +43,7 @@ class TestMigrateModule:
 
     def test_resumable_delegates_to_history(self, monkeypatch):
         monkeypatch.setattr(
-            "agentwire.history.resumable",
+            "hermeswire.history.resumable",
             lambda sid, machine="local": sid == "present",
         )
         assert hm.resumable("present") is True

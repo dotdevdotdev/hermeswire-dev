@@ -25,25 +25,25 @@ from unittest.mock import patch
 import pytest
 from test_auth_expired import AUTH_ERROR_STDERR
 
-from agentwire import auth_expired, completion
-from agentwire.completion import CompletionTimeout, status_to_exit_code, wait_for_completion_signal
-from agentwire.ensure_cli import ENSURE_EXIT_AUTH_EXPIRED
-from agentwire.scheduler.models import _EXIT_TO_STATUS, SchedulerTask, TaskState
+from hermeswire import auth_expired, completion
+from hermeswire.completion import CompletionTimeout, status_to_exit_code, wait_for_completion_signal
+from hermeswire.ensure_cli import ENSURE_EXIT_AUTH_EXPIRED
+from hermeswire.scheduler.models import _EXIT_TO_STATUS, SchedulerTask, TaskState
 
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    monkeypatch.setattr("agentwire.core.CONFIG_DIR", tmp_path / "agentwire")
-    monkeypatch.setattr("agentwire.completion.TASKS_DIR", tmp_path / "tasks")
+    monkeypatch.setattr("hermeswire.core.CONFIG_DIR", tmp_path / "hermeswire")
+    monkeypatch.setattr("hermeswire.completion.TASKS_DIR", tmp_path / "tasks")
     return tmp_path
 
 
 def _parked_off(monkeypatch):
-    monkeypatch.setattr("agentwire.usage_limit.check_and_park", lambda *a, **k: False)
+    monkeypatch.setattr("hermeswire.usage_limit.check_and_park", lambda *a, **k: False)
 
 
 def _agent_alive(monkeypatch):
-    monkeypatch.setattr("agentwire.completion._session_has_agent", lambda s: True)
+    monkeypatch.setattr("hermeswire.completion._session_has_agent", lambda s: True)
 
 
 class TestSessionHasAgentHermes:
@@ -58,30 +58,30 @@ class TestSessionHasAgentHermes:
         assert completion._command_is_agent("hermes") is True
 
     def test_python_requires_hermes_cmdline(self, monkeypatch):
-        monkeypatch.setattr("agentwire.completion._pid_is_hermes_agent", lambda pid: True)
+        monkeypatch.setattr("hermeswire.completion._pid_is_hermes_agent", lambda pid: True)
         assert completion._command_is_agent("python3.13", "4242") is True
-        monkeypatch.setattr("agentwire.completion._pid_is_hermes_agent", lambda pid: False)
+        monkeypatch.setattr("hermeswire.completion._pid_is_hermes_agent", lambda pid: False)
         assert completion._command_is_agent("python3.13", "4242") is False
 
     def test_pid_inspection_separates_agent_from_daemon(self):
         agent = SimpleNamespace(returncode=0,
                                 stdout="/Users/dotdev/.local/share/uv/tools/hermes-agent/bin/python hermes chat --cli\n",
                                 stderr="")
-        daemon = SimpleNamespace(returncode=0, stdout="agentwire scheduler\n", stderr="")
-        with patch("agentwire.completion.subprocess.run", return_value=agent):
+        daemon = SimpleNamespace(returncode=0, stdout="hermeswire scheduler\n", stderr="")
+        with patch("hermeswire.completion.subprocess.run", return_value=agent):
             assert completion._pid_is_hermes_agent("1") is True
-        with patch("agentwire.completion.subprocess.run", return_value=daemon):
+        with patch("hermeswire.completion.subprocess.run", return_value=daemon):
             assert completion._pid_is_hermes_agent("1") is False
 
     def test_session_has_agent_resolves_a_python_pane(self, monkeypatch):
         panes = SimpleNamespace(returncode=0, stdout="python3.13\t4242\n", stderr="")
-        monkeypatch.setattr("agentwire.completion.subprocess.run", lambda *a, **k: panes)
-        monkeypatch.setattr("agentwire.completion._pid_is_hermes_agent", lambda pid: True)
+        monkeypatch.setattr("hermeswire.completion.subprocess.run", lambda *a, **k: panes)
+        monkeypatch.setattr("hermeswire.completion._pid_is_hermes_agent", lambda pid: True)
         assert completion._session_has_agent("s") is True
 
     def test_missing_session_is_dead(self, monkeypatch):
         monkeypatch.setattr(
-            "agentwire.completion.subprocess.run",
+            "hermeswire.completion.subprocess.run",
             lambda *a, **k: SimpleNamespace(returncode=1, stdout="", stderr=""))
         assert completion._session_has_agent("s") is False
 
@@ -210,24 +210,24 @@ class TestEnsureWiresTheAnchorAndStopsRetrying:
     invisible to a test that only exercises `wait_for_completion_signal`."""
 
     def _run(self, tmp_path, signal, task_overrides=None):
-        from agentwire import ensure_cli
-        from agentwire.tasks import parse_task_config
-        from agentwire.templating import TemplateContext
+        from hermeswire import ensure_cli
+        from hermeswire.tasks import parse_task_config
+        from hermeswire.templating import TemplateContext
 
         task = parse_task_config("t", {"prompt": "do the thing",
                                        **(task_overrides or {})})
         ctx = TemplateContext(session="s", task="t", project_root=str(tmp_path))
         args = SimpleNamespace(session="s", task="t")
-        (tmp_path / ".agentwire").mkdir(exist_ok=True)
+        (tmp_path / ".hermeswire").mkdir(exist_ok=True)
 
         with patch.object(ensure_cli, "send_task_prompt", return_value=True) as send, \
-             patch("agentwire.ensure_cli.tmux_session_exists", return_value=True), \
-             patch("agentwire.session_ready.wait_for_session_ready", return_value=True), \
-             patch("agentwire.completion.wait_for_completion_signal") as wait, \
-             patch("agentwire.completion.write_task_context"), \
-             patch("agentwire.completion.clear_task_context"), \
-             patch("agentwire.ensure_cli.subprocess.run"), \
-             patch("agentwire.ensure_cli.time.sleep"):
+             patch("hermeswire.ensure_cli.tmux_session_exists", return_value=True), \
+             patch("hermeswire.session_ready.wait_for_session_ready", return_value=True), \
+             patch("hermeswire.completion.wait_for_completion_signal") as wait, \
+             patch("hermeswire.completion.write_task_context"), \
+             patch("hermeswire.completion.clear_task_context"), \
+             patch("hermeswire.ensure_cli.subprocess.run"), \
+             patch("hermeswire.ensure_cli.time.sleep"):
             wait.return_value = signal
             rc = ensure_cli._run_ensure_task(
                 args, "s", task, ctx, "/bin/sh", tmp_path, json_mode=False)
@@ -267,10 +267,10 @@ class TestSchedulerGatesTheRestOfTheFleet:
                                     "code": "subscription_expired"})
         prior = TaskState(last_run=datetime(2026, 8, 4, tzinfo=timezone.utc), run_count=7)
 
-        from agentwire.scheduler.dispatch import _dispatch_ensure_task
+        from hermeswire.scheduler.dispatch import _dispatch_ensure_task
 
-        with patch("agentwire.scheduler.dispatch._dispatch_worktree_task") as wt, \
-             patch("agentwire.scheduler.dispatch._dispatch_inplace_task") as ip:
+        with patch("hermeswire.scheduler.dispatch._dispatch_worktree_task") as wt, \
+             patch("hermeswire.scheduler.dispatch._dispatch_inplace_task") as ip:
             state = _dispatch_ensure_task(None, self._task(), prior)
 
         wt.assert_not_called()
@@ -287,18 +287,18 @@ class TestSchedulerGatesTheRestOfTheFleet:
         ).isoformat()
         auth_expired.write_state(state)
 
-        from agentwire.scheduler.dispatch import _dispatch_ensure_task
+        from hermeswire.scheduler.dispatch import _dispatch_ensure_task
 
-        with patch("agentwire.scheduler.dispatch._dispatch_inplace_task",
+        with patch("hermeswire.scheduler.dispatch._dispatch_inplace_task",
                    return_value=TaskState(last_status="complete")) as ip:
             result = _dispatch_ensure_task(None, self._task(), TaskState())
         ip.assert_called_once(), "one probe is allowed through"
         assert result.last_status == "complete"
 
     def test_no_outage_means_no_change_in_behaviour(self, env):
-        from agentwire.scheduler.dispatch import _dispatch_ensure_task
+        from hermeswire.scheduler.dispatch import _dispatch_ensure_task
 
-        with patch("agentwire.scheduler.dispatch._dispatch_inplace_task",
+        with patch("hermeswire.scheduler.dispatch._dispatch_inplace_task",
                    return_value=TaskState(last_status="complete")) as ip:
             _dispatch_ensure_task(None, self._task(), TaskState())
         ip.assert_called_once()

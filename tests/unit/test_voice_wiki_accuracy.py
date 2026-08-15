@@ -7,7 +7,7 @@ sometimes": it is that a load-bearing sentence needs a pin, and a pin has to be
 DERIVED from the code wherever it can be, so the next behaviour change fails a
 test rather than quietly re-opening the gap.
 
-So most assertions here read something out of `agentwire/voice_layer/` and look
+So most assertions here read something out of `hermeswire/voice_layer/` and look
 for it in the page. The few that are literal strings are the ones where the
 defect was the SHAPE of a claim — a promise of immediacy, a guarantee stated one
 token wide — and there is nothing in the code to derive that from.
@@ -31,8 +31,8 @@ from pathlib import Path
 
 import pytest
 
-from agentwire import inbox
-from agentwire.voice_layer import confirm, realtime, server, tools, write_tools
+from hermeswire import inbox
+from hermeswire.voice_layer import confirm, realtime, server, tools, write_tools
 
 WIKI = Path(__file__).resolve().parents[2] / "docs" / "wiki" / "voice-layer.md"
 VOICE_LAYER = Path(confirm.__file__).parent
@@ -568,10 +568,10 @@ class TestTheAnchorClaimIsCorrectedEVERYWHERE:
     #: addressed by the symbol that owns it.
     ANCHOR_DOCS = (
         ("client module", lambda: __import__(
-            "agentwire.voice_layer.client", fromlist=["x"]).__doc__),
+            "hermeswire.voice_layer.client", fromlist=["x"]).__doc__),
         ("server module", lambda: server.__doc__),
         ("transcript module", lambda: __import__(
-            "agentwire.voice_layer.transcript", fromlist=["x"]).__doc__),
+            "hermeswire.voice_layer.transcript", fromlist=["x"]).__doc__),
         ("server.BuddyBridge.anchor", lambda: server.BuddyBridge.anchor.__doc__),
         ("confirm.ConfirmSpine.announce", lambda: confirm.ConfirmSpine.announce.__doc__),
         ("confirm.Proposal", lambda: confirm.Proposal.__doc__),
@@ -613,9 +613,9 @@ class TestNothingCallsTheSurfaceReadOnly:
     #: tool surface"), and a pin that forbids the accurate history along with
     #: the stale claim gets deleted by the next person rather than obeyed.
     RETIRED_BY_FILE = (
-        ("agentwire/voice_layer/__init__.py", "read-only fleet-awareness tool surface"),
-        ("agentwire/buddy_cli.py", "This slice is READ-ONLY"),
-        ("agentwire/buddy_cli.py", "Show the read-only tool surface"),
+        ("hermeswire/voice_layer/__init__.py", "read-only fleet-awareness tool surface"),
+        ("hermeswire/buddy_cli.py", "This slice is READ-ONLY"),
+        ("hermeswire/buddy_cli.py", "Show the read-only tool surface"),
         ("docs/wiki/INDEX.md", "read-only fleet awareness"),
     )
 
@@ -628,7 +628,7 @@ class TestNothingCallsTheSurfaceReadOnly:
         assert _every_occurrence_is_a_correction(text, claim), relative
 
     def test_the_package_docstring_names_the_gated_write(self):
-        import agentwire.voice_layer as package
+        import hermeswire.voice_layer as package
 
         doc = _flat(package.__doc__ or "")
         assert "write_tools" in doc
@@ -744,7 +744,7 @@ class TestTheAttributionExampleDoesNotShipTheNonce:
         assert "carries the REQUEST utterance, never the approving one" in page
 
     def test_the_reply_nudge_slot_is_documented_as_droppable(self, page):
-        assert "reply: agentwire msg send" in page
+        assert "reply: hermeswire msg send" in page
         assert "droppable, whole-or-not-at-all" in page
 
 
@@ -775,7 +775,7 @@ class TestTheInterruptTierIsNotOverPromised:
         asserts `canInterrupt`'s two legs exist in the page source the browser
         actually gets, and it would pass with no wiki at all.
         """
-        from agentwire.voice_layer import client
+        from hermeswire.voice_layer import client
 
         browser_page = client.page("buddy", "token")
         assert "!announcer.anchorPending()" in browser_page
@@ -841,7 +841,7 @@ class TestTheDeliverySeamNoLongerClaimsItNeverInterrupts:
         assert "polls the spool every 5s" in page
 
     def test_the_module_docstring_agrees(self):
-        from agentwire.voice_layer import delivery
+        from hermeswire.voice_layer import delivery
 
         doc = _flat(delivery.__doc__ or "")
         assert "stopped being true of the layer" in doc

@@ -1,7 +1,7 @@
-"""Tests for agentwire/wiki.py — the deterministic wiki mechanical-ops module.
+"""Tests for hermeswire/wiki.py — the deterministic wiki mechanical-ops module.
 
 Stdlib only, no build needed. Every test runs against a temp wiki fixture so the
-live wiki at ~/.agentwire/wiki/ is never touched.
+live wiki at ~/.hermeswire/wiki/ is never touched.
 """
 
 from datetime import date
@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from agentwire import wiki
+from hermeswire import wiki
 
 # --------------------------------------------------------------------------- #
 # Fixtures
@@ -45,7 +45,7 @@ def test_path_resolution(tmp_path):
 
 
 def test_default_root_is_home():
-    assert wiki.DEFAULT_WIKI_ROOT == Path.home() / ".agentwire" / "wiki"
+    assert wiki.DEFAULT_WIKI_ROOT == Path.home() / ".hermeswire" / "wiki"
 
 
 # --------------------------------------------------------------------------- #
@@ -225,18 +225,18 @@ def test_lint_folds_in_ground_truth(tmp_path):
     # The core "reuse wiki_audit" deliverable: lint() MUST surface ground-truth
     # findings, not just structural ones. The page below makes two checkable
     # claims that wiki_audit flags against the real repo — a nonexistent repo
-    # path and a nonexistent agentwire subcommand. If the wiki_audit.audit()
+    # path and a nonexistent hermeswire subcommand. If the wiki_audit.audit()
     # fold-in is dropped from lint(), neither appears and this test fails.
     _write(tmp_path, "technologies/claims.md",
            "---\nname: Claims\ncategory: infra\nstatus: in-use\nlast_updated: 2026-06-01\n---\n\n"
            "# Claims\n\nSelf-link [[claims]] to avoid an orphan finding.\n\n"
-           "See `agentwire/does_not_exist_xyz.py` and run `agentwire bogus-subcmd-xyz`.\n")
+           "See `hermeswire/does_not_exist_xyz.py` and run `hermeswire bogus-subcmd-xyz`.\n")
     findings = wiki.lint(tmp_path, today=date(2026, 6, 24))
     kinds = {f["kind"] for f in findings}
     # Ground-truth kinds — produced only by wiki_audit, never by structural_lint.
     assert "path" in kinds or "subcommand" in kinds
     paths = {f["claim"] for f in findings if f["kind"] == "path"}
-    assert "agentwire/does_not_exist_xyz.py" in paths
+    assert "hermeswire/does_not_exist_xyz.py" in paths
 
 
 # --------------------------------------------------------------------------- #

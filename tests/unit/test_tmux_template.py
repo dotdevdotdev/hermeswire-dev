@@ -1,6 +1,6 @@
 """Tests for the bundled tmux config template and its documentation (issue #225).
 
-agentwire's UX assumes a sane tmux config — mouse scroll, large scrollback,
+hermeswire's UX assumes a sane tmux config — mouse scroll, large scrollback,
 working copy mode, focus events for Claude Code. These tests pin the settings
 in the bundled template and make sure the docs actually point users at them.
 """
@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parent.parent.parent
-TEMPLATE = REPO / "agentwire" / "templates" / "tmux.conf"
+TEMPLATE = REPO / "hermeswire" / "templates" / "tmux.conf"
 QUICKSTART = REPO / "docs" / "wiki" / "quickstart.md"
 README = REPO / "README.md"
 
@@ -46,7 +46,7 @@ class TestBundledTemplate:
         assert setting in TEMPLATE.read_text(), f"template missing: {setting}"
 
     def test_pane_base_index_stays_zero(self):
-        # Pane 0 = orchestrator is a convention agentwire hooks rely on.
+        # Pane 0 = orchestrator is a convention hermeswire hooks rely on.
         assert "setw -g pane-base-index 0" in TEMPLATE.read_text()
 
 
@@ -57,7 +57,7 @@ class TestDocs:
         text = QUICKSTART.read_text()
         assert "### Recommended tmux config" in text
         for setting in ("focus-events on", "mouse on", "history-limit 50000",
-                        "MouseDragEnd1Pane", "agentwire init"):
+                        "MouseDragEnd1Pane", "hermeswire init"):
             assert setting in text, f"quickstart tmux section missing: {setting}"
 
     def test_readme_links_quickstart_tmux_section(self):
@@ -68,6 +68,6 @@ class TestOnboardingTemplatePath:
     """The onboarding flow's template path must resolve to the shipped file."""
 
     def test_template_exists_at_onboarding_path(self):
-        import agentwire.onboarding as onboarding
+        import hermeswire.onboarding as onboarding
         bundled = Path(onboarding.__file__).parent / "templates" / "tmux.conf"
         assert bundled.exists()

@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-CORE = REPO / "agentwire" / "safety" / "_core.py"
+CORE = REPO / "hermeswire" / "safety" / "_core.py"
 TESTS = "tests/unit/test_unattended_scoped_allow.py"
 
 

@@ -11,7 +11,7 @@ the utterance ring are per-``BuddyBridge`` and nothing in ``confirm.py`` or
 that is one refactor away from being false, and nothing failed when it became
 false. So it is pinned two ways here: the objects a second ``serve()`` hands
 out are empty, AND nothing the first run proposed exists anywhere under
-``~/.agentwire`` afterwards. The second assertion is the one that survives
+``~/.hermeswire`` afterwards. The second assertion is the one that survives
 someone deciding proposals should be durable.
 
 The acceptance test the issue names is the greet: after a supervised restart,
@@ -30,7 +30,7 @@ import urllib.request
 
 import pytest
 
-from agentwire.voice_layer import client, server
+from hermeswire.voice_layer import client, server
 from tests.page_slice import page_slice
 
 # ─────────────────────────────────────────────────────────────
@@ -85,9 +85,9 @@ def _mid_handshake(bridge):
     bridge.ring.transcribe("item-1", "send them a note", 2)
     proposal = bridge.spine.propose(
         tool="fleet_msg_send",
-        session="agentwire",
+        session="hermeswire",
         instruction="tell them the PR is up",
-        argv_prefix=("agentwire", "msg", "send"),
+        argv_prefix=("hermeswire", "msg", "send"),
     )
     bridge.spine.announce(proposal.id, 3)
     assert bridge.spine.pending(), "fixture built no handshake to interrupt"
@@ -132,7 +132,7 @@ class TestASupervisedRestartLandsNothingPending:
         from pathlib import Path
 
         start, kill, _built = runs
-        home = Path.home() / ".agentwire"
+        home = Path.home() / ".hermeswire"
         before = _snapshot(home)
         httpd1, _url, bridge1 = start()
         proposal = _mid_handshake(bridge1)

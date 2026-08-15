@@ -27,7 +27,7 @@ nudge (which ``render_body`` drops whole whenever the body runs long).
 
 import inspect
 
-from agentwire.voice_layer import confirm, instructions, surface, write_tools
+from hermeswire.voice_layer import confirm, instructions, surface, write_tools
 
 
 def source() -> str:
@@ -60,7 +60,7 @@ class TestThePersonaIsFirstClass:
         assert "<persona>" in text and "</persona>" in text
         # Order: identity first, persona second, channel mechanics last.
         assert text.index("<persona>") < text.index("<voice_mode>")
-        assert "voice buddy for agentwire" in text.split("<persona>")[0]
+        assert "voice buddy for hermeswire" in text.split("<persona>")[0]
 
     def test_extra_still_appends_after_everything(self):
         text = instructions.build_instructions(extra="EXTRA-MARKER")
@@ -282,7 +282,7 @@ class TestTheReplyPathIsConditional:
         makes the nudge unconditional, this test says so and the prose below
         becomes the thing that needs changing."""
         short = confirm.render_body("ship it", "", "abc123", reply_to="worker")
-        assert "reply: agentwire msg send" in short
+        assert "reply: hermeswire msg send" in short
         long = confirm.render_body(
             "x" * confirm.MAX_RENDERED_INSTRUCTION_CHARS,
             "y" * confirm.MAX_UTTERANCE_CHARS,
@@ -290,7 +290,7 @@ class TestTheReplyPathIsConditional:
             reply_to="a-rather-long-worktree-session-name-here",
         )
         assert len(long) <= confirm.MAX_BODY_CHARS
-        assert "reply: agentwire msg send" not in long
+        assert "reply: hermeswire msg send" not in long
 
     def test_the_sentence_is_narrowed_not_qualified(self):
         text = instructions.VOICE_MODE

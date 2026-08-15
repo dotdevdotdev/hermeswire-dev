@@ -1,17 +1,17 @@
 # Decision: Obsidian / Karpathy LLM Wiki as cross-machine second brain
 
-> Decision record for [issue #183](https://github.com/dotdevdotdev/agentwire-dev/issues/183).
+> Decision record for [issue #183](https://github.com/dotdevdotdev/hermeswire-dev/issues/183).
 > Research/decision task — **no code shipped in this PR**. This file records yes/no/defer
 > for each proposed direction and resolves the open questions for the ones we accept.
 >
-> **Superseded:** the `wiki-ingest` batch task was retired in #473; wiki authoring is now in-context via the `agentwire wiki` CLI.
+> **Superseded:** the `wiki-ingest` batch task was retired in #473; wiki authoring is now in-context via the `hermeswire wiki` CLI.
 
 ## Context
 
-We already run the Karpathy LLM Wiki pattern at `~/.agentwire/wiki/` — git-versioned
+We already run the Karpathy LLM Wiki pattern at `~/.hermeswire/wiki/` — git-versioned
 markdown maintained by the orchestrator and agents, with `/wiki ingest`, `/wiki query`,
 `/wiki lint` skills and a scheduled `wiki-ingest` task that processes anything dropped
-into `~/.agentwire/wiki/raw/`. The "Obsidian as a second brain" hype is the *same pattern*
+into `~/.hermeswire/wiki/raw/`. The "Obsidian as a second brain" hype is the *same pattern*
 with Obsidian as a viewer/editor layer on top of the folder.
 
 The pattern holds up for a small, curated, single-author knowledge base (≈70x cheaper than
@@ -23,12 +23,12 @@ The `lint` step is non-negotiable. These decisions stay inside the pattern's swe
 
 | # | Direction | Decision | One-line reasoning |
 |---|---|---|---|
-| 1 | Open `~/.agentwire/wiki/` as an Obsidian vault | **YES** | Zero code — point Obsidian at the existing folder for graph view, wikilink autocomplete, and mobile access; pure documentation. |
+| 1 | Open `~/.hermeswire/wiki/` as an Obsidian vault | **YES** | Zero code — point Obsidian at the existing folder for graph view, wikilink autocomplete, and mobile access; pure documentation. |
 | 2 | Per-session MCP attachment so workers share the orchestrator's knowledge | **DEFER** | Workers can already read the wiki via its filesystem path; an MCP attachment is a nice-to-have, not a blocker, and is implementation work out of scope here. |
 | 3 | **Cross-machine wiki sync** ★ | **YES** | Highest-interest thread; backend chosen below (git remote, private repo). |
 | 4 | **`/note` voice-capture → `raw/` → nightly ingest** ★ | **YES** | Highest-interest thread; STT (Moonshine) is already wired and the `wiki-ingest` task already drains `raw/` — capture is the only missing piece. Sub-questions resolved below. |
 | 5 | Graph view inside the portal | **NO** | Medium-high cost to rebuild what Direction 1 already gives us for free via Obsidian; not worth duplicating. |
-| 6 | Single shared vault across agentwire + fragmentz + future projects | **DEFER** | Trivial to symlink, but mixing project scopes risks cross-contaminating retrieval; revisit once cross-machine sync (Direction 3) is proven stable. |
+| 6 | Single shared vault across hermeswire + fragmentz + future projects | **DEFER** | Trivial to symlink, but mixing project scopes risks cross-contaminating retrieval; revisit once cross-machine sync (Direction 3) is proven stable. |
 
 ## Resolved open questions
 
@@ -48,7 +48,7 @@ Sync hygiene:
 - Stagger machine sync windows; do not let two machines ingest the same `raw/` files simultaneously.
 - Keep simultaneous human edits rare — the pattern's error-propagation risk compounds merge conflicts.
 
-**Location:** keep the vault at `~/.agentwire/wiki/`. It is already the documented home, the
+**Location:** keep the vault at `~/.hermeswire/wiki/`. It is already the documented home, the
 scheduler points at it, and CLAUDE.md references it — making it a git repo with a remote is
 additive, not a move. No relocation.
 
@@ -61,7 +61,7 @@ additive, not a move. No relocation.
 | Immediate vs batch ingest | **Batch nightly via the existing `wiki-ingest` scheduler task** | Reuses the SSOT drain of `raw/`; no new pipeline. Capture is instant, structuring is deferred. |
 | Auto-tag at capture vs defer-to-ingest | **Defer to ingest** | Capture stays fast and offline-safe; the ingest LLM tags with full wiki context, which produces better tags than a capture-time guess. |
 
-Net: a voice note lands as a single timestamped markdown file in `~/.agentwire/wiki/raw/`,
+Net: a voice note lands as a single timestamped markdown file in `~/.hermeswire/wiki/raw/`,
 and the nightly `wiki-ingest` run structures, tags, and files it into `wiki/`, then moves
 the raw file to `raw/processed/`. No new scheduled task required.
 

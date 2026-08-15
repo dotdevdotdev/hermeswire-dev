@@ -7,7 +7,7 @@ BUNDLED tooldefs explicitly and asserts the pattern and anchored counts at load
 time. A bare interpreter without pyyaml makes ``load_config`` return empty, at
 which point every command reads ALLOW and a green run proves nothing — the
 count assertion turns that into a crash instead of a nicer-looking number. The
-live copies under ``~/.agentwire/`` are neither loaded nor consulted; they drift
+live copies under ``~/.hermeswire/`` are neither loaded nor consulted; they drift
 (measured 2026-08-06: bundled 265/101, live 225/87) and tuning against
 semantics that do not ship is how a fix lands backwards.
 
@@ -25,11 +25,11 @@ from pathlib import Path
 
 import pytest
 
-from agentwire.safety import _core as C  # noqa: N812
+from hermeswire.safety import _core as C  # noqa: N812
 
 REPO = Path(__file__).resolve().parent.parent.parent
-BUNDLED_RULES = REPO / "agentwire" / "hooks" / "damage-control" / "rules"
-BUNDLED_TOOLDEFS = REPO / "agentwire" / "tooldefs"
+BUNDLED_RULES = REPO / "hermeswire" / "hooks" / "damage-control" / "rules"
+BUNDLED_TOOLDEFS = REPO / "hermeswire" / "tooldefs"
 
 # Pinned at load. Dropping ``tooldefs_dir`` silently removes the anchored
 # patterns; a missing pyyaml removes all of them. Both would otherwise present
@@ -113,7 +113,7 @@ class TestUvRunIsPermittedUnattended:
         "uv run --extra dev pytest tests/unit -q",
         "uv run python -m mypackage.check",
         "uv run ruff check .",
-        "uv run mypy agentwire",
+        "uv run mypy hermeswire",
     ])
     def test_allowed(self, cfg, command):
         decision, rule_id = unattended_verdict(cfg, command)
@@ -370,7 +370,7 @@ class TestShellPayloadRescan:
         by the incident's own rule — seven commands died that way in one day.
         """
         report = (
-            "agentwire msg send --to orchestrator --kind done "
+            "hermeswire msg send --to orchestrator --kind done "
             "\"blocked: uv run bash -c 'git push --force' was refused\""
         )
         decision, _ = decide(cfg, report)

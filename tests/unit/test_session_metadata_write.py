@@ -11,7 +11,7 @@ import json
 
 import pytest
 
-from agentwire import core
+from hermeswire import core
 
 
 @pytest.fixture(autouse=True)
@@ -118,7 +118,7 @@ class TestRecordedSessions:
 
     Pinned because the flat glob is the "obvious simplification" and nothing
     else would catch it: session names contain slashes by design
-    (``project/branch`` is what every ``agentwire worktree`` and every
+    (``project/branch`` is what every ``hermeswire worktree`` and every
     scheduler dispatch is called), so :func:`core.session_metadata_path` nests
     those records one level deeper than ``sessions/*/metadata.json`` looks.
 

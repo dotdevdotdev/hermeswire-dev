@@ -56,7 +56,7 @@ def _fake_home(tmp_path: Path) -> Path:
     finding (a green test measuring a fixture that cannot express the bug).
     """
     home = tmp_path / "home"
-    cfg = home / ".agentwire"
+    cfg = home / ".hermeswire"
     cfg.mkdir(parents=True)
     (cfg / "config.yaml").write_text(textwrap.dedent("""\
         stt:
@@ -71,14 +71,14 @@ def test_command_writes_nothing_to_stderr(argv, tmp_path):
     """A healthy command is silent on stderr — no warnings, no INFO records."""
     home = _fake_home(tmp_path)
     proc = subprocess.run(
-        [sys.executable, "-m", "agentwire", *argv],
+        [sys.executable, "-m", "hermeswire", *argv],
         capture_output=True, text=True, timeout=120, cwd=REPO_ROOT,
         env={"PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
              "HOME": str(home),
              "PYTHONPATH": str(REPO_ROOT)},
     )
     assert proc.stderr == "", (
-        f"`agentwire {' '.join(argv)}` polluted stderr:\n{proc.stderr}"
+        f"`hermeswire {' '.join(argv)}` polluted stderr:\n{proc.stderr}"
     )
 
 
@@ -89,13 +89,13 @@ def test_stt_config_line_is_not_emitted_at_info(tmp_path, monkeypatch, caplog):
     section at all, so the DEBUG assertion is the control: if it is missing,
     the code path never executed and the INFO assertion measured nothing.
     """
-    from agentwire import config as config_mod
+    from hermeswire import config as config_mod
 
     home = _fake_home(tmp_path)
     monkeypatch.setenv("HOME", str(home))
 
     with caplog.at_level(logging.DEBUG, logger=config_mod.__name__):
-        config_mod.load_config(home / ".agentwire" / "config.yaml")
+        config_mod.load_config(home / ".hermeswire" / "config.yaml")
 
     stt_records = [r for r in caplog.records if "STT config" in r.getMessage()]
     assert stt_records, "STT config path did not run — fixture is wrong"
@@ -110,7 +110,7 @@ def _probe(code: str, home: Path) -> subprocess.CompletedProcess:
     """Run a probe in a fresh interpreter against an isolated HOME.
 
     Isolated deliberately: a probe reading the developer's real
-    ``~/.agentwire`` makes its result machine-dependent, which is the opposite
+    ``~/.hermeswire`` makes its result machine-dependent, which is the opposite
     of what a pin is for.
     """
     return subprocess.run(
@@ -131,11 +131,11 @@ def test_building_the_parser_does_not_build_an_mcp_server(tmp_path):
     """
     proc = _probe("""\
         import sys
-        import agentwire.__main__ as m
+        import hermeswire.__main__ as m
         m.build_parser()
         leaked = sorted(
             n for n in sys.modules
-            if n == "agentwire.mcp_core" or n.startswith("mcp.server")
+            if n == "hermeswire.mcp_core" or n.startswith("mcp.server")
         )
         print(",".join(leaked))
         """, _fake_home(tmp_path))
@@ -154,7 +154,7 @@ def test_root_logger_is_untouched_by_building_the_parser(tmp_path):
     """
     proc = _probe("""\
         import logging
-        import agentwire.__main__ as m
+        import hermeswire.__main__ as m
         m.build_parser()
         print(len(logging.getLogger().handlers))
         """, _fake_home(tmp_path))
@@ -207,7 +207,7 @@ def test_mcp_core_rebuilds_settings_before_it_constructs_the_server(tmp_path):
                 return original(self, *args, **kwargs)
 
             s.FastMCP.__init__ = spy
-            import agentwire.mcp_core  # noqa: F401  (constructs the singleton)
+            import hermeswire.mcp_core  # noqa: F401  (constructs the singleton)
 
             if "complete" not in sampled:
                 print("NEVER_CONSTRUCTED")

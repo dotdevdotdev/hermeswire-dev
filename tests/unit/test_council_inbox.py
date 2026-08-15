@@ -1,8 +1,8 @@
-"""Tests for agentwire/council/inbox.py — the fan-out/collect protocol."""
+"""Tests for hermeswire/council/inbox.py — the fan-out/collect protocol."""
 
 import pytest
 
-from agentwire.council import inbox, state
+from hermeswire.council import inbox, state
 
 ROSTER = ["brain", "gut", "critic"]
 NAME = "proj"

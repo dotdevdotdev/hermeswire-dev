@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Regenerate damage-control hook scripts by inlining ``agentwire/safety/_core.py``.
+"""Regenerate damage-control hook scripts by inlining ``hermeswire/safety/_core.py``.
 
 The Hermes Agent hooks (terminal/write_file/patch/read_file/search_files/mcp)
 must run as PEP 723 standalone scripts
-— they can't ``from agentwire.safety._core import ...`` because uv runs them
+— they can't ``from hermeswire.safety._core import ...`` because uv runs them
 in an isolated env with only ``pyyaml`` as a dep. So we inline ``_core.py``
 content into each hook between::
 
-    # === BEGIN GENERATED FROM agentwire/safety/_core.py ===
+    # === BEGIN GENERATED FROM hermeswire/safety/_core.py ===
     ...
     # === END GENERATED ===
 
@@ -17,14 +17,14 @@ already-synced hooks is a no-op.
 
 Each hook also carries a **stamp** just above the generated block::
 
-    AGENTWIRE_HOOK_STAMP = {"core_sha256": "…", "generated_at": "…Z"}
+    HERMESWIRE_HOOK_STAMP = {"core_sha256": "…", "generated_at": "…Z"}
 
 The stamp exists so the deployed copy can be ORDERED against the package,
 not merely compared to it (#936). ``heal_damage_control`` used to overwrite a
 hook whenever the bytes DIFFERED, in either direction, and ``shutil.copy2``
 preserved the source mtime — so a checkout predating a security fix could
 reinstall the old hook machine-wide and leave nothing, not even a timestamp,
-to show it had happened. With the stamp, ``agentwire doctor`` can say "the
+to show it had happened. With the stamp, ``hermeswire doctor`` can say "the
 installed hook is older than the package" (and the reverse), which it
 structurally could not before.
 
@@ -51,8 +51,8 @@ from pathlib import Path
 from typing import Optional
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-CORE_PATH = REPO_ROOT / "agentwire" / "safety" / "_core.py"
-HOOKS_DIR = REPO_ROOT / "agentwire" / "hooks" / "damage-control"
+CORE_PATH = REPO_ROOT / "hermeswire" / "safety" / "_core.py"
+HOOKS_DIR = REPO_ROOT / "hermeswire" / "hooks" / "damage-control"
 
 HOOK_FILES = [
     "bash-tool-damage-control.py",
@@ -62,12 +62,12 @@ HOOK_FILES = [
     "mcp-tool-damage-control.py",
 ]
 
-BEGIN_MARKER = "# === BEGIN GENERATED FROM agentwire/safety/_core.py ==="
+BEGIN_MARKER = "# === BEGIN GENERATED FROM hermeswire/safety/_core.py ==="
 END_MARKER = "# === END GENERATED ==="
 
-STAMP_BEGIN = "# === BEGIN AGENTWIRE HOOK STAMP (generated — do not edit) ==="
-STAMP_END = "# === END AGENTWIRE HOOK STAMP ==="
-STAMP_VAR = "AGENTWIRE_HOOK_STAMP"
+STAMP_BEGIN = "# === BEGIN HERMESWIRE HOOK STAMP (generated — do not edit) ==="
+STAMP_END = "# === END HERMESWIRE HOOK STAMP ==="
+STAMP_VAR = "HERMESWIRE_HOOK_STAMP"
 
 
 def core_sha256(core_text: str) -> str:

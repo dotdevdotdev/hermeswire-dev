@@ -1,4 +1,4 @@
-"""Verify the damage-control hook scripts are in sync with ``agentwire/safety/_core.py``.
+"""Verify the damage-control hook scripts are in sync with ``hermeswire/safety/_core.py``.
 
 The hooks are PEP 723 standalone scripts that inline the contents of
 ``_core.py`` between BEGIN/END markers. ``scripts/regen_damage_control_hooks.py``
@@ -11,8 +11,8 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parent.parent.parent
-CORE_PATH = REPO / "agentwire" / "safety" / "_core.py"
-HOOKS_DIR = REPO / "agentwire" / "hooks" / "damage-control"
+CORE_PATH = REPO / "hermeswire" / "safety" / "_core.py"
+HOOKS_DIR = REPO / "hermeswire" / "hooks" / "damage-control"
 
 HOOK_FILES = [
     "bash-tool-damage-control.py",
@@ -22,7 +22,7 @@ HOOK_FILES = [
     "mcp-tool-damage-control.py",
 ]
 
-BEGIN_MARKER = "# === BEGIN GENERATED FROM agentwire/safety/_core.py ==="
+BEGIN_MARKER = "# === BEGIN GENERATED FROM hermeswire/safety/_core.py ==="
 END_MARKER = "# === END GENERATED ==="
 
 

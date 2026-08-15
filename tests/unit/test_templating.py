@@ -1,11 +1,11 @@
-"""Tests for agentwire/templating.py — Template expansion and variables."""
+"""Tests for hermeswire/templating.py — Template expansion and variables."""
 
 import os
 import re
 
 import pytest
 
-from agentwire.templating import (
+from hermeswire.templating import (
     TemplateContext,
     TemplateError,
     expand_all,

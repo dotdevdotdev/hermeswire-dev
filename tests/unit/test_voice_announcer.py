@@ -37,8 +37,8 @@ import textwrap
 
 import pytest
 
-from agentwire import inbox
-from agentwire.voice_layer import client, confirm, transcript, write_tools
+from hermeswire import inbox
+from hermeswire.voice_layer import client, confirm, transcript, write_tools
 
 pytestmark = pytest.mark.skipif(
     shutil.which("node") is None, reason="node is needed to run the client's own JS"
@@ -296,7 +296,7 @@ class TestTheFallbackIsArmedNotTriggered:
 
     def test_no_reason_is_special_cased_out_of_the_fallback(self):
         """Every outcome the spine can produce arms the timer identically."""
-        from agentwire.voice_layer import confirm as confirm_mod
+        from hermeswire.voice_layer import confirm as confirm_mod
 
         for reason, line in confirm_mod.SPOKEN.items():
             report = run_announcer(f"""
@@ -1306,8 +1306,8 @@ class TestThePageEmbedsTheRealThing:
 
     def test_no_spoken_literal_carries_stale_nonce_wording(self):
         """The digit-era lesson, applied to every spoken surface at once."""
-        from agentwire.voice_layer import confirm as confirm_mod
-        from agentwire.voice_layer import instructions
+        from hermeswire.voice_layer import confirm as confirm_mod
+        from hermeswire.voice_layer import instructions
 
         surfaces = [
             client.page("buddy", "tok"),
@@ -1346,9 +1346,9 @@ class TestThePageEmbedsTheRealThing:
         reads."""
         from unittest.mock import patch
 
-        from agentwire import inbox
-        from agentwire.voice_layer import confirm as confirm_mod
-        from agentwire.voice_layer import transcript, write_tools
+        from hermeswire import inbox
+        from hermeswire.voice_layer import confirm as confirm_mod
+        from hermeswire.voice_layer import transcript, write_tools
 
         spine = confirm_mod.ConfirmSpine(transcript.TranscriptRing(), wait_s=0.0)
         with patch.object(inbox, "live_sessions", lambda: {"orchestrator"}):
@@ -2405,7 +2405,7 @@ class TestCarriedTheReasonIsNotDecidedByStopwords:
         """The broad false-reject sweep. Whatever the weighting is, saying the
         line EXACTLY must always count — otherwise the fallback doubles every
         refusal the model gets right."""
-        from agentwire.voice_layer import confirm as confirm_mod
+        from hermeswire.voice_layer import confirm as confirm_mod
 
         for reason, line in confirm_mod.SPOKEN.items():
             report = run_announcer(f"""
@@ -2466,7 +2466,7 @@ class TestTheCommentsDescribeTheCodeTheySitOn:
         assert "input_audio_buffer.speech_started" in doc
 
     def test_the_ring_docstring_says_no_prior_speech_started(self):
-        from agentwire.voice_layer import transcript as transcript_mod
+        from hermeswire.voice_layer import transcript as transcript_mod
 
         assert "a\ntranscript arriving with no prior commit" not in transcript_mod.__doc__
         assert "no prior ``speech_started``" in transcript_mod.__doc__

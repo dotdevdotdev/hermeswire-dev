@@ -12,7 +12,7 @@ Covers ``inbox.stale_pending`` (which messages qualify) and
 
 import pytest
 
-from agentwire import doctor_cli, inbox, prompt_router
+from hermeswire import doctor_cli, inbox, prompt_router
 
 HOUR_MS = 3_600_000
 

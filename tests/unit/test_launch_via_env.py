@@ -12,7 +12,7 @@ input) and types a fixed-length `eval` instead.
 
 from unittest.mock import patch
 
-from agentwire.core import (
+from hermeswire.core import (
     LAUNCH_CMD_ENV,
     _guarded_launch_command,
     _launch_tmux_session,
@@ -26,7 +26,7 @@ TTY_CANON_LIMIT = 1024
 
 def _local_calls(session="proj/branch", path="/tmp/wt", env=None, agent="claude --flag"):
     """Run a local launch with tmux mocked; return the two subprocess argvs."""
-    with patch("agentwire.core.subprocess.run") as run, \
+    with patch("hermeswire.core.subprocess.run") as run, \
             patch("time.sleep"):
         _launch_tmux_session(session, path, dict(env or {}), agent)
     return [call.args[0] for call in run.call_args_list]
@@ -36,7 +36,7 @@ class TestLaunchCommandTravelsAsEnv:
     def test_send_keys_payload_is_short_and_fixed_length(self):
         """The typed line's length must not depend on the launch command."""
         short = _local_calls(path="/tmp/a", agent="claude")[1]
-        long_path = "/Users/dotdev/projects/agentwire-dev-worktrees/" + "x" * 300
+        long_path = "/Users/dotdev/projects/hermeswire-dev-worktrees/" + "x" * 300
         long_cmd = 'claude --dangerously-skip-permissions --append-system-prompt "$(</var/folders/xx/yy/T/tmp1234.txt)"'
         long = _local_calls(path=long_path, agent=long_cmd)[1]
 
@@ -47,7 +47,7 @@ class TestLaunchCommandTravelsAsEnv:
 
     def test_real_world_length_would_have_blown_the_tty_cap(self):
         """Regression anchor: the exact #856 shape exceeds 1024 typed chars."""
-        path = ("/Users/dotdev/projects/agentwire-dev-worktrees/"
+        path = ("/Users/dotdev/projects/hermeswire-dev-worktrees/"
                 "scheduler-ai-morning-briefing-20260803-100520")
         agent = ('claude --dangerously-skip-permissions --append-system-prompt '
                  '"$(</var/folders/1d/g63f4vld5x79q6m_swhxjpb0000gn/T/tmpabcd1234.txt)"')
@@ -72,7 +72,7 @@ class TestLaunchCommandTravelsAsEnv:
         assert ":?" in typed
 
     def test_caller_env_is_not_mutated(self):
-        env = {"AGENTWIRE_SESSION_NAME": "proj/branch"}
+        env = {"HERMESWIRE_SESSION_NAME": "proj/branch"}
         _local_calls(env=env)
         assert LAUNCH_CMD_ENV not in env
 
@@ -82,7 +82,7 @@ class TestLaunchCommandTravelsAsEnv:
 
     def test_bare_posture_still_routed_through_env(self):
         """No agent command still means a guarded cd — carried the same way."""
-        with patch("agentwire.core.subprocess.run") as run, \
+        with patch("hermeswire.core.subprocess.run") as run, \
                 patch("time.sleep"):
             _launch_tmux_session("s", "/tmp/wt", {}, None)
         create = run.call_args_list[0].args[0]
@@ -91,11 +91,11 @@ class TestLaunchCommandTravelsAsEnv:
 
 class TestRemoteLaunch:
     def test_remote_send_keys_is_short_and_env_carries_the_command(self):
-        path = ("/Users/dotdev/projects/agentwire-dev-worktrees/"
+        path = ("/Users/dotdev/projects/hermeswire-dev-worktrees/"
                 "scheduler-ai-morning-briefing-20260803-100520")
         agent = ('claude --dangerously-skip-permissions --append-system-prompt '
                  '"$(</var/folders/1d/g63f4vld5x79q6m_swhxjpb0000gn/T/tmpabcd1234.txt)"')
-        with patch("agentwire.core._run_remote") as remote:
+        with patch("hermeswire.core._run_remote") as remote:
             _launch_tmux_session("s", path, {}, agent, machine_id="box")
         composite = remote.call_args.args[1]
 

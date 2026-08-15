@@ -1,4 +1,4 @@
-"""Re-init safety for `agentwire init` (#636).
+"""Re-init safety for `hermeswire init` (#636).
 
 Covers the existing-config guard (TTY prompt / non-TTY no-op / --force),
 the timestamped config backup, and the never-reset machines.json rule.
@@ -6,7 +6,7 @@ the timestamped config backup, and the never-reset machines.json rule.
 
 import pytest
 
-from agentwire.onboarding import backup_config, confirm_reinit, ensure_machines_file
+from hermeswire.onboarding import backup_config, confirm_reinit, ensure_machines_file
 
 
 @pytest.fixture

@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pytest
 
-from agentwire import session_ready
+from hermeswire import session_ready
 
 pytestmark = pytest.mark.skipif(
     shutil.which("tmux") is None, reason="tmux not available"
@@ -194,7 +194,7 @@ def emulator_session(emulator_factory):
 
 def _patch_pane_manager(monkeypatch, socket):
     """Point pane_manager's tmux calls at our private socket."""
-    from agentwire import pane_manager
+    from hermeswire import pane_manager
 
     real_run = pane_manager.run_command
 
@@ -323,7 +323,7 @@ TALL_MSG = (
     "memories you confirm, delete the ones the code now contradicts, and merge "
     "duplicates into a single file. Report back with a one-paragraph summary "
     "naming any systemic pattern you noticed (vs a one-off), and send it back "
-    "with the command agentwire msg send --to memory-manager --kind done."
+    "with the command hermeswire msg send --to memory-manager --kind done."
 )
 
 
@@ -335,7 +335,7 @@ def _patch_prompt_router(monkeypatch, socket):
     (clear_input_box) must redirect that path too — otherwise it inspects the
     developer's live tmux server.
     """
-    from agentwire import usage_limit
+    from hermeswire import usage_limit
 
     real = usage_limit._tmux
     monkeypatch.setattr(

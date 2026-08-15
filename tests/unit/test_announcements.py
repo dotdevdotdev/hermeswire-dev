@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 
 import pytest
 
-ANNOUNCEMENTS = Path(__file__).resolve().parents[2] / "agentwire" / "static" / "announcements.json"
+ANNOUNCEMENTS = Path(__file__).resolve().parents[2] / "hermeswire" / "static" / "announcements.json"
 
 
 @pytest.fixture(scope="module")

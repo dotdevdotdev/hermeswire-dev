@@ -1,40 +1,40 @@
 """Install-parity tests (#634): pip/uv-tool installs and Linux must not
-silently lose default-tier voice shims, `agentwire dev`, or the limits
+silently lose default-tier voice shims, `hermeswire dev`, or the limits
 watchdog. Covers source-checkout discovery, shim interpreter resolution,
 and the per-platform watchdog install backends."""
 
 import sys
 from argparse import Namespace
 
-from agentwire import core, limits_cli, system_cli, tts_cli
+from hermeswire import core, limits_cli, system_cli, tts_cli
 
 # === find_source_checkout ===
 
 def test_find_source_checkout_env_var(tmp_path, monkeypatch):
-    (tmp_path / "pyproject.toml").write_text("[project]\nname='agentwire-dev'\n")
-    monkeypatch.setenv("AGENTWIRE_SOURCE_DIR", str(tmp_path))
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='hermeswire-dev'\n")
+    monkeypatch.setenv("HERMESWIRE_SOURCE_DIR", str(tmp_path))
     assert core.find_source_checkout() == tmp_path
 
 
 def test_find_source_checkout_searches_conventional_dirs(tmp_path, monkeypatch):
-    checkout = tmp_path / "src" / "agentwire-dev"
+    checkout = tmp_path / "src" / "hermeswire-dev"
     checkout.mkdir(parents=True)
     (checkout / "pyproject.toml").write_text("")
-    monkeypatch.delenv("AGENTWIRE_SOURCE_DIR", raising=False)
+    monkeypatch.delenv("HERMESWIRE_SOURCE_DIR", raising=False)
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr(core, "load_config", lambda: {})
     assert core.find_source_checkout() == checkout
 
 
 def test_find_source_checkout_none_on_package_only_install(tmp_path, monkeypatch):
-    monkeypatch.delenv("AGENTWIRE_SOURCE_DIR", raising=False)
+    monkeypatch.delenv("HERMESWIRE_SOURCE_DIR", raising=False)
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr(core, "load_config", lambda: {})
     assert core.find_source_checkout() is None
 
 
 def test_get_source_dir_env_var_wins(tmp_path, monkeypatch):
-    monkeypatch.setenv("AGENTWIRE_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("HERMESWIRE_SOURCE_DIR", str(tmp_path))
     assert core.get_source_dir() == tmp_path
 
 
@@ -67,10 +67,10 @@ def test_resolve_shim_python_clear_error_without_wrapper_deps(monkeypatch):
     monkeypatch.setitem(sys.modules, "fastapi", None)
     python, cwd, error = tts_cli._resolve_shim_python()
     assert python is None
-    assert "agentwire-dev[stt]" in error
+    assert "hermeswire-dev[stt]" in error
 
 
-# === agentwire dev gating ===
+# === hermeswire dev gating ===
 
 def test_cmd_dev_gates_on_missing_checkout(monkeypatch, capsys):
     monkeypatch.setattr(system_cli, "tmux_session_exists", lambda name: False)
@@ -80,7 +80,7 @@ def test_cmd_dev_gates_on_missing_checkout(monkeypatch, capsys):
     err = capsys.readouterr().err
     assert "source checkout" in err
     assert "git clone" in err
-    assert "AGENTWIRE_SOURCE_DIR" in err
+    assert "HERMESWIRE_SOURCE_DIR" in err
 
 
 # === limits install platform backends ===

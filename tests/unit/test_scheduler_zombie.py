@@ -2,13 +2,13 @@
 
 `_dispatch_worktree_task` names every worktree branch `scheduler-<task>-<ts>`.
 If the launch crashes before the agent starts, the tmux session drops to a
-bare shell that the idle-reaper never touches. `agentwire.scheduler.zombie`
+bare shell that the idle-reaper never touches. `hermeswire.scheduler.zombie`
 finds and kills those.
 """
 
 from unittest.mock import MagicMock
 
-from agentwire.scheduler import zombie
+from hermeswire.scheduler import zombie
 
 
 class TestIsBareShell:
@@ -137,7 +137,7 @@ class TestReap:
         killed = []
         logged = []
         notified = []
-        import agentwire.scheduler as sched_pkg
+        import hermeswire.scheduler as sched_pkg
         monkeypatch.setattr(sched_pkg, "_kill_session", lambda s: killed.append(s))
         monkeypatch.setattr(sched_pkg, "_log_event",
                             lambda event, **f: logged.append((event, f)))
@@ -161,12 +161,12 @@ class TestReap:
         assert zombie.tick() == {"killed": []}
 
     def test_notify_never_raises_on_email_failure(self, monkeypatch):
-        import agentwire.core as core_mod
+        import hermeswire.core as core_mod
 
         def boom(**kwargs):
             raise RuntimeError("resend down")
 
-        import agentwire.channels.email as email_mod
+        import hermeswire.channels.email as email_mod
         monkeypatch.setattr(email_mod, "send_email", boom)
         monkeypatch.setattr(core_mod, "_post_desktop_notification", lambda *a, **k: False)
         monkeypatch.setattr(core_mod, "load_session_metadata", lambda s: {})
@@ -177,7 +177,7 @@ class TestNotifyRouting:
     """#743: reap alerts must reach the portal + parent, not just email."""
 
     def _no_op_toast(self, monkeypatch):
-        import agentwire.core as core_mod
+        import hermeswire.core as core_mod
         posted = []
         monkeypatch.setattr(
             core_mod, "_post_desktop_notification",
@@ -186,10 +186,10 @@ class TestNotifyRouting:
         return posted
 
     def test_always_posts_a_portal_toast(self, monkeypatch):
-        import agentwire.core as core_mod
+        import hermeswire.core as core_mod
         posted = self._no_op_toast(monkeypatch)
         monkeypatch.setattr(core_mod, "load_session_metadata", lambda s: {})
-        monkeypatch.setattr("agentwire.channels.email.send_email", lambda **k: None)
+        monkeypatch.setattr("hermeswire.channels.email.send_email", lambda **k: None)
 
         zombie._notify("proj/scheduler-a-1", "scheduler-a-1", "zsh")
 
@@ -198,8 +198,8 @@ class TestNotifyRouting:
         assert posted[0][1].get("session") == "proj/scheduler-a-1"
 
     def test_routes_to_parent_via_msg_when_created_by_recorded(self, monkeypatch):
-        import agentwire.core as core_mod
-        import agentwire.inbox as inbox_mod
+        import hermeswire.core as core_mod
+        import hermeswire.inbox as inbox_mod
         self._no_op_toast(monkeypatch)
         monkeypatch.setattr(
             core_mod, "load_session_metadata",
@@ -207,7 +207,7 @@ class TestNotifyRouting:
         )
         emailed = []
         monkeypatch.setattr(
-            "agentwire.channels.email.send_email",
+            "hermeswire.channels.email.send_email",
             lambda **k: emailed.append(k),
         )
         sent = []
@@ -225,15 +225,15 @@ class TestNotifyRouting:
         assert not emailed  # email is the no-parent fallback only
 
     def test_falls_back_to_email_when_no_parent_recorded(self, monkeypatch):
-        import agentwire.core as core_mod
-        import agentwire.inbox as inbox_mod
+        import hermeswire.core as core_mod
+        import hermeswire.inbox as inbox_mod
         self._no_op_toast(monkeypatch)
         monkeypatch.setattr(core_mod, "load_session_metadata", lambda s: {})
         sent = []
         monkeypatch.setattr(inbox_mod, "enqueue", lambda *a, **k: sent.append((a, k)))
         emailed = []
         monkeypatch.setattr(
-            "agentwire.channels.email.send_email",
+            "hermeswire.channels.email.send_email",
             lambda **k: emailed.append(k),
         )
 
@@ -244,8 +244,8 @@ class TestNotifyRouting:
         assert "proj/scheduler-a-1" in emailed[0]["subject"]
 
     def test_never_raises_when_msg_send_fails(self, monkeypatch):
-        import agentwire.core as core_mod
-        import agentwire.inbox as inbox_mod
+        import hermeswire.core as core_mod
+        import hermeswire.inbox as inbox_mod
         self._no_op_toast(monkeypatch)
         monkeypatch.setattr(
             core_mod, "load_session_metadata",
@@ -259,14 +259,14 @@ class TestNotifyRouting:
         zombie._notify("proj/scheduler-a-1", "scheduler-a-1", "zsh")  # must not raise
 
     def test_never_raises_when_toast_fails(self, monkeypatch):
-        import agentwire.core as core_mod
+        import hermeswire.core as core_mod
 
         def boom(*a, **k):
             raise RuntimeError("portal unreachable")
 
         monkeypatch.setattr(core_mod, "_post_desktop_notification", boom)
         monkeypatch.setattr(core_mod, "load_session_metadata", lambda s: {})
-        monkeypatch.setattr("agentwire.channels.email.send_email", lambda **k: None)
+        monkeypatch.setattr("hermeswire.channels.email.send_email", lambda **k: None)
         zombie._notify("proj/scheduler-a-1", "scheduler-a-1", "zsh")  # must not raise
 
 
@@ -308,7 +308,7 @@ class TestPaneTail:
         monkeypatch.setattr(zombie, "_pane_tail",
                             lambda s, lines=3: order.append("read") or "stuck line")
 
-        import agentwire.scheduler as sched_pkg
+        import hermeswire.scheduler as sched_pkg
         monkeypatch.setattr(sched_pkg, "_kill_session",
                             lambda s: order.append("kill"))
         logged = []
@@ -325,8 +325,8 @@ class TestPaneTail:
         assert logged[0]["pane_tail"] == "stuck line"
 
     def test_tail_reaches_the_parent_escalation(self, monkeypatch):
-        import agentwire.core as core_mod
-        import agentwire.inbox as inbox_mod
+        import hermeswire.core as core_mod
+        import hermeswire.inbox as inbox_mod
 
         monkeypatch.setattr(core_mod, "_post_desktop_notification", lambda *a, **k: None)
         monkeypatch.setattr(core_mod, "load_session_metadata",

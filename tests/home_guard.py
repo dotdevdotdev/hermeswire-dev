@@ -1,4 +1,4 @@
-"""Detection half of the real-``~/.agentwire`` protection (#893).
+"""Detection half of the real-``~/.hermeswire`` protection (#893).
 
 Lives in its own module rather than in ``conftest.py`` for a reason that bit
 this guard during development: pytest loads the root conftest as the top-level
@@ -23,7 +23,7 @@ from pathlib import Path
 
 #: The owner's real config directory, captured at import — before any test
 #: redirects ``$HOME``, so it keeps naming the real one.
-REAL_AGENTWIRE_HOME = Path.home() / ".agentwire"
+REAL_HERMESWIRE_HOME = Path.home() / ".hermeswire"
 
 #: Writes under the real home that nothing sanctioned: the failures.
 WRITES: list = []
@@ -80,7 +80,7 @@ def install() -> None:
         return
     _INSTALLED[0] = True
 
-    real = str(REAL_AGENTWIRE_HOME)
+    real = str(REAL_HERMESWIRE_HOME)
 
     def hook(event, args):
         if event == "open":
@@ -128,6 +128,6 @@ def report() -> str | None:
         seen.add(key)
         lines.append(f"  {test_id}\n      {event}  {path}")
     return (
-        f"the test suite wrote into the REAL ~/.agentwire ({len(seen)} write(s), #893)\n"
+        f"the test suite wrote into the REAL ~/.hermeswire ({len(seen)} write(s), #893)\n"
         + "\n".join(lines[:25])
     )

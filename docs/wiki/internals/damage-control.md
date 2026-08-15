@@ -1,4 +1,4 @@
-# Damage Control: Security Firewall for AgentWire
+# Damage Control: Security Firewall for HermesWire
 
 > Living document. Update this, don't create new versions.
 
@@ -6,9 +6,9 @@
 
 ## Overview
 
-Damage Control is a security firewall system that protects AgentWire from dangerous operations during parallel agent execution. It intercepts tool calls (`terminal`, `write_file`, `patch`, `read_file`, `search_files`, outbound MCP) via `pre_tool_call` hooks and blocks operations matching security patterns.
+Damage Control is a security firewall system that protects HermesWire from dangerous operations during parallel agent execution. It intercepts tool calls (`terminal`, `write_file`, `patch`, `read_file`, `search_files`, outbound MCP) via `pre_tool_call` hooks and blocks operations matching security patterns.
 
-**Why Critical for AgentWire**: Parallel remote agent execution multiplies risk. A single `rm -rf /` in a remote session is unrecoverable. Multi-agent execution amplifies the chance of catastrophic mistakes.
+**Why Critical for HermesWire**: Parallel remote agent execution multiplies risk. A single `rm -rf /` in a remote session is unrecoverable. Multi-agent execution amplifies the chance of catastrophic mistakes.
 
 ### Protection Layers
 
@@ -25,9 +25,9 @@ Damage Control is a security firewall system that protects AgentWire from danger
 ## Architecture
 
 ```
-Hermes Agent session (AgentWire-managed)
+Hermes Agent session (HermesWire-managed)
     ↓
-pre_tool_call hook (matcher: terminal | write_file | patch | read_file | search_files | mcp__agentwire__*)
+pre_tool_call hook (matcher: terminal | write_file | patch | read_file | search_files | mcp__hermeswire__*)
     ↓
 Damage Control hook script (PEP 723 Python)
     ↓
@@ -40,10 +40,10 @@ Decision: block {"action":"block",...} | approve {"action":"approve",...,"rule_k
 
 ### File Structure
 
-Hooks ship inside the `agentwire` package — Hermes Agent's `~/.hermes/config.yaml` registers them under `hooks:` and invokes them via `shlex.split(command)` (no `settings.json`):
+Hooks ship inside the `hermeswire` package — Hermes Agent's `~/.hermes/config.yaml` registers them under `hooks:` and invokes them via `shlex.split(command)` (no `settings.json`):
 
 ```
-agentwire/hooks/damage-control/       # Bundled in package
+hermeswire/hooks/damage-control/       # Bundled in package
 ├── bash-tool-damage-control.py       # terminal tool hook
 ├── edit-tool-damage-control.py       # write_file/patch tool hook
 ├── write-tool-damage-control.py      # write_file tool hook
@@ -57,13 +57,13 @@ agentwire/hooks/damage-control/       # Bundled in package
     ├── containers.yaml               # docker prune/push, kubectl delete
     ├── cloud-hosting.yaml, aws.yaml, gcp.yaml, firebase.yaml  # incl. deploys
     ├── infrastructure.yaml, remote.yaml
-    ├── control-plane.yaml            # protected agentwire-owned paths (readOnlyPaths)
+    ├── control-plane.yaml            # protected hermeswire-owned paths (readOnlyPaths)
     ├── outbound.yaml                 # email/SMS send verbs (ask)
     ├── publish.yaml                  # package-registry publish (ask)
-    ├── agentwire.yaml                # tmux/session protections
+    ├── hermeswire.yaml                # tmux/session protections
     └── gws.yaml                      # Google Workspace CLI
 
-~/.agentwire/
+~/.hermeswire/
 ├── damage-control/                   # OPTIONAL user override — same shape as rules/
 │   └── *.yaml                        # If present, replaces bundled rules wholesale
 └── logs/
@@ -86,11 +86,11 @@ dedicated, host-owned files** and the **whole control plane is hard-protected**.
 
 | File | Scope |
 |------|-------|
-| `~/.agentwire/damagecontrol.yml` | Global `enabled` / `disabled_rules` / `unattended_allow` (+ `allowed_paths`) |
+| `~/.hermeswire/damagecontrol.yml` | Global `enabled` / `disabled_rules` / `unattended_allow` (+ `allowed_paths`) |
 | `<repo>/.damagecontrol.yml` | Per-project override (nearest, walking up from cwd). May both **loosen and tighten** — it wins on `enabled`; rule knobs + `allowed_paths` merge |
 
 ```yaml
-# ~/.agentwire/damagecontrol.yml  (or <repo>/.damagecontrol.yml)
+# ~/.hermeswire/damagecontrol.yml  (or <repo>/.damagecontrol.yml)
 enabled: true            # master switch; missing file/key ⇒ true (fail-secure)
 disabled_rules: []       # stable rule IDs to disable
 unattended_allow: []     # extra rule IDs an unattended run may resolve ask→allow
@@ -99,11 +99,11 @@ allowed_paths: []        # per-project allowlist (see allowedPaths below)
 
 **ALL** damage-control policy — kill switch, rule knobs, AND the per-project
 `allowed_paths` allowlist — lives in these files. They **no longer live in
-`config.yaml` or `.agentwire.yml`** at all (relocated out entirely;
+`config.yaml` or `.hermeswire.yml`** at all (relocated out entirely;
 `load_safety_config` / `_find_project_config` read only the files above). The
 allowlist had to move too (#467): it's the one knob that overrides the protected
-check, so leaving it in the agent-writable `.agentwire.yml` would let an agent
-allowlist a control-plane path and re-permit its own write. `agentwire safety
+check, so leaving it in the agent-writable `.hermeswire.yml` would let an agent
+allowlist a control-plane path and re-permit its own write. `hermeswire safety
 install` scaffolds the global file with `enabled: true` if missing.
 
 ### The protected control plane (escape-hatch- AND kill-switch-exempt)
@@ -112,12 +112,12 @@ Any write / edit / delete / move / chmod targeting one of these paths is
 **BLOCKED**, and — unlike every other rule — the `# allow:` escape hatch and the
 `enabled: false` kill switch **do NOT override it**:
 
-- `~/.agentwire/damagecontrol.yml`, any `.damagecontrol.yml`
+- `~/.hermeswire/damagecontrol.yml`, any `.damagecontrol.yml`
 - `~/.hermes/config.yaml` (the `hooks:` block registration)
-- `~/.agentwire/hooks/damage-control/*.py` (the hook scripts), `~/.hermes/hooks/*`
-- `~/.agentwire/damage-control/*.yaml` (the rule files)
-- `~/.agentwire/scheduler.yaml`, `~/.agentwire/config.yaml` (gate/healthcheck commands run via the same `shell=True` confused-deputy path)
-- any `.agentwire.tasks.yml` (per-project task-execution config — see [Task-execution config split](#task-execution-config-split-agentwiretasksyml-720) below; **not** `.agentwire.yml`, which is pure declarative session config and is agent-writable)
+- `~/.hermeswire/hooks/damage-control/*.py` (the hook scripts), `~/.hermes/hooks/*`
+- `~/.hermeswire/damage-control/*.yaml` (the rule files)
+- `~/.hermeswire/scheduler.yaml`, `~/.hermeswire/config.yaml` (gate/healthcheck commands run via the same `shell=True` confused-deputy path)
+- any `.hermeswire.tasks.yml` (per-project task-execution config — see [Task-execution config split](#task-execution-config-split-hermeswiretasksyml-720) below; **not** `.hermeswire.yml`, which is pure declarative session config and is agent-writable)
 
 The guarantee: **the agent only ever operates within the freedom the human
 preset; it can never expand its own freedom by editing a file.** The one
@@ -130,31 +130,31 @@ The same escape-hatch-/kill-switch-exempt tier also covers specific COMMANDS,
 not just paths — `PROTECTED_COMMAND_PATTERNS` (`check_protected_bash_command`,
 also checked before `detect_escape_hatch`) for operations that are dangerous
 regardless of which file they touch. See [Task-execution config
-split](#task-execution-config-split-agentwiretasksyml-720) below for the first
-entry (`agentwire tasks promote`).
+split](#task-execution-config-split-hermeswiretasksyml-720) below for the first
+entry (`hermeswire tasks promote`).
 
-### Task-execution config split (`.agentwire.tasks.yml`, #720)
+### Task-execution config split (`.hermeswire.tasks.yml`, #720)
 
-`.agentwire.yml` used to carry BOTH declarative session config (`type`/`roles`/
+`.hermeswire.yml` used to carry BOTH declarative session config (`type`/`roles`/
 `voice`/`parent`/`worktree`) AND the `tasks:` block (`pre`/`post`/`on_task_end`/
 `shell` — code the scheduler runs via `shell=True`). Protecting the whole file
 to guard the second category also blocked agents from authoring the first, the
 common/safe case. The fix: split them.
 
-- **`.agentwire.yml`** — purely declarative, zero execution vector, agent-writable again.
-- **`.agentwire.tasks.yml`** — the `tasks:` block, protected control-plane (same tier as `.damagecontrol.yml`).
+- **`.hermeswire.yml`** — purely declarative, zero execution vector, agent-writable again.
+- **`.hermeswire.tasks.yml`** — the `tasks:` block, protected control-plane (same tier as `.damagecontrol.yml`).
 
 Since a policed agent can't write the protected file directly, authoring it is
 **propose-and-promote** (mirrors the worktree → PR → review → merge model,
 because task defs ARE executable code):
 
-1. The agent drafts to the **unprotected** staging file `.agentwire.tasks.proposed.yml`.
-2. A human runs `agentwire tasks review [session]` — a diff against the live
+1. The agent drafts to the **unprotected** staging file `.hermeswire.tasks.proposed.yml`.
+2. A human runs `hermeswire tasks review [session]` — a diff against the live
    file plus every shell-bearing field the draft would run (that's the
    review's whole purpose), and any validation issues.
-3. The human runs `agentwire tasks promote [session] [--yes]` — agentwire
+3. The human runs `hermeswire tasks promote [session] [--yes]` — hermeswire
    itself (host-trusted) copies the vetted draft into the live
-   `.agentwire.tasks.yml` and deletes the draft. The agent never writes the
+   `.hermeswire.tasks.yml` and deletes the draft. The agent never writes the
    live file.
 
 Both commands are deliberately **CLI-only, never MCP**: an MCP tool that
@@ -162,7 +162,7 @@ shelled out to `promote` would bypass the terminal-tool hook entirely (see
 [Outbound MCP tool gating](#outbound-mcp-tool-gating-457) — everything not on
 that explicit gated list is open by default).
 
-`agentwire tasks promote` self-invocation is **hard-gated**, not just
+`hermeswire tasks promote` self-invocation is **hard-gated**, not just
 defense-in-depth (#721 review found three bypasses of the original
 Bash-pattern-only block; all three are closed):
 
@@ -174,18 +174,18 @@ Bash-pattern-only block; all three are closed):
    all (there's no legitimate reason for an agent to ever run this command).
 2. **`cmd_tasks_promote` itself refuses to run** outside a genuine host
    context, regardless of how it's reached — this is the layer that actually
-   matters, since a raw `python3 -c "from agentwire.tasks_cli import
+   matters, since a raw `python3 -c "from hermeswire.tasks_cli import
    cmd_tasks_promote; ..."` never matches any bash pattern at all (no
    protected-path string, no command text), so it reaches the function
    directly. It:
-   - Refuses unconditionally when `AGENTWIRE_UNATTENDED=1` (the marker the
+   - Refuses unconditionally when `HERMESWIRE_UNATTENDED=1` (the marker the
      scheduler stamps on every headless dispatch) — closing the concrete
      exploit: an unattended task writes malicious `shell:` strings to the
      proposed file, then self-promotes so the scheduler executes them
      unguarded on the next tick.
    - Otherwise requires a genuine host signal: a real interactive tty (Hermes
      Agent's terminal tool never attaches one, attended or not), or the explicit
-     `AGENTWIRE_ALLOW_TASKS_PROMOTE=1` opt-in for a human's own
+     `HERMESWIRE_ALLOW_TASKS_PROMOTE=1` opt-in for a human's own
      non-interactive script. **`--yes` only skips the confirmation prompt —
      it never substitutes for this gate.**
 
@@ -194,7 +194,7 @@ defense-in-depth + visibility, but the code-level checks above are what make
 the protection absolute.
 
 **Deferred / follow-up — police-at-execution.** The deeper root fix is routing
-agentwire's own task/gate/healthcheck `subprocess.run(shell=True)` calls
+hermeswire's own task/gate/healthcheck `subprocess.run(shell=True)` calls
 through the damage-control policy engine in-process (with the existing
 unattended fail-closed guardrail). That would mean an agent-authored command
 gains no unguarded exec even if it somehow lands in the file, and the file
@@ -206,7 +206,7 @@ defense-in-depth on top of the split, not implemented here.
 
 ## Security Patterns
 
-Patterns live in **categorized YAML files** under `agentwire/hooks/damage-control/rules/` (15 files, one per topic). To override or extend, drop YAML files into `~/.agentwire/damage-control/` — when that directory exists with `*.yaml` files, hooks load from there instead of the bundled rules.
+Patterns live in **categorized YAML files** under `hermeswire/hooks/damage-control/rules/` (15 files, one per topic). To override or extend, drop YAML files into `~/.hermeswire/damage-control/` — when that directory exists with `*.yaml` files, hooks load from there instead of the bundled rules.
 
 ### Pattern Types
 
@@ -292,7 +292,7 @@ imply they work:
 | limit | example | tracked |
 |---|---|---|
 | ssh-wrapped forms outside `remote.yaml`'s 12 | `ssh prod "terraform destroy"` | #924 |
-| path ladders have no `anchored` concept | `grep -rn "<deletion>" ~/.agentwire/` → blocked by `noDeletePath` | #922 |
+| path ladders have no `anchored` concept | `grep -rn "<deletion>" ~/.hermeswire/` → blocked by `noDeletePath` | #922 |
 | masking is keyed on **whitespace** | `msg send --kind done "rmdir"` → still blocked | #922 |
 | trailing shell comment is not masked | `true  # <guarded op> was blocked` | #922 |
 
@@ -323,14 +323,14 @@ regressions.
 
 Every pattern above names a tool and then its subcommand — `\bgit\s+push\b`,
 `\btmux\s+kill-server\b` — and `\s+` cannot span a global option. So for a long
-time `git -C /repo push --force`, `tmux -L agentwire kill-server` and
+time `git -C /repo push --force`, `tmux -L hermeswire kill-server` and
 `kubectl --context prod delete namespace prod` were all **allowed**, while their
 plain forms blocked. In `aws`/`kubectl`/`docker`/`redis-cli` the bypassing option
 is the *production-targeting* one, which inverts the guard: it held for the
 default target and dropped for the named remote one.
 
 The fix is one normalizer at the shared matching seam, driven by a per-tool data
-table (`_GLOBAL_OPTION_TABLE` in `agentwire/safety/_core.py`). Rules do not need
+table (`_GLOBAL_OPTION_TABLE` in `hermeswire/safety/_core.py`). Rules do not need
 to know about it: `global_option_normalized_haystacks()` emits an **extra**
 haystack per subcommand with the tool's global options removed, and present and
 future rules inherit the fix.
@@ -376,8 +376,8 @@ Paths that cannot be accessed at all (read, write, edit, delete):
 zeroAccessPaths:
   - ~/.ssh/id_rsa
   - ~/.ssh/id_ed25519
-  - ~/.agentwire/credentials/
-  - ~/.agentwire/api-keys/
+  - ~/.hermeswire/credentials/
+  - ~/.hermeswire/api-keys/
   - "*.pem"
   - "*.key"
   - ".env*"
@@ -385,7 +385,7 @@ zeroAccessPaths:
 
 Supports:
 - Literal paths: `~/.ssh/id_rsa`
-- Directory prefixes: `~/.agentwire/credentials/`
+- Directory prefixes: `~/.hermeswire/credentials/`
 - Glob patterns: `*.pem`, `.env*`
 
 #### 3. readOnlyPaths (No modifications)
@@ -394,7 +394,7 @@ Paths that can be read but not modified:
 
 ```yaml
 readOnlyPaths:
-  - ~/.agentwire/damage-control/
+  - ~/.hermeswire/damage-control/
   - ~/.gitconfig
   - /etc/hosts
 ```
@@ -407,7 +407,7 @@ Paths that can be modified but not deleted:
 
 ```yaml
 noDeletePaths:
-  - ~/.agentwire/sessions/
+  - ~/.hermeswire/sessions/
 ```
 
 Blocks: `rm`, `unlink`, `rmdir`, `shred`
@@ -423,13 +423,13 @@ Paths where path-based protections (zeroAccess, readOnly, noDelete) are bypassed
 allowedPaths:
   - path: "*/dist/*"
     allow: all                     # bypass everything including bypassable rm
-  - path: "~/.agentwire/.env"
+  - path: "~/.hermeswire/.env"
     allow: [read, write, edit]     # but NOT delete
   - path: "*/__pycache__/*"
     allow: all
 ```
 
-**Per-project** (top-level `allowed_paths` in the **protected** `.damagecontrol.yml` at the repo root — NOT `.agentwire.yml`, see [Policy files](#policy-files--the-protected-control-plane-466) and #467):
+**Per-project** (top-level `allowed_paths` in the **protected** `.damagecontrol.yml` at the repo root — NOT `.hermeswire.yml`, see [Policy files](#policy-files--the-protected-control-plane-466) and #467):
 ```yaml
 # <repo>/.damagecontrol.yml
 allowed_paths:
@@ -441,7 +441,7 @@ allowed_paths:
 
 The allowlist is the one knob that overrides the protected-control-plane check, so it lives behind that same protection — an agent can't edit `.damagecontrol.yml` to widen its own freedom.
 
-**The override cuts both ways (#938).** Because `allowedPaths` outranks control-plane protection, a *broad* entry silently turns that protection off for whatever it covers — `{path: "*/.agentwire/*", allow: all}` makes the kill switch (`~/.agentwire/damagecontrol.yml`), the rule files, and the hook scripts agent-writable, and `{path: "~/.hermes/*"}` takes hook registration (`config.yaml`) with it. The control plane is protected *unless your allowlist covers it*. `agentwire doctor` flags any entry whose glob overlaps a protected control-plane path, using the enforcement matcher itself, and names both sides.
+**The override cuts both ways (#938).** Because `allowedPaths` outranks control-plane protection, a *broad* entry silently turns that protection off for whatever it covers — `{path: "*/.hermeswire/*", allow: all}` makes the kill switch (`~/.hermeswire/damagecontrol.yml`), the rule files, and the hook scripts agent-writable, and `{path: "~/.hermes/*"}` takes hook registration (`config.yaml`) with it. The control plane is protected *unless your allowlist covers it*. `hermeswire doctor` flags any entry whose glob overlaps a protected control-plane path, using the enforcement matcher itself, and names both sides.
 
 Per-project paths are relative to the project root and resolved to absolute paths before matching.
 
@@ -473,8 +473,8 @@ When a session is marked **unattended**, the bash hook resolves `ask` by
 the matched rule's stable ID is on the unattended allowlist.
 
 **How a session is marked unattended.** The scheduler is the single chokepoint:
-on every headless dispatch it seeds `AGENTWIRE_UNATTENDED=1` (and any per-task
-`AGENTWIRE_UNATTENDED_ALLOW`) into the dispatch subprocess environment
+on every headless dispatch it seeds `HERMESWIRE_UNATTENDED=1` (and any per-task
+`HERMESWIRE_UNATTENDED_ALLOW`) into the dispatch subprocess environment
 (`scheduler/dispatch.py::_unattended_env`). Session creation funnels that marker into the new
 tmux session via `tmux new-session -e K=V` (`core.py::_with_unattended_env`), so
 it lands before the agent launches and the hook can read it. Interactive
@@ -486,7 +486,7 @@ human's session — even though interactive sessions use the same
 `_UNATTENDED_ENV_KEYS` carries the marker and the allowlist as one unit, so a
 session an unattended agent spawns gets both, transitively to any depth and
 across projects (`created_by` is dropped for a cross-project spawn, #715; this
-env is not rooted). For `AGENTWIRE_UNATTENDED` that is defense in depth — it
+env is not rooted). For `HERMESWIRE_UNATTENDED` that is defense in depth — it
 *tightens*, so inheriting it can only ever block more. **The allowlist rides the
 same path and *loosens*,** which is a materially different thing and went
 undocumented until #914.
@@ -503,16 +503,16 @@ runs commands in, and the files that define grants are protected control plane.
 **What's unaffected.** Hard `block` rules (`rm -rf`, `git push --force`, DB
 drops) fire regardless — they never depended on a human. Interactive `bypass`
 sessions resolve `ask` exactly as before. The kill switch still wins: with
-`enabled: false` in `~/.agentwire/damagecontrol.yml`, nothing is checked, so the
+`enabled: false` in `~/.hermeswire/damagecontrol.yml`, nothing is checked, so the
 unattended gate is inert too (enable safety for scheduled projects to engage it).
 
 **The allowlist** — three layers, **most specific wins outright**:
 
 | Layer | Where | Notes |
 |-------|-------|-------|
-| 1. per-task `unattended_allow` | `.agentwire.tasks.yml` | The pressure-relief valve: widen (or narrow) for one task instead of loosening the global default |
-| 2. `unattended_allow` | `~/.agentwire/damagecontrol.yml` / project `.damagecontrol.yml` | Global / per-project |
-| 3. `DEFAULT_UNATTENDED_ALLOW` | `safety/_core.py` | Built-in: `git.add`, `git.add-u`, `git.commit`, `git.push`, `gh.pr-create`, `outbound.agentwire-email` — work + open a PR + notify the owner by email |
+| 1. per-task `unattended_allow` | `.hermeswire.tasks.yml` | The pressure-relief valve: widen (or narrow) for one task instead of loosening the global default |
+| 2. `unattended_allow` | `~/.hermeswire/damagecontrol.yml` / project `.damagecontrol.yml` | Global / per-project |
+| 3. `DEFAULT_UNATTENDED_ALLOW` | `safety/_core.py` | Built-in: `git.add`, `git.add-u`, `git.commit`, `git.push`, `gh.pr-create`, `outbound.hermeswire-email` — work + open a PR + notify the owner by email |
 
 **Precedence, not union (#914).** The most specific layer that *names* a rule id
 defines that rule's grant outright. A union would make a scoped entry
@@ -535,11 +535,11 @@ description edits.
 
 > **A grant naming a rule id that does not exist is inert, and reads exactly
 > like one that works.** That is how the whole built-in set went silently dead
-> on one machine: `~/.agentwire/tooldefs/git.yaml` was missing the four `id:`
+> on one machine: `~/.hermeswire/tooldefs/git.yaml` was missing the four `id:`
 > lines the bundled copy has, the user copy wins, and five of six
 > `DEFAULT_UNATTENDED_ALLOW` ids resolved to nothing — so scheduled tasks were
 > blocked on `git commit` and it surfaced as a `max_duration` timeout.
-> `agentwire doctor` now reports inert built-in grants, and `agentwire tasks
+> `hermeswire doctor` now reports inert built-in grants, and `hermeswire tasks
 > review` reports a task grant naming an unknown id.
 
 ### Path scopes (#914)
@@ -549,7 +549,7 @@ fires) or a mapping carrying `paths`:
 
 ```yaml
 unattended_allow:
-  - outbound.agentwire-email                  # bare — unchanged, still works
+  - outbound.hermeswire-email                  # bare — unchanged, still works
   - id: git.commit
     paths:
       - ~/.hermes/memory/                      # scoped — only under here
@@ -632,28 +632,28 @@ outright. The redirect *command* itself is still unruled — making it
 **TOCTOU window** — the hook validates a path the command has not used yet.
 
 **MCP tools.** The MCP hook's command is *synthesized* from the tool call
-(`agentwire email --to …`) and names no directory, so a **scoped** grant there
+(`hermeswire email --to …`) and names no directory, so a **scoped** grant there
 refuses rather than measuring the scope against the session cwd — which would
 allow on a coincidence. Unscoped grants are unaffected.
 
-When a command is blocked, the owner email and `agentwire safety logs` name the
+When a command is blocked, the owner email and `hermeswire safety logs` name the
 exact rule id, so widening is copy-paste: add that id to the task's
 `unattended_allow`.
 
-**`agentwire email` is a blanket unattended-allow, by design (#804).** Emailing
+**`hermeswire email` is a blanket unattended-allow, by design (#804).** Emailing
 the owner is the *primary* way an unattended agent reports back — fail-closed
 blocking it defeats the use case (a scheduled review silently never reaches the
-owner). `outbound.agentwire-email` is on `DEFAULT_UNATTENDED_ALLOW`
+owner). `outbound.hermeswire-email` is on `DEFAULT_UNATTENDED_ALLOW`
 unconditionally: **any** `--to`, not just the owner's own address. A narrower
 owner-address-only exemption was considered and rejected — the owner explicitly
-accepted the exfil tradeoff in favor of the simpler blanket allow. `agentwire
+accepted the exfil tradeoff in favor of the simpler blanket allow. `hermeswire
 quo` (SMS) is unaffected and still fails closed unattended; widen it per-task
-via `unattended_allow` (`outbound.agentwire-quo`) same as any other verb. This
+via `unattended_allow` (`outbound.hermeswire-quo`) same as any other verb. This
 applies identically to the terminal shell-out and the `email_send` MCP tool (both
 resolve through the same `resolve_unattended_grants`).
 
 ```yaml
-# project .agentwire.tasks.yml — let ONE scheduled task run terraform apply unattended
+# project .hermeswire.tasks.yml — let ONE scheduled task run terraform apply unattended
 tasks:
   infra-drift:
     prompt: reconcile infra drift and apply
@@ -678,7 +678,7 @@ want stopped headless. Two mechanisms classify a verb as `ask`:
 
 Both land in the same `ask` tier, so both are caught unattended. `ask` resolves
 per session mode: interactive **bypass/auto** → allow (no friction, the common
-agentwire posture); interactive **non-bypass** → confirm prompt; **unattended**
+hermeswire posture); interactive **non-bypass** → confirm prompt; **unattended**
 → block + email owner (unless the rule id is allowlisted). Genuinely
 catastrophic, never-reversible verbs are `block` (fire in every mode).
 
@@ -693,8 +693,8 @@ catastrophic, never-reversible verbs are `block` (fire in every mode).
 | **Deploy — containers** | `kubectl apply` | ask | kubectl tooldef |
 | | `docker push`, `docker compose push` | ask | `containers.yaml` (`container.docker-push`) |
 | **Deploy — CI/release** | `gh release create`, `gh workflow run`, `gh pr merge` | ask | gh tooldef |
-| **Outbound comms** | `agentwire email` | ask (unattended-allowed by default, #804) | `outbound.yaml` (`outbound.agentwire-email`) |
-| | `agentwire quo`, `twilio … messages create`, `aws ses send-email`, `aws sns publish`, `sendmail`, `mail -s` | ask | `outbound.yaml` (`outbound.*`) |
+| **Outbound comms** | `hermeswire email` | ask (unattended-allowed by default, #804) | `outbound.yaml` (`outbound.hermeswire-email`) |
+| | `hermeswire quo`, `twilio … messages create`, `aws ses send-email`, `aws sns publish`, `sendmail`, `mail -s` | ask | `outbound.yaml` (`outbound.*`) |
 | **DB migrations** | `prisma migrate deploy`/`dev`, `prisma db push`, `supabase db push`, `supabase migration up`, `alembic upgrade`/`downgrade`, `manage.py migrate`, `rails`/`rake db:migrate`, `knex migrate:*`, `sequelize db:migrate`, `flyway migrate`, `liquibase update` | ask | `databases.yaml` (`db.*`) |
 | **DB raw writes** | `psql`/`mysql` executing INSERT/UPDATE/ALTER/CREATE/GRANT, `mongosh` insert/update/delete | ask | `payloads.yaml` (`db.psql-write`, `db.mysql-write`, `db.mongosh-write`) |
 | **DB schema-drop** | `prisma migrate reset`, `flyway clean` | **block** | `databases.yaml` (`db.prisma-reset`, `db.flyway-clean`) |
@@ -704,13 +704,13 @@ catastrophic, never-reversible verbs are `block` (fire in every mode).
 
 **Allowlisting a covered verb for one task** — the block message and owner email
 name the exact rule id, so widening is copy-paste into the task's
-`unattended_allow` (e.g. `deploy.vercel`, `outbound.agentwire-quo`,
-`db.prisma-migrate`). `outbound.agentwire-email` doesn't need this — it's
+`unattended_allow` (e.g. `deploy.vercel`, `outbound.hermeswire-quo`,
+`db.prisma-migrate`). `outbound.hermeswire-email` doesn't need this — it's
 already on `DEFAULT_UNATTENDED_ALLOW`.
 
 **Residual gaps (intentional / known):**
 
-- **MCP send paths bypass the hook.** Agents in agentwire sessions usually send
+- **MCP send paths bypass the hook.** Agents in hermeswire sessions usually send
   via MCP tools (`email_send`, `quo_send`), which are *not* terminal/write_file/patch and
   so never reach this hook. The `outbound.*` rules only catch a shell-out to the
   CLI. Closing the MCP path needs a guard at the MCP layer, not a rule — out of
@@ -731,22 +731,22 @@ already on `DEFAULT_UNATTENDED_ALLOW`.
 
 ## Outbound MCP tool gating (#457)
 
-Agents inside agentwire sessions reach external comms through **MCP tools**, not
+Agents inside hermeswire sessions reach external comms through **MCP tools**, not
 the terminal tool — `email_send` (external email via Resend) and `quo_send`
 (external SMS via Quo/OpenPhone). `pre_tool_call` fires for MCP tools too, so a fourth
 hook gates them:
 
 - **`mcp-tool-damage-control.py`** registered with matcher
-  `mcp__agentwire__(email_send|quo_send)`.
+  `mcp__hermeswire__(email_send|quo_send)`.
 - On fire it **synthesizes the equivalent shell command** the tool runs under the
-  hood (`email_send` → `agentwire email --to … --subject …`; `quo_send` →
-  `agentwire quo --to …`; the message body is omitted from the synthesized,
+  hood (`email_send` → `hermeswire email --to … --subject …`; `quo_send` →
+  `hermeswire quo --to …`; the message body is omitted from the synthesized,
   audit-logged command) and runs it through the **identical** decision ladder
   (`check_command` + `is_unattended` + `resolve_unattended_allow`) as the terminal
-  hook. That reuses `outbound.agentwire-email` / `outbound.agentwire-quo`
+  hook. That reuses `outbound.hermeswire-email` / `outbound.hermeswire-quo`
   verbatim — same rule IDs, same `unattended_allow`, same
-  `agentwire safety notify-unattended-block` owner-alert on an unattended block.
-- Generated from `agentwire/safety/_core.py` via
+  `hermeswire safety notify-unattended-block` owner-alert on an unattended block.
+- Generated from `hermeswire/safety/_core.py` via
   `scripts/regen_damage_control_hooks.py` like the other three — never hand-edit
   between the GENERATED markers.
 
@@ -759,12 +759,12 @@ friction.
 
 Only verbs that are **outward-facing AND irreversible** (reach real people, can't
 be un-done) warrant gating, matching the `outbound.*` scope. The rest of the
-`mcp__agentwire__*` surface was reviewed and intentionally left open:
+`mcp__hermeswire__*` surface was reviewed and intentionally left open:
 
 | MCP tool(s) | Decision | Why |
 |---|---|---|
 | `email_send`, `quo_send` | **Gated** | External email/SMS to real people — irreversible. |
-| `say`, `notify_user`, `notify_parent`, `notify_event`, `msg_send`, `session_send` | Open | Internal to the agentwire network / local desktop; not external, reversible. |
+| `say`, `notify_user`, `notify_parent`, `notify_event`, `msg_send`, `session_send` | Open | Internal to the hermeswire network / local desktop; not external, reversible. |
 | `session_create`/`recreate`/`fork`/`kill`, `pane_*` | Open | Local tmux lifecycle; reversible, no external reach. |
 | `machine_add`/`machine_remove` | Open | Local registry edit; reversible. |
 | `scheduler_run`, `scheduler_enable`/`disable` | Open | Triggers local task runs (themselves gated by this hook + the terminal hook). |
@@ -775,7 +775,7 @@ If a new outward-irreversible MCP verb is added, extend
 `DAMAGE_CONTROL_MATCHERS` (matcher) + `_synthesize_command` (in the hook) and add
 the matching `outbound.*`/`publish.*` rule — don't invent a tool→tier table.
 
-## AgentWire-Specific Protections
+## HermesWire-Specific Protections
 
 ### Tmux Session Protection
 
@@ -784,19 +784,19 @@ bashToolPatterns:
   - pattern: '\btmux\s+kill-server\b'
     reason: tmux kill-server (kills all sessions)
 
-  - pattern: '\btmux\s+kill-session\s+-t\s+agentwire-'
-    reason: killing AgentWire tmux sessions
+  - pattern: '\btmux\s+kill-session\s+-t\s+hermeswire-'
+    reason: killing HermesWire tmux sessions
 ```
 
 Protects:
 - `tmux kill-server` - would kill all sessions
-- `tmux kill-session -t agentwire-*` - would kill AgentWire workers
-- Allows: `tmux list-sessions`, `tmux attach`, killing non-AgentWire sessions
+- `tmux kill-session -t hermeswire-*` - would kill HermesWire workers
+- Allows: `tmux list-sessions`, `tmux attach`, killing non-HermesWire sessions
 
 **Socket options no longer bypass this (#919).** Every session on this machine
-runs on a *named* socket, so `tmux -L agentwire kill-server` was the spelling
-that mattered — and it was allowed, along with the attached (`-Lagentwire`) and
-bundled (`-2Lagentwire`) forms that tmux's getopt parsing also accepts. All
+runs on a *named* socket, so `tmux -L hermeswire kill-server` was the spelling
+that mattered — and it was allowed, along with the attached (`-Lhermeswire`) and
+bundled (`-2Lhermeswire`) forms that tmux's getopt parsing also accepts. All
 three now normalize to `tmux kill-server` before matching. See
 [Global options before the subcommand](#1a-global-options-before-the-subcommand-913-919).
 
@@ -804,12 +804,12 @@ three now normalize to `tmux kill-server` before matching. See
 
 ```yaml
 zeroAccessPaths:
-  - ~/.agentwire/credentials/
-  - ~/.agentwire/api-keys/
-  - ~/.agentwire/secrets/
+  - ~/.hermeswire/credentials/
+  - ~/.hermeswire/api-keys/
+  - ~/.hermeswire/secrets/
 
 noDeletePaths:
-  - ~/.agentwire/sessions/
+  - ~/.hermeswire/sessions/
 ```
 
 Protects:
@@ -877,15 +877,15 @@ Test commands before running them using the CLI:
 
 ```bash
 # Test if command would be blocked
-agentwire safety check "rm -rf /tmp"
+hermeswire safety check "rm -rf /tmp"
 # → ✗ Decision: BLOCK (rm with recursive or force flags)
 
 # Test if command would be allowed
-agentwire safety check "ls -la"
+hermeswire safety check "ls -la"
 # → ✓ Decision: ALLOW
 
 # Check overall safety status
-agentwire safety status
+hermeswire safety status
 # → Shows pattern counts, recent blocks, audit log location
 ```
 
@@ -895,23 +895,23 @@ View security decisions from audit logs:
 
 ```bash
 # Show recent blocked operations
-agentwire safety logs --tail 20
+hermeswire safety logs --tail 20
 
 # Show today's operations
-agentwire safety logs --today
+hermeswire safety logs --today
 
 # Show blocks for specific session
-agentwire safety logs --session agentwire-dev/auth-refactor
+hermeswire safety logs --session hermeswire-dev/auth-refactor
 
 # Search for specific pattern
-agentwire safety logs --pattern "rm -rf"
+hermeswire safety logs --pattern "rm -rf"
 ```
 
 **Audit Log Format**:
 ```json
 {
   "timestamp": "2026-04-30T13:45:22Z",
-  "session_id": "agentwire-dev/damage-control",
+  "session_id": "hermeswire-dev/damage-control",
   "agent_id": "wave-2-task-1",
   "tool": "terminal",
   "command": "rm -rf /tmp/test",
@@ -927,10 +927,10 @@ agentwire safety logs --pattern "rm -rf"
 
 ### Adding New Patterns
 
-Drop a YAML file into `~/.agentwire/damage-control/` (creates the user-override layer):
+Drop a YAML file into `~/.hermeswire/damage-control/` (creates the user-override layer):
 
 ```yaml
-# ~/.agentwire/damage-control/myapp.yaml
+# ~/.hermeswire/damage-control/myapp.yaml
 bashToolPatterns:
   - pattern: '\bmyapp\s+destroy\b'
     reason: myapp destroy command is dangerous
@@ -942,7 +942,7 @@ readOnlyPaths:
   - /myapp/config/production.yaml
 ```
 
-**Heads-up:** the user-override directory **replaces** the bundled rules wholesale — copy what you need from `agentwire/hooks/damage-control/rules/` if you want to extend rather than override.
+**Heads-up:** the user-override directory **replaces** the bundled rules wholesale — copy what you need from `hermeswire/hooks/damage-control/rules/` if you want to extend rather than override.
 
 **Pattern Tips**:
 - Declare `anchored:` on every rule — `true` for a command-prefix rule, `false`
@@ -951,7 +951,7 @@ readOnlyPaths:
   reintroduces #915. See [`anchored`](#anchored--command-position-vs-argument-content-675-915).
 - Use `\b` for word boundaries: `\brm\b` matches `rm` but not `format`
 - Use `\s+` for required whitespace: `git\s+push` matches `git push`
-- Test patterns before deploying: `agentwire safety check "command"`
+- Test patterns before deploying: `hermeswire safety check "command"`
 - Patterns are case-insensitive for Bash commands
 
 ### Temporarily Disabling Protection
@@ -964,7 +964,7 @@ readOnlyPaths:
 #   reason: git push --force
 ```
 
-**Option 2**: Remove the hook entry from the `hooks:` block in Hermes Agent's `~/.hermes/config.yaml` (the config Hermes Agent reads, not `~/.agentwire/settings.json`).
+**Option 2**: Remove the hook entry from the `hooks:` block in Hermes Agent's `~/.hermes/config.yaml` (the config Hermes Agent reads, not `~/.hermeswire/settings.json`).
 
 **Warning**: Disabling protection removes safety nets. Re-enable as soon as the risky operation is complete.
 
@@ -991,21 +991,21 @@ verified; and 9 of 15 live rule files had never been updated since install, so
 ### Three properties, each a separate guard
 
 **1. Provenance — WHICH package may write.** Machine-global files are written
-only from the canonically installed tool (`agentwire/safety/provenance.py`).
+only from the canonically installed tool (`hermeswire/safety/provenance.py`).
 Four states: `canonical` (writes), `bootstrap` (no install exists — writes, or
 the tool would be uninstallable), `worktree` (no install and the source is a
 linked worktree — refuses), `foreign` (an install exists and is not what is
 running — refuses). Override: `--allow-foreign-source`.
 
-Deliberately **not** keyed on the cwd: `~/.local/bin/agentwire` is a console
+Deliberately **not** keyed on the cwd: `~/.local/bin/hermeswire` is a console
 script with a venv shebang, so it imports site-packages regardless of where it
 was invoked from. Running `hooks install` *while sitting in* a worktree was
-always safe; `uv run agentwire` *from* a stale checkout never was. A cwd check
+always safe; `uv run hermeswire` *from* a stale checkout never was. A cwd check
 gets both backwards. Nor on `PATH` — `uv run` puts an ephemeral venv first, so a
 `which`-based lookup reports the stale checkout AS the canonical install.
 
 **And there is no environment override**, deliberately. An earlier draft had
-`AGENTWIRE_CANONICAL_PACKAGE`; it was the wrong shape twice — it duplicated
+`HERMESWIRE_CANONICAL_PACKAGE`; it was the wrong shape twice — it duplicated
 `--allow-foreign-source` with something undocumented, and a leading `VAR=value`
 assignment is collapsed to a mask token by `masked_subcommands`, so a
 command-position damage-control rule **cannot observe it being set**. An
@@ -1020,9 +1020,9 @@ provenance check reads — it reinstalls the tool FROM a source checkout, so a
 worktree it installs from **becomes canonical**:
 
 ```
-uv run agentwire hooks install   (from a worktree)  -> refused
-uv run agentwire rebuild         (from a worktree)  -> worktree is now canonical
-agentwire hooks install                             -> proceeds, legitimately
+uv run hermeswire hooks install   (from a worktree)  -> refused
+uv run hermeswire rebuild         (from a worktree)  -> worktree is now canonical
+hermeswire hooks install                             -> proceeds, legitimately
 ```
 
 Guarding the heal alone blocks the one-step and permits the two-step — and the
@@ -1037,7 +1037,7 @@ is *ahead and divergent* rather than behind.)
 by `scripts/regen_damage_control_hooks.py`:
 
 ```python
-AGENTWIRE_HOOK_STAMP = {"core_sha256": "…", "generated_at": "2026-08-06T…Z"}
+HERMESWIRE_HOOK_STAMP = {"core_sha256": "…", "generated_at": "2026-08-06T…Z"}
 ```
 
 `generated_at` moves only when the inlined `_core.py` actually changes, so the
@@ -1053,7 +1053,7 @@ the first stamped deploy onward. Provenance is what protects the interval.
 
 **3. Three-way sync — not install-missing-only.** Rules and tooldefs are
 host-editable, so a blanket overwrite is off the table. The missing leg of a
-three-way merge is the common ancestor, and `agentwire/safety/rule_baselines.json`
+three-way merge is the common ancestor, and `hermeswire/safety/rule_baselines.json`
 ships it: the sha256 of **every version of each file that has ever shipped**,
 generated from git history by `scripts/gen_rule_baselines.py`.
 
@@ -1081,7 +1081,7 @@ they had never been in force. Repairing the drift does not "restore" the
 default — in practice it **grants** it: `git add`/`commit`/`push` and
 `gh pr create` permitted unattended in ANY repo. `heal` prints the notice
 whenever tooldefs change; narrow it with `unattended_allow` in
-`~/.agentwire/damagecontrol.yml` (path-scoped entries supported, #914).
+`~/.hermeswire/damagecontrol.yml` (path-scoped entries supported, #914).
 
 ### Duplicate rule ids
 
@@ -1118,10 +1118,10 @@ silent loop with no screen to show it on.
 **Check using CLI**:
 ```bash
 # Test the command
-agentwire safety check "your command here"
+hermeswire safety check "your command here"
 
 # Check hook status
-agentwire hooks status
+hermeswire hooks status
 ```
 
 **Verify hook is registered**:
@@ -1133,11 +1133,11 @@ cat ~/.hermes/config.yaml | grep damage-control
 
 **Identify the pattern**:
 ```bash
-agentwire safety check "your command here"
+hermeswire safety check "your command here"
 # Shows which pattern matched
 ```
 
-**Adjust the pattern** — copy the relevant rules file from `agentwire/hooks/damage-control/rules/` into `~/.agentwire/damage-control/` and edit there:
+**Adjust the pattern** — copy the relevant rules file from `hermeswire/hooks/damage-control/rules/` into `~/.hermeswire/damage-control/` and edit there:
 ```yaml
 # Before (too broad)
 - pattern: '\brm\b'
@@ -1161,12 +1161,12 @@ Hooks have a 5-second timeout. If your rule files are very large or patterns are
 
 ### Audit Logs Growing Too Large
 
-Audit logs are stored in `~/.agentwire/logs/damage-control/`.
+Audit logs are stored in `~/.hermeswire/logs/damage-control/`.
 
 **Implement log rotation** (future enhancement):
 ```bash
 # Manual cleanup (keep last 30 days)
-find ~/.agentwire/logs/damage-control/ -name "*.jsonl" -mtime +30 -delete
+find ~/.hermeswire/logs/damage-control/ -name "*.jsonl" -mtime +30 -delete
 ```
 
 ---
@@ -1175,11 +1175,11 @@ find ~/.agentwire/logs/damage-control/ -name "*.jsonl" -mtime +30 -delete
 
 ### Manual Testing
 
-Test with real AgentWire session:
+Test with real HermesWire session:
 
 ```bash
-# Create AgentWire session
-agentwire new -s test-session
+# Create HermesWire session
+hermeswire new -s test-session
 
 # In session, try dangerous commands
 rm -rf /tmp/test           # Should be blocked
@@ -1187,7 +1187,7 @@ tmux kill-server           # Should be blocked
 ls -la                     # Should be allowed
 
 # Check audit logs
-agentwire safety logs --session test-session
+hermeswire safety logs --session test-session
 ```
 
 ---
@@ -1222,7 +1222,7 @@ Each tool call adds <100ms overhead for pattern checking:
 - `chmod 777` on sensitive files
 
 ✅ **Pattern-based risks**
-- Deleting AgentWire infrastructure
+- Deleting HermesWire infrastructure
 - Modifying credentials/keys
 - Remote destructive operations
 
@@ -1247,7 +1247,7 @@ Each tool call adds <100ms overhead for pattern checking:
 ### Defense in Depth
 
 Damage Control is ONE layer:
-- **System permissions**: Run AgentWire as non-root
+- **System permissions**: Run HermesWire as non-root
 - **Backups**: Regular backups of critical data
 - **Version control**: Git commits for code changes
 - **Audit logs**: Track all operations
@@ -1257,32 +1257,32 @@ Damage Control is ONE layer:
 
 ## FAQ
 
-### Q: Does this slow down AgentWire?
+### Q: Does this slow down HermesWire?
 
 **A**: Minimally. Hooks add ~70-100ms per command, which is negligible compared to actual command execution time.
 
 ### Q: Can I customize patterns per session?
 
-**A**: Not yet. Patterns are global — bundled `agentwire/hooks/damage-control/rules/*.yaml` plus an optional override at `~/.agentwire/damage-control/`. Per-session overrides are a future enhancement.
+**A**: Not yet. Patterns are global — bundled `hermeswire/hooks/damage-control/rules/*.yaml` plus an optional override at `~/.hermeswire/damage-control/`. Per-session overrides are a future enhancement.
 
 ### Q: What if I need to run a blocked command?
 
 **A**: Four options:
-1. Add the path to `allowedPaths` in a user-override `*.yaml` under `~/.agentwire/damage-control/` (global) or to `allowed_paths` in the protected `.damagecontrol.yml` at the repo root (per-project — a host-side edit; the agent can't widen its own allowlist)
+1. Add the path to `allowedPaths` in a user-override `*.yaml` under `~/.hermeswire/damage-control/` (global) or to `allowed_paths` in the protected `.damagecontrol.yml` at the repo root (per-project — a host-side edit; the agent can't widen its own allowlist)
 2. Use "ask" patterns (prompts for confirmation)
 3. Temporarily comment out the pattern in your override YAML
-4. Run command outside AgentWire session
+4. Run command outside HermesWire session
 
 ### Q: Do hooks work in remote sessions?
 
-**A**: Yes, if the remote machine has AgentWire installed with damage-control hooks configured.
+**A**: Yes, if the remote machine has HermesWire installed with damage-control hooks configured.
 
 ### Q: How do I add patterns for my own tools?
 
-**A**: Drop a YAML file into `~/.agentwire/damage-control/` (the user-override layer):
+**A**: Drop a YAML file into `~/.hermeswire/damage-control/` (the user-override layer):
 
 ```yaml
-# ~/.agentwire/damage-control/mytool.yaml
+# ~/.hermeswire/damage-control/mytool.yaml
 bashToolPatterns:
   - pattern: '\bmytool\s+dangerous-operation\b'
     reason: mytool dangerous operation blocked
@@ -1296,11 +1296,11 @@ Remember: when this directory exists, the bundled rules are **replaced**. Copy t
 
 ### Q: Where are audit logs stored?
 
-**A**: `~/.agentwire/logs/damage-control/YYYY-MM-DD.jsonl` (one file per day)
+**A**: `~/.hermeswire/logs/damage-control/YYYY-MM-DD.jsonl` (one file per day)
 
 ---
 
 ## Related Documentation
 
-- `agentwire safety` — CLI surface for testing commands and viewing audit logs (`agentwire safety check ...`, `agentwire safety logs`).
-- `agentwire/hooks/damage-control/rules/` — bundled pattern source-of-truth.
+- `hermeswire safety` — CLI surface for testing commands and viewing audit logs (`hermeswire safety check ...`, `hermeswire safety logs`).
+- `hermeswire/hooks/damage-control/rules/` — bundled pattern source-of-truth.

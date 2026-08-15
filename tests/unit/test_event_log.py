@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from agentwire.utils import event_log
-from agentwire.utils.event_log import append_event
+from hermeswire.utils import event_log
+from hermeswire.utils.event_log import append_event
 
 
 @pytest.fixture
@@ -36,8 +36,8 @@ def test_creates_parent_dir(events_path):
 
 def test_rotation_triggers_past_threshold(events_path, monkeypatch):
     """Crossing the size cap rolls the active file to ``.1`` and starts fresh."""
-    monkeypatch.setenv("AGENTWIRE_EVENT_LOG_MAX_BYTES", "1000")
-    monkeypatch.setenv("AGENTWIRE_EVENT_LOG_BACKUPS", "3")
+    monkeypatch.setenv("HERMESWIRE_EVENT_LOG_MAX_BYTES", "1000")
+    monkeypatch.setenv("HERMESWIRE_EVENT_LOG_BACKUPS", "3")
 
     rolled = events_path.with_name(events_path.name + ".1")
     payload = "x" * 40  # each line ~ 64 bytes; ~15 fill the 1000-byte cap
@@ -62,9 +62,9 @@ def test_rotation_triggers_past_threshold(events_path, monkeypatch):
 
 
 def test_backup_count_is_bounded(events_path, monkeypatch):
-    """Only ``AGENTWIRE_EVENT_LOG_BACKUPS`` rolled files are retained."""
-    monkeypatch.setenv("AGENTWIRE_EVENT_LOG_MAX_BYTES", "120")
-    monkeypatch.setenv("AGENTWIRE_EVENT_LOG_BACKUPS", "2")
+    """Only ``HERMESWIRE_EVENT_LOG_BACKUPS`` rolled files are retained."""
+    monkeypatch.setenv("HERMESWIRE_EVENT_LOG_MAX_BYTES", "120")
+    monkeypatch.setenv("HERMESWIRE_EVENT_LOG_BACKUPS", "2")
 
     for i in range(60):
         append_event(events_path, {"event": "fill", "i": i, "pad": "y" * 40})
@@ -74,7 +74,7 @@ def test_backup_count_is_bounded(events_path, monkeypatch):
 
 
 def test_rotation_disabled_when_max_bytes_zero(events_path, monkeypatch):
-    monkeypatch.setenv("AGENTWIRE_EVENT_LOG_MAX_BYTES", "0")
+    monkeypatch.setenv("HERMESWIRE_EVENT_LOG_MAX_BYTES", "0")
     for i in range(50):
         append_event(events_path, {"event": "fill", "i": i, "pad": "z" * 40})
 

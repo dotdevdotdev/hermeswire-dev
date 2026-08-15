@@ -11,14 +11,14 @@ import json
 
 import pytest
 
-from agentwire.ensure_cli import cmd_ensure, cmd_task_show
+from hermeswire.ensure_cli import cmd_ensure, cmd_task_show
 
 
 @pytest.fixture
 def project_dir(tmp_path):
     """Project with a task that defines output capture + save."""
-    (tmp_path / ".agentwire.yml").write_text("posture: bypass\n")
-    (tmp_path / ".agentwire.tasks.yml").write_text(
+    (tmp_path / ".hermeswire.yml").write_text("posture: bypass\n")
+    (tmp_path / ".hermeswire.tasks.yml").write_text(
         """
 tasks:
   hello:

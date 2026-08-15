@@ -12,16 +12,16 @@ phase_3: shipped
 > **Terminology note (#716, post-dates this doc):** the `worktree-session` kind referenced throughout below was renamed — it's now role `worker` on worktree topology, backed by the `worker-worktree` role file. The safety-rail/persona split and the underlying mechanics this doc describes are unchanged; only the kind's name and the fact that ROLE and TOPOLOGY are now independent axes are new. See `CLAUDE.md`'s "Three independent axes" section for the current model. `__main__.py` line-number citations below also predate the #495 CLI-layout split (the code now lives in `session_cli.py`/`roles/__init__.py`).
 >
 > **Status — Phases 1 & 2 shipped (2026-06-21):**
-> - **Phase 1:** the `anchor` and `correspondent` roles (`agentwire/roles/`). Spawn an anchor with `agentwire new -s <name> --roles anchor`; it fans out correspondents, which file deep reports to a dropbox (`~/.agentwire/research/<anchor-session>/`); the anchor briefs asymmetrically (`say` headline + `portal_notify` card) on the human's cue.
-> - **Phase 2:** the passive `ingest` message kind — never auto-delivered (routes to a reserved `ingest/` subdir the drain skips), pulled with `agentwire msg pull` / MCP `msg_pull`. Correspondents now drop a passive pointer; the anchor pulls on the human's cue (awareness without being driven). Plus MCP `worktree_create` and a `--prompt` seed flag on `agentwire worktree` (spawn + seed in one call, verified delivery), completing the worktree lifecycle quartet (create / status / list / remove).
+> - **Phase 1:** the `anchor` and `correspondent` roles (`hermeswire/roles/`). Spawn an anchor with `hermeswire new -s <name> --roles anchor`; it fans out correspondents, which file deep reports to a dropbox (`~/.hermeswire/research/<anchor-session>/`); the anchor briefs asymmetrically (`say` headline + `portal_notify` card) on the human's cue.
+> - **Phase 2:** the passive `ingest` message kind — never auto-delivered (routes to a reserved `ingest/` subdir the drain skips), pulled with `hermeswire msg pull` / MCP `msg_pull`. Correspondents now drop a passive pointer; the anchor pulls on the human's cue (awareness without being driven). Plus MCP `worktree_create` and a `--prompt` seed flag on `hermeswire worktree` (spawn + seed in one call, verified delivery), completing the worktree lifecycle quartet (create / status / list / remove).
 >
-> - **Phase 3 (shipped):** unified `say(text=, display=)` — one call speaks a headline AND shows a richer text card (different content per channel). The toast (`notify_user`) now renders a safe markdown subset (bold, [links](url), line breaks). Typed `ref` field on messages + an `agentwire research` / `research_dir()` dropbox resolver under `~/.agentwire/research/<session>/`. Plus a **comms-surface rename** for clarity: the three confusable notify-* tools are now `notify_user` (human toast, was `portal_notify`), `notify_parent` (your orchestrator, was `notify`), `notify_event` (portal lifecycle, was `session_notify` / CLI `notify`→`notify-event`). And parity helpers: MCP `worktree_create` / `worktree_prune` / `msg_flush`, CLI `notify-user`.
+> - **Phase 3 (shipped):** unified `say(text=, display=)` — one call speaks a headline AND shows a richer text card (different content per channel). The toast (`notify_user`) now renders a safe markdown subset (bold, [links](url), line breaks). Typed `ref` field on messages + an `hermeswire research` / `research_dir()` dropbox resolver under `~/.hermeswire/research/<session>/`. Plus a **comms-surface rename** for clarity: the three confusable notify-* tools are now `notify_user` (human toast, was `portal_notify`), `notify_parent` (your orchestrator, was `notify`), `notify_event` (portal lifecycle, was `session_notify` / CLI `notify`→`notify-event`). And parity helpers: MCP `worktree_create` / `worktree_prune` / `msg_flush`, CLI `notify-user`.
 >
 > **Note for readers:** the body below is the original point-in-time investigation; where it cites `portal_notify`, "no worktree-create tool yet", or `mkdir` for the dropbox, the shipped names/tools above supersede it.
 
 > Feasibility + design report. Investigates building an orchestration mode where the **human-facing orchestrator is deliberately terse** (and splits its summary across voice vs. on-screen text so the two channels complement rather than duplicate) while **researcher worktree sessions are exhaustively verbose** and go deep. Researchers signal the orchestrator only with **passive, non-driving** "output ready" awareness; the orchestrator acts only when the **human** directs it.
 >
-> All file:line citations are against the `briefing-mode` branch as checked out (`~/worktrees/agentwire-dev-briefing-mode`). **This is a design report, not an implementation.** A few cheap spikes were used to verify load-bearing claims (e.g. that `msg` delivery presses Enter).
+> All file:line citations are against the `briefing-mode` branch as checked out (`~/worktrees/hermeswire-dev-briefing-mode`). **This is a design report, not an implementation.** A few cheap spikes were used to verify load-bearing claims (e.g. that `msg` delivery presses Enter).
 
 ## TL;DR — Recommendation
 
@@ -29,7 +29,7 @@ phase_3: shipped
 
 The recommended shape, in one breath:
 
-> An **anchor** session (terse, persona-replacing orchestrator role) shells out to `agentwire worktree` to spawn N **correspondent** worktree sessions (verbose researcher role stacked on the worktree-session safety contract). Correspondents write big markdown reports to their own worktree dirs and drop a **passive awareness signal** the watchdog never auto-delivers. The anchor sits idle until the human says "what's ready?", then *pulls* its inbox, reads the report files, synthesizes, and briefs the human across two complementary channels: a punchy spoken **`say`** headline + a richer scannable **`portal_notify`** card. Spawn more or tear down via worktree teardown. The anchor is never interrupted by a correspondent — only by the human.
+> An **anchor** session (terse, persona-replacing orchestrator role) shells out to `hermeswire worktree` to spawn N **correspondent** worktree sessions (verbose researcher role stacked on the worktree-session safety contract). Correspondents write big markdown reports to their own worktree dirs and drop a **passive awareness signal** the watchdog never auto-delivers. The anchor sits idle until the human says "what's ready?", then *pulls* its inbox, reads the report files, synthesizes, and briefs the human across two complementary channels: a punchy spoken **`say`** headline + a richer scannable **`portal_notify`** card. Spawn more or tear down via worktree teardown. The anchor is never interrupted by a correspondent — only by the human.
 
 What's missing is exactly one thing worth building: a **non-driving message flavor** (a `kind=ingest` / `passive: true` message the drain skips, that the orchestrator pulls on its own cadence). Everything else is role discipline + thin wrappers over primitives that already ship.
 
@@ -43,7 +43,7 @@ What's missing is exactly one thing worth building: a **non-driving message flav
 
 ### What exists
 
-- **`say` is TTS-only.** MCP `say(text, session, voice)` at `agentwire/mcp_server.py:795-830`; CLI `cmd_say` at `agentwire/__main__.py:2572-2633` (parser `11032-11044`). It shells to `agentwire say`, returns `"Queued speech."` to the agent, and **shows the human nothing on the desktop**. There is **no `display=`/`text=` second-content param anywhere**.
+- **`say` is TTS-only.** MCP `say(text, session, voice)` at `hermeswire/mcp_server.py:795-830`; CLI `cmd_say` at `hermeswire/__main__.py:2572-2633` (parser `11032-11044`). It shells to `hermeswire say`, returns `"Queued speech."` to the agent, and **shows the human nothing on the desktop**. There is **no `display=`/`text=` second-content param anywhere**.
 - **Smart routing** (`cmd_say`, `__main__.py:2612-2633`): `_check_portal_connections` (`__main__.py:2415`) → browser connected → POST `/api/say/{session}` (`_remote_say`, `__main__.py:3024-3052`); else local audio. Server side `api_say` → `speak()` (`server.py:4077-4113`, `5640+`) broadcasts audio only to that session's clients, with a local-speaker fallback (`server.py:5596-5613`). The text-to-speak is a single `text` field throughout — **no second stream**.
 - **Incidental coupling (mobile only):** TTS broadcasts a `tts_start` WS frame carrying `text` (`server.py:5684`); the **mobile** chat client renders it as a bubble (`mobile.js:285-288`), but the **desktop** session window deliberately renders nothing (`session-window.js:737-738`). So on desktop, voice has no on-screen echo — which is *good* for us: the spoken and displayed channels are independent.
 - **A fully decoupled text-to-screen channel already exists:** `portal_notify(text, session, priority)` — MCP `mcp_server.py:2825-2845` → `/api/desktop/notification` (`server.py:1305-1343`) → a persistent desktop **toast** (`notifications-panel.js:63-98`, body at `:76`). It does **not** speak. This is the asymmetric partner to `say`. (Note: `notify` / `notify-parent` at `mcp_server.py:834-854` is tmux text injection into *another session*, **not** a human-screen channel — wrong tool here.)
@@ -63,23 +63,23 @@ What's missing is exactly one thing worth building: a **non-driving message flav
 
 **Verdict: the role system expresses both roles cleanly, and they stack correctly with the always-on worktree etiquette. No conflicts.**
 
-### How roles resolve (`agentwire/roles/__init__.py`)
+### How roles resolve (`hermeswire/roles/__init__.py`)
 
 - Roles are markdown files with frontmatter, discovered project → user → bundled (`discover_role`, `__init__.py:296-332`), merged by union-of-tools / intersection-of-disallowed / concatenated-instructions (`merge_roles`, `__init__.py:120-160`).
-- **Session kind is *derived* from the spawn verb, never user-set** (`derive_session_kind`, `__init__.py:228-240`): `agentwire new` → `orchestrator` (a **persona** — replaceable default); `agentwire worktree` → `worktree-session` (a **safety-rail** — non-overridable contract).
+- **Session kind is *derived* from the spawn verb, never user-set** (`derive_session_kind`, `__init__.py:228-240`): `hermeswire new` → `orchestrator` (a **persona** — replaceable default); `hermeswire worktree` → `worktree-session` (a **safety-rail** — non-overridable contract).
 - **`resolve_roles` (`__init__.py:243-293`) is the crux for stacking:**
   - For **safety-rail kinds** (`worktree-session`, `worker`): `intrinsic etiquette + project roles + cli roles`, stacked and de-duped. `--roles` **adds** to the contract, never removes it (`__init__.py:277-286`).
-  - For the **persona kind** (`orchestrator`): `--roles` / `.agentwire.yml roles:` **replace** the default (`__init__.py:288-293`).
+  - For the **persona kind** (`orchestrator`): `--roles` / `.hermeswire.yml roles:` **replace** the default (`__init__.py:288-293`).
 - `soul` is auto-appended last unless excluded (`inject_soul`, `__init__.py:168-199`).
 
 ### What this means for Briefing Mode
 
-- **Anchor role** = a persona that *replaces* the orchestrator default. Spawn the anchor with `agentwire new -s <name> --roles anchor` (or set it in `.agentwire.yml`). Because orchestrator is a replaceable persona (`__init__.py:288-293`), the anchor role fully owns the prompt — no leftover generic-orchestrator etiquette to fight. It should bake in: be terse with the human; split summaries asymmetrically across `say`+`portal_notify`; **never act on a correspondent signal until the human directs you**; pull the inbox only on the human's cue.
-- **Correspondent role** = a verbose researcher role that **stacks on top of** the `worktree-session` safety contract. Spawn correspondents with `agentwire worktree <name> -p <repo> --roles correspondent`. Because `worktree-session` is a safety-rail kind, `--roles correspondent` **adds** to (never replaces) the isolation / verify / draft-PR / notify-back etiquette (`__init__.py:277-286`).
+- **Anchor role** = a persona that *replaces* the orchestrator default. Spawn the anchor with `hermeswire new -s <name> --roles anchor` (or set it in `.hermeswire.yml`). Because orchestrator is a replaceable persona (`__init__.py:288-293`), the anchor role fully owns the prompt — no leftover generic-orchestrator etiquette to fight. It should bake in: be terse with the human; split summaries asymmetrically across `say`+`portal_notify`; **never act on a correspondent signal until the human directs you**; pull the inbox only on the human's cue.
+- **Correspondent role** = a verbose researcher role that **stacks on top of** the `worktree-session` safety contract. Spawn correspondents with `hermeswire worktree <name> -p <repo> --roles correspondent`. Because `worktree-session` is a safety-rail kind, `--roles correspondent` **adds** to (never replaces) the isolation / verify / draft-PR / notify-back etiquette (`__init__.py:277-286`).
 
 ### The one tension, and why it's actually a fit
 
-The `worktree-session` etiquette (`agentwire/roles/worktree-session.md:21-35`) says "when done: commit, push, open a **draft PR**, notify back." A correspondent producing a *research report* may not always want a PR. But this composes well:
+The `worktree-session` etiquette (`hermeswire/roles/worktree-session.md:21-35`) says "when done: commit, push, open a **draft PR**, notify back." A correspondent producing a *research report* may not always want a PR. But this composes well:
 
 - For **doc/research output**, the deliverable *is* the report file + the awareness signal — the "notify back" step *is* the briefing-mode signal, just with a different message flavor (§D's passive `ingest` kind instead of `done`). The correspondent role should override the *notify mechanism* (passive signal, not a driving `done`) while keeping isolation + verify.
 - For **code spikes** the correspondent does, the draft-PR step is exactly right.
@@ -90,7 +90,7 @@ So the correspondent role overlays "be exhaustive; write a full report to a file
 
 ## C. Spawning worktree sessions from an agent
 
-**Verdict: the orchestrator must shell out to `agentwire worktree` today — and that's acceptable and safe. We should add an MCP `worktree_create` to close the loop, extending the #430 read/teardown tools.**
+**Verdict: the orchestrator must shell out to `hermeswire worktree` today — and that's acceptable and safe. We should add an MCP `worktree_create` to close the loop, extending the #430 read/teardown tools.**
 
 ### Important branch-state correction
 
@@ -98,14 +98,14 @@ The brief says "we just shipped `worktree_status`/`worktree_list`/`worktree_remo
 
 ### What exists today
 
-- **CLI `agentwire worktree`** (`cmd_worktree`, `__main__.py:5117`; argparse `11276-11293`) does all the heavy lifting: creates tmux session `{project}-{name}`, worktree under `~/worktrees/`, branch off `origin/<base>` honoring the `worktree.naming` template, registers branch↔session, launches via `cmd_new(kind='worktree-session')` so the etiquette auto-injects (`__main__.py:5186-5201`), and is **idempotent/reattaching**. Supports `--json` (`__main__.py:5324-5328`). **Gap: no seed-prompt flag** — it hardcodes `instructions=None` (`__main__.py:5199`), so you must follow up with a separate `session_send` to drive the new session.
+- **CLI `hermeswire worktree`** (`cmd_worktree`, `__main__.py:5117`; argparse `11276-11293`) does all the heavy lifting: creates tmux session `{project}-{name}`, worktree under `~/worktrees/`, branch off `origin/<base>` honoring the `worktree.naming` template, registers branch↔session, launches via `cmd_new(kind='worktree-session')` so the etiquette auto-injects (`__main__.py:5186-5201`), and is **idempotent/reattaching**. Supports `--json` (`__main__.py:5324-5328`). **Gap: no seed-prompt flag** — it hardcodes `instructions=None` (`__main__.py:5199`), so you must follow up with a separate `session_send` to drive the new session.
 - **MCP `session_create` can *already* create worktrees** via `project/branch` naming (`mcp_server.py:301-352`) — but through the older `cmd_new` path, **not** `cmd_worktree`, so it skips the naming template, the registry, and the `worktree-session` etiquette kind. It's a thinner, differently-shaped path. Use it for quick worktrees; use the CLI for the full contract.
 - **No `worktree_create`/`worktree_spawn` MCP tool exists** anywhere (deliberately — even #430 left creation out: "no write verb by design").
-- **Shelling out is safe.** The damage-control rules (`agentwire/hooks/damage-control/rules/agentwire.yaml`) block `agentwire …--force…remove` (`:25-26`) and `tmux kill-session …agentwire` (`:14-15`), but `agentwire worktree <name>` matches none of them; the CLI's internal `tmux kill-session`/`git worktree remove --force` run as subprocesses the hook never inspects. The bash hook matches the *agent's* command string only.
+- **Shelling out is safe.** The damage-control rules (`hermeswire/hooks/damage-control/rules/hermeswire.yaml`) block `hermeswire …--force…remove` (`:25-26`) and `tmux kill-session …hermeswire` (`:14-15`), but `hermeswire worktree <name>` matches none of them; the CLI's internal `tmux kill-session`/`git worktree remove --force` run as subprocesses the hook never inspects. The bash hook matches the *agent's* command string only.
 
 ### Recommendation
 
-- **Now:** the anchor shells out to `agentwire worktree <name> -p <repo> --roles correspondent --json`, parses the JSON, then `session_send`s the task. Acceptable.
+- **Now:** the anchor shells out to `hermeswire worktree <name> -p <repo> --roles correspondent --json`, parses the JSON, then `session_send`s the task. Acceptable.
 - **Build:** add an MCP **`worktree_create`** — a ~10-line thin wrapper over `cmd_worktree --json`, sitting beside #430's `worktree_status`/`list`/`remove` to complete the lifecycle quartet (create + status + list + remove). The CLI is already SSOT and `--json`-capable; the tool just wraps it. **Also add a `--prompt`/`instructions` flag to `cmd_worktree`** so the MCP tool can spawn *and* seed in one call instead of create-then-`session_send`.
 
 ---
@@ -157,13 +157,13 @@ The result: correspondents send `msg send --to <anchor> --kind ingest "report re
 
 Ranked candidates (all verified in code):
 
-1. **Plain file + awareness pointer (WINNER).** A correspondent is a worktree session — it already has a private dir (`~/worktrees/<name>/`). It `Write`s `findings.md` there and sends a small signal carrying the **absolute path**. The anchor `Read`s it on the human's cue. **Zero size limit, no clobbering, durable, uses only existing primitives.** Optionally standardize a blessed dropbox (`~/.agentwire/research/<anchor>/`) so paths are predictable — but the worktree-relative absolute path needs *no new infra*.
-2. **Scratchpad** — `scratchpad_add`/`list` (MCP `mcp_server.py:2367-2408`; storage `~/.agentwire/scratchpad.json`, `scratchpad.py:20`) is genuinely shared/global cross-session. **But** it caps notes at `MAX_NOTE_CHARS = 20_000` and silently truncates above it (`scratchpad.py:22,67`), and it's framed as the human's portal notes drawer. **Good for the *short final briefing*, wrong for the raw verbose report.**
-3. **Handoff bundle** — `handoff_init`/`render`/`list` (`mcp_server.py:1569-1654`) produces `ai-handoff.md` + HTML in `~/.agentwire/artifacts/handoff-<slug>/`. LLM-to-LLM by design, but it's a fill-template-then-render ceremony for distilling a *whole conversation* — **heavyweight** for "here's my report"; the MD it emits is just a file you could `Write` directly.
-4. **Wiki** (`~/.agentwire/wiki/`) — right for **durable, compounding** findings worth keeping across runs; **overkill** as a per-run handoff buffer (pollutes the lint/ground-truth lifecycle).
+1. **Plain file + awareness pointer (WINNER).** A correspondent is a worktree session — it already has a private dir (`~/worktrees/<name>/`). It `Write`s `findings.md` there and sends a small signal carrying the **absolute path**. The anchor `Read`s it on the human's cue. **Zero size limit, no clobbering, durable, uses only existing primitives.** Optionally standardize a blessed dropbox (`~/.hermeswire/research/<anchor>/`) so paths are predictable — but the worktree-relative absolute path needs *no new infra*.
+2. **Scratchpad** — `scratchpad_add`/`list` (MCP `mcp_server.py:2367-2408`; storage `~/.hermeswire/scratchpad.json`, `scratchpad.py:20`) is genuinely shared/global cross-session. **But** it caps notes at `MAX_NOTE_CHARS = 20_000` and silently truncates above it (`scratchpad.py:22,67`), and it's framed as the human's portal notes drawer. **Good for the *short final briefing*, wrong for the raw verbose report.**
+3. **Handoff bundle** — `handoff_init`/`render`/`list` (`mcp_server.py:1569-1654`) produces `ai-handoff.md` + HTML in `~/.hermeswire/artifacts/handoff-<slug>/`. LLM-to-LLM by design, but it's a fill-template-then-render ceremony for distilling a *whole conversation* — **heavyweight** for "here's my report"; the MD it emits is just a file you could `Write` directly.
+4. **Wiki** (`~/.hermeswire/wiki/`) — right for **durable, compounding** findings worth keeping across runs; **overkill** as a per-run handoff buffer (pollutes the lint/ground-truth lifecycle).
 5. **`msg` body** — **never** for the report. The `Message` payload is a single `text` field (`inbox.py:62-89`) pasted into a live prompt box; a big paste renders as a `[Pasted text +N lines]` placeholder that verification can't even confirm landed (`session_ready.py:105-117`). **Perfect for the *pointer*, unusable for the *content*.**
 
-**Missing for max ergonomics (optional):** (a) a blessed `~/.agentwire/research/<anchor>/` dropbox dir + a one-line resolver, mirroring how `inbox/` nests per-session; (b) a typed `ref:`/`path:` field on `Message` (`inbox.py:62`) so pointer-messages are self-documenting instead of free-text-by-convention. Both are nice-to-haves, not blockers.
+**Missing for max ergonomics (optional):** (a) a blessed `~/.hermeswire/research/<anchor>/` dropbox dir + a one-line resolver, mirroring how `inbox/` nests per-session; (b) a typed `ref:`/`path:` field on `Message` (`inbox.py:62`) so pointer-messages are self-documenting instead of free-text-by-convention. Both are nice-to-haves, not blockers.
 
 ---
 
@@ -174,7 +174,7 @@ Ranked candidates (all verified in code):
                     │  "research X across these angles"        "what's ready?" / "go" │
                     ▼                                                   ▼              │
             ┌───────────────┐                                  ┌───────────────┐      │
-            │    ANCHOR     │  spawn (shell: agentwire         │    ANCHOR     │      │
+            │    ANCHOR     │  spawn (shell: hermeswire         │    ANCHOR     │      │
             │  (terse role) │  worktree … --roles correspondent│  pulls inbox  │      │
             │               │  --json) → session_send task     │  (msg pull)   │      │
             └──────┬────────┘                                  └──────┬────────┘      │
@@ -193,7 +193,7 @@ Ranked candidates (all verified in code):
 ```
 
 1. **Human → Anchor:** "research X, these angles." Anchor stays terse.
-2. **Anchor spawns N correspondents** via `agentwire worktree … --roles correspondent` (or MCP `worktree_create` once built), seeds each with a deep-dive task.
+2. **Anchor spawns N correspondents** via `hermeswire worktree … --roles correspondent` (or MCP `worktree_create` once built), seeds each with a deep-dive task.
 3. **Correspondents go deep** (verbose role) inside isolated worktrees, each `Write`ing a full `findings.md`.
 4. **Correspondents signal passively** — `msg --kind ingest "ready: <abs path>"`. The watchdog **does not deliver** it (§D); the anchor is never interrupted.
 5. **Anchor idles** until the **human** says "what's ready?" / "go."
@@ -226,7 +226,7 @@ The anchor is the calm, terse funnel: pushed only by the human, pulling from cor
 | Decoupled text-to-screen channel (`portal_notify` toast) | **EXISTS** | `mcp_server.py:2825-2845`, `server.py:1305-1343` |
 | Asymmetric voice≠text content | **EXISTS via pairing** (role discipline); unified `say(display=)` = polish | §A |
 | Role stacking: persona anchor + safety-rail correspondent | **EXISTS** | `roles/__init__.py:243-293` |
-| Worktree creation from an agent | **EXISTS via CLI** (`agentwire worktree`); MCP `worktree_create` = new thin wrapper | §C |
+| Worktree creation from an agent | **EXISTS via CLI** (`hermeswire worktree`); MCP `worktree_create` = new thin wrapper | §C |
 | Worktree seed-prompt in one step | **MISSING** (`cmd_worktree` hardcodes `instructions=None`) | `__main__.py:5199` |
 | Worktree teardown / read-status MCP tools | **DEPENDS ON #430** (not in branch or main) | commit `354b7a3` |
 | Read inbox without driving | **EXISTS** | `msg_inbox`, `inbox.list_messages` |
@@ -240,7 +240,7 @@ The anchor is the calm, terse funnel: pushed only by the human, pulling from cor
 
 **Phase 1 — MVP, ~zero new code (role discipline + filesystem awareness).**
 - Write two role files: `anchor.md` (terse; asymmetric `say`+`portal_notify`; never act until the human directs; pull awareness on cue) and `correspondent.md` (exhaustive; write `findings.md`; signal passively).
-- Anchor shells out to `agentwire worktree … --roles correspondent --json` and `session_send`s tasks.
+- Anchor shells out to `hermeswire worktree … --roles correspondent --json` and `session_send`s tasks.
 - **Awareness via filesystem dropbox** (correspondents write to a known dir; anchor `ls`/reads on the human's cue) — non-driving by construction, no inbox changes.
 - Asymmetric briefing via **pairing** `say` + `portal_notify` (Option A).
 - *Ships the whole loop today.* Wart: awareness is just files (no sender/kind/dead-letter metadata).
@@ -252,7 +252,7 @@ The anchor is the calm, terse funnel: pushed only by the human, pulling from cor
 
 **Phase 3 — polish.**
 - Unified `say(text=, display=)` shape (Option B) + markdown/link rendering in the toast body (`notifications-panel.js:76`).
-- Blessed `~/.agentwire/research/<anchor>/` dropbox + resolver; typed `ref:`/`path:` field on `Message`.
+- Blessed `~/.hermeswire/research/<anchor>/` dropbox + resolver; typed `ref:`/`path:` field on `Message`.
 
 **Quick win:** Phase 1 + the Phase-2 passive-message primitive together deliver the *real* experience (non-driving awareness with proper signals) for very little code. The rest is ergonomics.
 

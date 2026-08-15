@@ -1,10 +1,10 @@
 """Owner-only files are written owner-only, by one shared implementation (#887).
 
-`~/.agentwire/.env` drifting to 0644 exposed the wider rule: the documented
+`~/.hermeswire/.env` drifting to 0644 exposed the wider rule: the documented
 `chmod 600` was a manual step. Nothing in the codebase writes that file (it is
 hand-authored, loaded via ``load_dotenv``), but ``machines.json`` IS minted by
-agentwire — with a bare ``write_text`` that inherits the umask, which is where
-the live 0644 came from. Every agentwire-written owner-only file now routes
+hermeswire — with a bare ``write_text`` that inherits the umask, which is where
+the live 0644 came from. Every hermeswire-written owner-only file now routes
 through :func:`core.write_owner_only`, the one place the
 fchmod-before-any-bytes-land technique lives.
 """
@@ -15,7 +15,7 @@ import stat
 
 import pytest
 
-from agentwire import core, machine_cli, onboarding, security
+from hermeswire import core, machine_cli, onboarding, security
 
 
 def _mode(path):
@@ -62,7 +62,7 @@ class TestMachinesRegistryIsOwnerOnly:
 
     @pytest.fixture(autouse=True)
     def _config_dir(self, tmp_path, monkeypatch):
-        cfg = tmp_path / ".agentwire"
+        cfg = tmp_path / ".hermeswire"
         cfg.mkdir()
         monkeypatch.setattr(core, "CONFIG_DIR", cfg)
         monkeypatch.setattr(machine_cli, "CONFIG_DIR", cfg)
@@ -94,7 +94,7 @@ class TestPortalTokenStillOwnerOnly:
     """The token writer keeps its guarantees after the shared extraction."""
 
     def test_token_file_is_0600_in_a_0700_dir(self, tmp_path, monkeypatch):
-        token_file = tmp_path / ".agentwire" / "portal.token"
+        token_file = tmp_path / ".hermeswire" / "portal.token"
         monkeypatch.setattr(security, "TOKEN_FILE", token_file)
         security.write_token_file("s3cret")
         assert _mode(token_file) == 0o600

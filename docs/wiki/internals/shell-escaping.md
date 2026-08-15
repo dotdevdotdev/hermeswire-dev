@@ -1,4 +1,4 @@
-# Shell Escaping in AgentWire
+# Shell Escaping in HermesWire
 
 > Living document. Update this, don't create new versions.
 
@@ -8,7 +8,7 @@ This document covers the challenges of passing complex strings (like role instru
 
 ## The Problem
 
-AgentWire sends commands to tmux sessions via `tmux send-keys`. This means:
+HermesWire sends commands to tmux sessions via `tmux send-keys`. This means:
 
 1. Python builds a command string
 2. `subprocess.run(["tmux", "send-keys", "-t", session, command, "Enter"])` sends it
@@ -90,7 +90,7 @@ cmd = f'claude --append-system-prompt "$(<{prompt_file.name})"'
 
 ## Implementation Details
 
-Current implementation in `build_agent_command()` (`agentwire/core.py:216`, the `--append-system-prompt` line at `core.py:274`):
+Current implementation in `build_agent_command()` (`hermeswire/core.py:216`, the `--append-system-prompt` line at `core.py:274`):
 
 ```python
 if merged.instructions:
@@ -123,7 +123,7 @@ no partial-write signal.
 Because the launch line ends in `--append-system-prompt "$(<…)"`, a truncated
 one is syntactically incomplete. zsh parks at a continuation prompt, `claude`
 never runs, and the session is a **bare shell** — the exact zombie shape
-`agentwire/scheduler/zombie.py` reaps, and all `ensure` can say is
+`hermeswire/scheduler/zombie.py` reaps, and all `ensure` can say is
 `Agent not running in session '<name>'`.
 
 Measured (2026-08-03, `tmux send-keys` 0.1s after `new-session`, macOS):
@@ -144,12 +144,12 @@ code, one task broken every night, the rest fine.
 ### The fix: carry the command in the env, don't type it
 
 `tmux new-session -e K=V` is protocol data, not keyboard input, so it has no
-tty cap. The launch line rides in as `AGENTWIRE_LAUNCH_CMD` and the pane is
+tty cap. The launch line rides in as `HERMESWIRE_LAUNCH_CMD` and the pane is
 sent a fixed ~70-char line instead:
 
 ```python
-LAUNCH_CMD_ENV = "AGENTWIRE_LAUNCH_CMD"
-_LAUNCH_EVAL = f'eval "${{{LAUNCH_CMD_ENV}:?agentwire: launch command not injected}}"'
+LAUNCH_CMD_ENV = "HERMESWIRE_LAUNCH_CMD"
+_LAUNCH_EVAL = f'eval "${{{LAUNCH_CMD_ENV}:?hermeswire: launch command not injected}}"'
 ```
 
 The typed line's length is now **independent of** the path, the posture flags,

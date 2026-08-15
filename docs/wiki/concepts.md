@@ -10,13 +10,13 @@ If you'd rather read a diagram than prose, jump to [Architecture](architecture.m
 
 ## Why tmux as the substrate
 
-Most agentic tools spawn one subprocess per agent and call it a day. AgentWire instead runs every agent inside a long-lived **tmux session**. The cost is one extra dependency on every machine; the payoff is large.
+Most agentic tools spawn one subprocess per agent and call it a day. HermesWire instead runs every agent inside a long-lived **tmux session**. The cost is one extra dependency on every machine; the payoff is large.
 
-A tmux session is a process tree that survives shell exits, network drops, and even the agentwire CLI crashing. You can SSH into a remote box, attach to a session a worker started two hours ago, and pick up exactly where it left off. You can pop multiple panes inside the same session and watch a worker stream output while the orchestrator plans the next step. You can capture a pane's scrollback with one command (`tmux capture-pane -p`) and feed it to another agent as context.
+A tmux session is a process tree that survives shell exits, network drops, and even the hermeswire CLI crashing. You can SSH into a remote box, attach to a session a worker started two hours ago, and pick up exactly where it left off. You can pop multiple panes inside the same session and watch a worker stream output while the orchestrator plans the next step. You can capture a pane's scrollback with one command (`tmux capture-pane -p`) and feed it to another agent as context.
 
-Crucially, tmux gives you a stable *addressing* model. A session has a name; a pane has an index. `agentwire send -s myproject 0 "..."` is unambiguous. There's no PID race, no "which terminal tab was that." That's why every channel, every hook, every MCP tool talks to "session + pane" rather than "process." Browser tabs and bare subprocesses can't carry that semantic.
+Crucially, tmux gives you a stable *addressing* model. A session has a name; a pane has an index. `hermeswire send -s myproject 0 "..."` is unambiguous. There's no PID race, no "which terminal tab was that." That's why every channel, every hook, every MCP tool talks to "session + pane" rather than "process." Browser tabs and bare subprocesses can't carry that semantic.
 
-The downside: if you don't have tmux, you don't have AgentWire. We've made peace with that. Every dev machine either has tmux already or is one `apt install` away.
+The downside: if you don't have tmux, you don't have HermesWire. We've made peace with that. Every dev machine either has tmux already or is one `apt install` away.
 
 → Detailed: [Architecture — Process model](architecture.md#process-model).
 
@@ -24,7 +24,7 @@ The downside: if you don't have tmux, you don't have AgentWire. We've made peace
 
 ## Sessions as the unit of work
 
-In AgentWire, a *session* is the smallest unit of meaningful work. Sessions have an identity (name + optional `@machine` suffix), a configuration (`.agentwire.yml` + global config), a state (idle/active/dead), and a transcript (the JSONL Claude Code writes). Everything else — pre-prompts, gates, channels, MCP tools, voice — is plumbing around that core unit.
+In HermesWire, a *session* is the smallest unit of meaningful work. Sessions have an identity (name + optional `@machine` suffix), a configuration (`.hermeswire.yml` + global config), a state (idle/active/dead), and a transcript (the JSONL Claude Code writes). Everything else — pre-prompts, gates, channels, MCP tools, voice — is plumbing around that core unit.
 
 This matters because most automation systems try to make "tasks" or "messages" the unit of work. Tasks are too small (you lose context across them) and messages are too small (you lose state). A session is just the right size: long enough to hold a project's context, short enough to bound a unit of risk, persistent enough to resume.
 
@@ -38,7 +38,7 @@ When you ask "should this be one session or two?" the answer is almost always in
 
 Inside a session, **pane 0 is the orchestrator** — the agent the user (or another session) talks to. Workers live in panes 1+ and are spawned by the orchestrator (typically via the MCP `pane_spawn` tool) for bounded subtasks. When a worker goes idle, an idle-handler hook captures the worker's output, sends a summary alert to pane 0, and kills the worker. Pane 0 is then free to dispatch the next worker, talk to the user, or start another agent.
 
-Role and topology are independent axes (#716): a worker doesn't have to be a pane. `agentwire worktree <name>` spawns the same worker role as a standalone tmux session instead — its own worktree, its own pane 0 — reporting back with a draft PR rather than a pane-idle notification. Same etiquette, different substrate.
+Role and topology are independent axes (#716): a worker doesn't have to be a pane. `hermeswire worktree <name>` spawns the same worker role as a standalone tmux session instead — its own worktree, its own pane 0 — reporting back with a draft PR rather than a pane-idle notification. Same etiquette, different substrate.
 
 This pattern is load-bearing in three ways. **First**, it bounds blast radius: a worker runs on its own isolated branch/worktree, so a mistake stays on a throwaway branch behind a draft PR the orchestrator reviews — and damage-control hooks guard every session regardless of posture. **Second**, it bounds context: workers run with a fresh prompt and a tiny system message, so they don't drag in the orchestrator's 200K-token conversation. **Third**, it bounds attention: pane 0 is where you look. Workers are noise that scrolls by; their summaries are the signal that surfaces.
 
@@ -52,11 +52,11 @@ It also explains a lot of design choices in the wiki. Damage-control rules are s
 
 ## How channels turn agents into pushers
 
-Inbound interaction with AgentWire flows through the **portal** — the web UI + WebSocket. Channels handle the *other* direction: outbound notifications from a session to a human reachable somewhere off the wire. Today that means email (Resend) and SMS (Quo / OpenPhone), plus a third registered channel, `push` (Web Push/VAPID), that auto-mirrors portal toasts to subscribed devices rather than being called directly.
+Inbound interaction with HermesWire flows through the **portal** — the web UI + WebSocket. Channels handle the *other* direction: outbound notifications from a session to a human reachable somewhere off the wire. Today that means email (Resend) and SMS (Quo / OpenPhone), plus a third registered channel, `push` (Web Push/VAPID), that auto-mirrors portal toasts to subscribed devices rather than being called directly.
 
-The shape is dead simple. A channel is a `SendOnlyChannel` subclass with a `send()` coroutine, a YAML config slot, and a CLI wrapper. A session that wants to escalate runs `agentwire email --subject "..." --body "..."` or `agentwire quo --body "..."` and the channel module makes the API call. No background process, no inbound webhook, no public surface.
+The shape is dead simple. A channel is a `SendOnlyChannel` subclass with a `send()` coroutine, a YAML config slot, and a CLI wrapper. A session that wants to escalate runs `hermeswire email --subject "..." --body "..."` or `hermeswire quo --body "..."` and the channel module makes the API call. No background process, no inbound webhook, no public surface.
 
-The takeaway: channels are stateless outbound notifications. Inbound user input is the portal's job. If you want a session to nudge you when it's done or stuck, you wire an `agentwire email` or `agentwire quo` call into the prompt — that's the whole pattern.
+The takeaway: channels are stateless outbound notifications. Inbound user input is the portal's job. If you want a session to nudge you when it's done or stuck, you wire an `hermeswire email` or `hermeswire quo` call into the prompt — that's the whole pattern.
 
 → Detailed: [Channels](communication/channels.md).
 
@@ -79,7 +79,7 @@ A practical decision shortcut:
 
 You now have the mental model. Pick a path:
 
-- **Run something today**: `agentwire new -s test` and pick a posture from the [sessions index](INDEX.md#sessions).
+- **Run something today**: `hermeswire new -s test` and pick a posture from the [sessions index](INDEX.md#sessions).
 - **Define a recurring task**: [Scheduled workloads](scheduling/scheduled-workloads.md).
 - **Wire a channel**: [Channels](communication/channels.md).
 - **Need a term defined**: [Glossary](glossary.md).

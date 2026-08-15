@@ -1,8 +1,8 @@
-"""Tests for agentwire/council/view.py — the read-only board derivation."""
+"""Tests for hermeswire/council/view.py — the read-only board derivation."""
 
 import pytest
 
-from agentwire.council import inbox, state, view
+from hermeswire.council import inbox, state, view
 
 ROSTER = ["brain", "gut", "critic"]
 NAME = "proj"

@@ -1,12 +1,12 @@
-"""Tests for agentwire/locking.py — path sanitization + dead-holder recovery race (#491)."""
+"""Tests for hermeswire/locking.py — path sanitization + dead-holder recovery race (#491)."""
 
 import fcntl
 import multiprocessing as mp
 import time
 from pathlib import Path
 
-import agentwire.locking as locking
-from agentwire.locking import (
+import hermeswire.locking as locking
+from hermeswire.locking import (
     _get_lock_path,
     session_lock,
 )
@@ -44,7 +44,7 @@ class TestLockPathSanitization:
 
 def _point_lockdir(lockdir: str) -> None:
     """Repoint the module's LOCKS_DIR in this (child) process."""
-    import agentwire.locking as locking
+    import hermeswire.locking as locking
 
     locking.LOCKS_DIR = Path(lockdir)
 
@@ -94,7 +94,7 @@ def test_waiter_never_steals_live_lock_with_dead_pid(tmp_path, monkeypatch):
     """A waiter must NOT enter while a live holder holds the flock, even when the
     lock file records a dead PID. Reproduces #491: the old code unlinked the live
     lock and entered immediately; the fix keeps the waiter blocked on the flock."""
-    monkeypatch.setattr("agentwire.locking.LOCKS_DIR", tmp_path)
+    monkeypatch.setattr("hermeswire.locking.LOCKS_DIR", tmp_path)
     tmp_path.mkdir(parents=True, exist_ok=True)
     session = "race-steal"
 
@@ -133,7 +133,7 @@ def test_waiter_never_steals_live_lock_with_dead_pid(tmp_path, monkeypatch):
 def test_dead_holder_recovered_without_unlink(tmp_path, monkeypatch):
     """A waiter recovers from a genuinely-dead holder via flock auto-release,
     and the lock file is never unlinked during recovery (same inode throughout)."""
-    monkeypatch.setattr("agentwire.locking.LOCKS_DIR", tmp_path)
+    monkeypatch.setattr("hermeswire.locking.LOCKS_DIR", tmp_path)
     tmp_path.mkdir(parents=True, exist_ok=True)
     session = "race-recover"
     lock_path = tmp_path / f"{session}.lock"

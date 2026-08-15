@@ -1,4 +1,4 @@
-"""``agentwire history resume`` derives a tmux-LEGAL session name (#870).
+"""``hermeswire history resume`` derives a tmux-LEGAL session name (#870).
 
 Sixth copy of the ``.`` → ``_`` mapping #869 consolidated into
 ``worktree.tmux_safe_name``. tmux reads ``.`` as its ``session.window``
@@ -12,7 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from agentwire import history_cli
+from hermeswire import history_cli
 
 
 @pytest.fixture
@@ -23,7 +23,7 @@ def resume(tmp_path, monkeypatch):
     with the recorded tmux argv lists and the reported session name. *existing*
     is the set of session names ``tmux has-session`` answers YES for.
     """
-    from agentwire import history
+    from hermeswire import history
 
     monkeypatch.setattr(history, "resolve_session_id", lambda sid, m: None)
     monkeypatch.setattr(history_cli, "load_project_config", lambda p: None)
@@ -35,7 +35,7 @@ def resume(tmp_path, monkeypatch):
     # attribute `record_session_launch` reads — a hand-rolled SimpleNamespace
     # broke this suite once when the dataclass grew a field (#891) and would
     # break it again on the next one.
-    from agentwire.core import AgentCommand
+    from hermeswire.core import AgentCommand
 
     monkeypatch.setattr(
         history_cli, "build_agent_command",

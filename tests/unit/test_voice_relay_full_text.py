@@ -21,8 +21,8 @@ from pathlib import Path
 
 import pytest
 
-from agentwire import core, inbox
-from agentwire.voice_layer import confirm, relay, transcript, write_tools
+from hermeswire import core, inbox
+from hermeswire.voice_layer import confirm, relay, transcript, write_tools
 
 #: Long enough that every slot clips: the shape the live session produced.
 LONG_INSTRUCTION = (
@@ -36,7 +36,7 @@ LONG_UTTERANCE = (
     "okay so treat it as a running list for anything I say about voice mode "
     "and just keep collecting until I tell you to start on it"
 )
-LONG_SENDER = "agentwire-dev-voice-confirm-spine"
+LONG_SENDER = "hermeswire-dev-voice-confirm-spine"
 
 
 def relay_of(body: str) -> str:
@@ -151,7 +151,7 @@ class TestThePointerRidesExactlyWhenItIsNeeded:
         Nothing pinned this in either direction: the review applied the
         one-token fix to a copy of the branch and all 291 tests still passed.
         """
-        path = "/Users/dotdev/.agentwire/voice/relays/a1b2c3.md"
+        path = "/Users/dotdev/.hermeswire/voice/relays/a1b2c3.md"
         instruction = "i" * length  # ≤ MAX_RENDERED_INSTRUCTION_CHARS: whole today
         utterance = "u" * confirm.MAX_UTTERANCE_CHARS  # the 90-char quote that squeezes
         body = confirm.render_body(
@@ -170,9 +170,9 @@ class TestThePointerRidesExactlyWhenItIsNeeded:
             "i" * (confirm.MAX_RENDERED_INSTRUCTION_CHARS + 1),
             "u" * confirm.MAX_UTTERANCE_CHARS,
             "a1b2c3",
-            full_path="/Users/dotdev/.agentwire/voice/relays/a1b2c3.md",
+            full_path="/Users/dotdev/.hermeswire/voice/relays/a1b2c3.md",
         )
-        assert relay_of(body) == "/Users/dotdev/.agentwire/voice/relays/a1b2c3.md"
+        assert relay_of(body) == "/Users/dotdev/.hermeswire/voice/relays/a1b2c3.md"
 
     def test_the_short_body_is_unchanged_from_before_the_fix(self):
         """The common case is byte-identical, so #1015 cannot have quietly
@@ -182,7 +182,7 @@ class TestThePointerRidesExactlyWhenItIsNeeded:
         )
         assert body == (
             'restart the portal ┃ said: "confirm tango" ┃ '
-            'reply: agentwire msg send --to buddy --kind done "<answer>" ┃ #a1b2c3'
+            'reply: hermeswire msg send --to buddy --kind done "<answer>" ┃ #a1b2c3'
         )
 
 
@@ -196,7 +196,7 @@ class TestThePointerIsNotDroppable:
     def test_the_pointer_and_the_id_both_survive_every_length(
         self, instruction_len, utterance_len
     ):
-        path = "/Users/dotdev/.agentwire/voice/relays/a1b2c3.md"
+        path = "/Users/dotdev/.hermeswire/voice/relays/a1b2c3.md"
         body = confirm.render_body(
             "x" * instruction_len,
             "y" * utterance_len,
@@ -215,7 +215,7 @@ class TestThePointerIsNotDroppable:
         body = confirm.render_body(
             "x" * 5000, "y" * 5000, "a1b2c3",
             reply_to=LONG_SENDER,
-            full_path="/Users/dotdev/.agentwire/voice/relays/a1b2c3.md",
+            full_path="/Users/dotdev/.hermeswire/voice/relays/a1b2c3.md",
         )
         rendered = inbox.Message(
             id="1700000000000000000-abc123",
@@ -238,7 +238,7 @@ class TestThePointerIsNotDroppable:
             "/private/var/folders/1d/g63f4vld5x79q6m_swhxjpb00000gn/T/"
             "pytest-of-dotdev/pytest-3119/home1"
         )
-        path = f"{deep}/.agentwire/voice/relays/a1b2c3.md"
+        path = f"{deep}/.hermeswire/voice/relays/a1b2c3.md"
         assert (
             confirm.MAX_BODY_CHARS
             - len(f"{confirm.POINTER_LABEL}{path}")

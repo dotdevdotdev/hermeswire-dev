@@ -21,8 +21,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
-from agentwire.config import load_config
-from agentwire.server import AgentWireServer
+from hermeswire.config import load_config
+from hermeswire.server import HermesWireServer
 
 
 @pytest.fixture
@@ -31,9 +31,9 @@ async def portal_client(tmp_path):
     config = load_config(tmp_path / "nonexistent.yaml")
     config.artifacts = type(config.artifacts)(dir=tmp_path / "artifacts", max_size_mb=10)
     (tmp_path / "artifacts").mkdir()
-    server = AgentWireServer(config)
-    # Patch run_agentwire_cmd globally so WS handlers never call real subprocesses
-    server.run_agentwire_cmd = AsyncMock(return_value=(True, {"sessions": []}))
+    server = HermesWireServer(config)
+    # Patch run_hermeswire_cmd globally so WS handlers never call real subprocesses
+    server.run_hermeswire_cmd = AsyncMock(return_value=(True, {"sessions": []}))
     async with TestClient(TestServer(server.app)) as client:
         yield client, server
 

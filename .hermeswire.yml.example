@@ -1,0 +1,14 @@
+# hermeswire-dev project config — committed template (#620).
+#
+# This `.hermeswire.yml.example` is the default config a fresh clone uses out of
+# the box: `hermeswire new` here spawns a contributor session (repo-aware
+# onboarding + issue-filing + fork-based PR coaching).
+#
+# To override locally, create a real `.hermeswire.yml` next to this file. It is
+# gitignored, so it stays personal and never ships — and it WINS over this
+# template (a live `.hermeswire.yml` is resolved before the `.example` fallback).
+# The repo owner uses this to layer an untracked owner-override role:
+#   roles: [contributor, owner-override]
+posture: bypass
+roles:
+  - contributor

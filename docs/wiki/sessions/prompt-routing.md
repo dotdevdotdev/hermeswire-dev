@@ -8,14 +8,14 @@ the human paths (audio alert + portal dialog) still fire, **and** the
 session's parent/orchestrator gets a text notification with enough context to
 inspect and answer. No parent → behavior is exactly what it was before.
 
-Issue #276. Core module: `agentwire/prompt_router.py`.
+Issue #276. Core module: `hermeswire/prompt_router.py`.
 
 ## Detection paths
 
 | Path | Latency | Covers | How |
 |------|---------|--------|-----|
-| **Hook** | seconds | Permission prompts | `agentwire-permission.sh` POSTs to `/api/permission/{session}` with `pane_index` + `tmux_session`; the portal routes before waiting on the human |
-| **Sweep** | ≤60s | Plan-approval, AskUserQuestion, resume-from-summary, permission (backstop) | Rides the usage-limit watchdog: `agentwire limits tick` runs `usage_limit.tick()` **then** `prompt_router.tick()` — a usage-limit dialog parks before the prompt sweep ever sees it |
+| **Hook** | seconds | Permission prompts | `hermeswire-permission.sh` POSTs to `/api/permission/{session}` with `pane_index` + `tmux_session`; the portal routes before waiting on the human |
+| **Sweep** | ≤60s | Plan-approval, AskUserQuestion, resume-from-summary, permission (backstop) | Rides the usage-limit watchdog: `hermeswire limits tick` runs `usage_limit.tick()` **then** `prompt_router.tick()` — a usage-limit dialog parks before the prompt sweep ever sees it |
 
 The sweep only looks at Claude Code panes (`pane_current_command` of `node`/
 `claude`/a version string) and uses real-capture-derived detectors with a
@@ -51,7 +51,7 @@ and it is worth understanding *why* rather than just that it's handled:
 Four sessions sat here after the #901 recovery — one about four hours, including
 the session that owned the P0 — and "13 sessions recovered" was reported on
 process-liveness alone. Not an incident-only path either: it fires on *any*
-sufficiently large resume, and `agentwire restart` (#871) resumes in place.
+sufficiently large resume, and `hermeswire restart` (#871) resumes in place.
 
 Three details that are load-bearing rather than incidental:
 
@@ -88,9 +88,9 @@ indistinguishable from healthy and permanent. That is
 failure is:
 
 1. **logged** per pane — `detect_failed` in
-   `~/.agentwire/prompt-router-events.jsonl`, with session, pane and exception
+   `~/.hermeswire/prompt-router-events.jsonl`, with session, pane and exception
    type, so the condition is one grep away after the fact;
-2. **returned** under `sweep()`'s `failed` key, which `agentwire limits tick`
+2. **returned** under `sweep()`'s `failed` key, which `hermeswire limits tick`
    prints and the JSON consumers read;
 3. **reported** by `blocked_panes()` as `status=detector_error`, so `doctor`
    flags it as an issue.
@@ -124,7 +124,7 @@ as seconds old to anything measuring the wait.
 ## Finding blocked sessions
 
 `prompt_router.blocked_panes()` is the read-only view — detect and report,
-never route, never write a marker, never answer. `agentwire doctor` renders it:
+never route, never write a marker, never answer. `hermeswire doctor` renders it:
 
 | `status` | Meaning |
 |----------|---------|
@@ -155,17 +155,17 @@ target). Two tmux behaviours it exists to keep nobody re-deriving:
 ## Parent resolution (precedence)
 
 1. **Worker pane** (index > 0) → pane 0 of the same session.
-2. **Creator**: `agentwire new` / `agentwire worktree` record the calling
-   tmux session in `~/.agentwire/sessions/{name}/metadata.json` — but only
+2. **Creator**: `hermeswire new` / `hermeswire worktree` record the calling
+   tmux session in `~/.hermeswire/sessions/{name}/metadata.json` — but only
    by **default when the new session is in the caller's own project**
    (same git repo, checked via `git rev-parse --git-common-dir` so it
    survives linked worktrees); a worktree/session spawned into a genuinely
    different project defaults to a standalone root instead of nesting under
    the caller (#715). `--created-by <name>` forces a specific parent
    regardless of project (e.g. for closely related projects); `--created-by
-   ''` forces standalone even within the same project. `agentwire kill`
+   ''` forces standalone even within the same project. `hermeswire kill`
    removes a recorded creator.
-3. **`.agentwire.yml` `parent:`** field.
+3. **`.hermeswire.yml` `parent:`** field.
 4. None → human-only, unchanged.
 
 Depth-1 and local-machine only. Remote (`@machine`) parents are out of scope:
@@ -173,7 +173,7 @@ each machine's own watchdog sweeps its panes; cross-machine delivery falls
 back to human-only.
 
 **Idle notifications use the same resolution.** When a pane-0 session goes idle,
-`idle-handler.sh` calls `agentwire notify-parent --on-idle --queued`, which
+`idle-handler.sh` calls `hermeswire notify-parent --on-idle --queued`, which
 resolves the parent through the precedence above and then (#667) **enqueues the
 report-back on the [polite msg inbox](messaging.md) as `kind=done`** instead of
 direct-pasting: the drain's empty-box gate means a busy orchestrator defers the
@@ -181,9 +181,9 @@ message rather than accumulating unsubmitted `[NOTIFY …]` lines in its input
 box, busy deferral carries no dead-letter penalty, and an undeliverable
 report-back dead-letters + emails the owner instead of vanishing (the hook logs
 CLI failures instead of discarding them). Non-queued `notify-parent` calls
-still direct-paste via `safe_deliver`. Resolution itself is unchanged — so a worktree / `agentwire new` child whose
-parent lives in **creator metadata** (not `.agentwire.yml`) now correctly pings
-its spawner on completion. Earlier the idle hook read only the `.agentwire.yml`
+still direct-paste via `safe_deliver`. Resolution itself is unchanged — so a worktree / `hermeswire new` child whose
+parent lives in **creator metadata** (not `.hermeswire.yml`) now correctly pings
+its spawner on completion. Earlier the idle hook read only the `.hermeswire.yml`
 `parent:` field and silently dropped the notification when it was empty.
 `--on-idle` additionally suppresses the ping when the source is an infrastructure
 **service** (`services.is_service_session` — portal/tts/stt/kokoro/scheduler, the
@@ -194,7 +194,7 @@ callers skip the service check.
 ## Delivery safety
 
 Every delivery goes through `safe_deliver()` (also used by
-`agentwire notify-parent`, which fixed the dead `agentwire alert` path):
+`hermeswire notify-parent`, which fixed the dead `hermeswire alert` path):
 
 - **target_dialog** — the target pane shows a live menu: paste + Enter would
   *answer it*. Deferred, retried next tick.
@@ -216,7 +216,7 @@ text — so it can never be re-detected as a dialog.
 The notification tells the parent to answer **only** via:
 
 ```bash
-agentwire prompts answer -s <session> --pane <n> --expect <hash> <key> [key...]
+hermeswire prompts answer -s <session> --pane <n> --expect <hash> <key> [key...]
 ```
 
 It re-captures the pane, re-detects the prompt, and compares the content hash
@@ -230,7 +230,7 @@ box, a stray `Escape` aborts the child's in-flight turn.
 
 ## Markers + dedupe
 
-`~/.agentwire/prompt-router/{session}.{pane}.json`, presence-based:
+`~/.hermeswire/prompt-router/{session}.{pane}.json`, presence-based:
 
 - Dialog detected → routed once, marker written (sha256 of normalized
   kind+question+options — stable across pane-width re-wraps).
@@ -242,7 +242,7 @@ box, a stray `Escape` aborts the child's in-flight turn.
 - The **idle-handler honors markers**: a pane with a routed prompt pending is
   never summary-prompted or auto-killed.
 
-Events log: `~/.agentwire/prompt-router-events.jsonl` (`prompt_routed`,
+Events log: `~/.hermeswire/prompt-router-events.jsonl` (`prompt_routed`,
 `route_deferred`, `no_parent`, `no_parent_escalated`,
 `no_parent_escalate_failed`, `prompt_answered`, `route_failed`,
 `detect_failed`).
@@ -250,10 +250,10 @@ Events log: `~/.agentwire/prompt-router-events.jsonl` (`prompt_routed`,
 ## CLI
 
 ```bash
-agentwire prompts status                  # pending prompt markers
-agentwire prompts tick                    # run one sweep now
-agentwire prompts answer -s S --expect H 2   # guarded answer
-agentwire prompts clear -s S --pane 1     # drop a marker
+hermeswire prompts status                  # pending prompt markers
+hermeswire prompts tick                    # run one sweep now
+hermeswire prompts answer -s S --expect H 2   # guarded answer
+hermeswire prompts clear -s S --pane 1     # drop a marker
 ```
 
 ## Config
@@ -266,10 +266,10 @@ prompt_router:
 
 ## Troubleshooting
 
-- **A session is alive but doing nothing**: run `agentwire doctor` — the
+- **A session is alive but doing nothing**: run `hermeswire doctor` — the
   blocked-prompt section reads pane content, which is the only thing that sees
   this. Process liveness cannot.
-- **Parent never notified**: check `agentwire prompts status` and the events
+- **Parent never notified**: check `hermeswire prompts status` and the events
   log. `no_parent` → the session has no creator metadata and no yml parent
   (the owner is emailed instead; see above).
   `route_deferred` with `target_dialog`/`target_not_agent` → the parent pane
@@ -286,5 +286,5 @@ prompt_router:
 
 - [Usage-limit recovery](../usage-limit-recovery.md) — same watchdog, runs
   first each tick.
-- [Polite messaging](messaging.md) — `agentwire msg` drains on the same
+- [Polite messaging](messaging.md) — `hermeswire msg` drains on the same
   watchdog tick, after this prompt-routing sweep.

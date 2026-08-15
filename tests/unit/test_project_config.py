@@ -1,4 +1,4 @@
-"""Tests for agentwire/project_config.py — resolve_posture, ProjectConfig."""
+"""Tests for hermeswire/project_config.py — resolve_posture, ProjectConfig."""
 
 
 import os
@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from agentwire.project_config import (
+from hermeswire.project_config import (
     BARE,
     DEFAULT_POSTURE,
     POSTURES,
@@ -67,13 +67,13 @@ class TestProjectConfig:
     def test_from_dict_full(self):
         data = {
             "posture": "bypass",
-            "roles": ["agentwire", "voice"],
+            "roles": ["hermeswire", "voice"],
             "voice": "default",
             "parent": "main",
         }
         config = ProjectConfig.from_dict(data)
         assert config.posture == "bypass"
-        assert config.roles == ["agentwire", "voice"]
+        assert config.roles == ["hermeswire", "voice"]
         assert config.voice == "default"
         assert config.parent == "main"
 
@@ -94,8 +94,8 @@ class TestProjectConfig:
         assert ProjectConfig.from_dict({"posture": "nonsense"}).posture == "bypass"
 
     def test_roles_string_to_list_coercion(self):
-        config = ProjectConfig.from_dict({"roles": "agentwire"})
-        assert config.roles == ["agentwire"]
+        config = ProjectConfig.from_dict({"roles": "hermeswire"})
+        assert config.roles == ["hermeswire"]
 
     def test_roles_none_to_empty_list(self):
         config = ProjectConfig.from_dict({"roles": None})
@@ -109,11 +109,11 @@ class TestProjectConfig:
         # Populated fields appear with their value
         full = ProjectConfig(
             posture="auto",
-            roles=["agentwire"],
+            roles=["hermeswire"],
             voice="default",
         ).to_dict()
         assert full["posture"] == "auto"
-        assert full["roles"] == ["agentwire"]
+        assert full["roles"] == ["hermeswire"]
         assert full["voice"] == "default"
 
     def test_round_trip(self):
@@ -138,7 +138,7 @@ class TestProjectConfigIO:
         config = load_project_config(project_dir)
         assert config is not None
         assert config.posture == "bypass"
-        assert "agentwire" in config.roles
+        assert "hermeswire" in config.roles
 
     def test_load_from_file_path(self, project_config_file):
         config = load_project_config(project_config_file)
@@ -170,7 +170,7 @@ class TestProjectConfigIO:
         child = parent / "src" / "deep"
         child.mkdir(parents=True)
 
-        config_path = parent / ".agentwire.yml"
+        config_path = parent / ".hermeswire.yml"
         with open(config_path, "w") as f:
             yaml.safe_dump({"posture": "bare"}, f)
 
@@ -184,7 +184,7 @@ class TestProjectConfigIO:
 
     def test_find_falls_back_to_example(self, tmp_path):
         # Only the committed template exists → use it (#620).
-        example = tmp_path / ".agentwire.yml.example"
+        example = tmp_path / ".hermeswire.yml.example"
         with open(example, "w") as f:
             yaml.safe_dump({"posture": "bypass", "roles": ["contributor"]}, f)
 
@@ -192,9 +192,9 @@ class TestProjectConfigIO:
         assert found == example
 
     def test_find_live_wins_over_example(self, tmp_path):
-        # A local .agentwire.yml overrides the committed .example at the same level.
-        live = tmp_path / ".agentwire.yml"
-        example = tmp_path / ".agentwire.yml.example"
+        # A local .hermeswire.yml overrides the committed .example at the same level.
+        live = tmp_path / ".hermeswire.yml"
+        example = tmp_path / ".hermeswire.yml.example"
         with open(live, "w") as f:
             yaml.safe_dump({"posture": "bare"}, f)
         with open(example, "w") as f:
@@ -204,7 +204,7 @@ class TestProjectConfigIO:
         assert found == live
 
     def test_load_from_directory_uses_example(self, tmp_path):
-        with open(tmp_path / ".agentwire.yml.example", "w") as f:
+        with open(tmp_path / ".hermeswire.yml.example", "w") as f:
             yaml.safe_dump({"posture": "bypass", "roles": ["contributor"]}, f)
 
         config = load_project_config(tmp_path)
@@ -213,7 +213,7 @@ class TestProjectConfigIO:
         assert config.roles == ["contributor"]
 
 
-# --- worktree: block — per-project overrides for `agentwire worktree` (#705) ---
+# --- worktree: block — per-project overrides for `hermeswire worktree` (#705) ---
 
 class TestWorktreeOverrides:
     def test_full_block(self):
@@ -273,10 +273,10 @@ class TestWorktreeOverrides:
 
 class TestProjectConfigNoSafety:
     def test_safety_block_is_ignored(self):
-        """A `safety:` block in .agentwire.yml is no longer parsed into the config.
+        """A `safety:` block in .hermeswire.yml is no longer parsed into the config.
 
         Per-project safety policy (incl. allowed_paths) lives in the protected
-        .damagecontrol.yml — .agentwire.yml carries none.
+        .damagecontrol.yml — .hermeswire.yml carries none.
         """
         config = ProjectConfig.from_dict({
             "posture": "bypass",
@@ -293,10 +293,10 @@ class TestProjectConfigNoSafety:
 
 class TestProjectConfigNoTasks:
     def test_shell_and_tasks_are_ignored(self):
-        """`shell:`/`tasks:` in .agentwire.yml are no longer parsed into the config.
+        """`shell:`/`tasks:` in .hermeswire.yml are no longer parsed into the config.
 
         Task-execution config (pre/post/on_task_end/shell) lives in the
-        protected .agentwire.tasks.yml — .agentwire.yml carries none of it.
+        protected .hermeswire.tasks.yml — .hermeswire.yml carries none of it.
         """
         config = ProjectConfig.from_dict({
             "posture": "bypass",
@@ -331,7 +331,7 @@ class TestEnsureGitignored:
     def test_adds_entry_in_git_repo(self, tmp_path):
         _git(tmp_path, "init")
         assert ensure_gitignored(tmp_path) is True
-        assert ".agentwire.yml" in (tmp_path / ".gitignore").read_text()
+        assert ".hermeswire.yml" in (tmp_path / ".gitignore").read_text()
 
     def test_idempotent_when_already_ignored(self, tmp_path):
         _git(tmp_path, "init")
@@ -342,8 +342,8 @@ class TestEnsureGitignored:
 
     def test_respects_tracked_file(self, tmp_path):
         _git(tmp_path, "init")
-        (tmp_path / ".agentwire.yml").write_text("posture: bypass\n")
-        _git(tmp_path, "add", ".agentwire.yml")
+        (tmp_path / ".hermeswire.yml").write_text("posture: bypass\n")
+        _git(tmp_path, "add", ".hermeswire.yml")
         _git(tmp_path, "commit", "-m", "track config")
         assert ensure_gitignored(tmp_path) is False
         assert not (tmp_path / ".gitignore").exists()
@@ -354,21 +354,21 @@ class TestEnsureGitignored:
         assert ensure_gitignored(tmp_path) is True
         lines = (tmp_path / ".gitignore").read_text().splitlines()
         assert "*.log" in lines
-        assert ".agentwire.yml" in lines
+        assert ".hermeswire.yml" in lines
 
     def test_save_project_config_gitignores(self, tmp_path):
         _git(tmp_path, "init")
         config = ProjectConfig(posture="bypass")
         assert save_project_config(config, tmp_path) is True
-        assert ".agentwire.yml" in (tmp_path / ".gitignore").read_text()
+        assert ".hermeswire.yml" in (tmp_path / ".gitignore").read_text()
 
     def test_custom_filename_and_pattern(self, tmp_path):
-        """`tasks_cli.py` reuses this for `.agentwire.tasks.yml` w/ a glob pattern."""
+        """`tasks_cli.py` reuses this for `.hermeswire.tasks.yml` w/ a glob pattern."""
         _git(tmp_path, "init")
-        assert ensure_gitignored(tmp_path, ".agentwire.tasks.yml", ".agentwire.tasks*.yml") is True
+        assert ensure_gitignored(tmp_path, ".hermeswire.tasks.yml", ".hermeswire.tasks*.yml") is True
         gitignore = (tmp_path / ".gitignore").read_text()
-        assert ".agentwire.tasks*.yml" in gitignore
-        assert ".agentwire.yml" not in gitignore
+        assert ".hermeswire.tasks*.yml" in gitignore
+        assert ".hermeswire.yml" not in gitignore
 
 
 # --- deleted cwd (#850) ---
@@ -409,7 +409,7 @@ class TestDeletedCwd:
         assert find_project_config() is None
 
     def test_get_voice_from_config_returns_none(self, dead_cwd):
-        """The observed symptom — `agentwire say` dying on the voice lookup.
+        """The observed symptom — `hermeswire say` dying on the voice lookup.
 
         Returning None is what lets the caller's `or` chain reach the global
         default voice; raising is what stopped it.
@@ -433,19 +433,19 @@ class TestDeletedCwd:
         """
         project = tmp_path / "live-project"
         project.mkdir()
-        (project / ".agentwire.yml").write_text("posture: bare\nvoice: echo\n")
+        (project / ".hermeswire.yml").write_text("posture: bare\nvoice: echo\n")
 
-        assert find_project_config(project) == project / ".agentwire.yml"
+        assert find_project_config(project) == project / ".hermeswire.yml"
         assert get_voice_from_config(project) == "echo"
 
     def test_falls_back_to_pwd_env(self, dead_cwd, tmp_path, monkeypatch):
         """$PWD survives the deletion, so a live $PWD still finds the config."""
         project = tmp_path / "still-here"
         project.mkdir()
-        (project / ".agentwire.yml").write_text("posture: bare\nvoice: shimmer\n")
+        (project / ".hermeswire.yml").write_text("posture: bare\nvoice: shimmer\n")
         monkeypatch.setenv("PWD", str(project))
 
-        assert find_project_config() == project / ".agentwire.yml"
+        assert find_project_config() == project / ".hermeswire.yml"
         assert get_voice_from_config() == "shimmer"
 
     def test_stale_pwd_env_does_not_rescue(self, dead_cwd, monkeypatch):
@@ -461,15 +461,15 @@ class TestDeletedCwd:
         target = tmp_path / "writable"
         target.mkdir()
         assert save_project_config(ProjectConfig(posture="bare"), target) is True
-        assert (target / ".agentwire.yml").exists()
+        assert (target / ".hermeswire.yml").exists()
 
     def test_ensure_gitignored_returns_false_for_relative(self, dead_cwd):
         assert ensure_gitignored(Path("rel/dir")) is False
 
     def test_custom_filename_idempotent_via_glob(self, tmp_path):
         _git(tmp_path, "init")
-        ensure_gitignored(tmp_path, ".agentwire.tasks.yml", ".agentwire.tasks*.yml")
+        ensure_gitignored(tmp_path, ".hermeswire.tasks.yml", ".hermeswire.tasks*.yml")
         before = (tmp_path / ".gitignore").read_text()
         # The proposed staging file is already covered by the glob line above.
-        assert ensure_gitignored(tmp_path, ".agentwire.tasks.proposed.yml", ".agentwire.tasks*.yml") is False
+        assert ensure_gitignored(tmp_path, ".hermeswire.tasks.proposed.yml", ".hermeswire.tasks*.yml") is False
         assert (tmp_path / ".gitignore").read_text() == before

@@ -15,7 +15,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from agentwire import session_cli as m
+from hermeswire import session_cli as m
 
 
 @pytest.fixture

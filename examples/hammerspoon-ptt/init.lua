@@ -1,4 +1,4 @@
--- AgentWire — two-key push-to-talk (Hammerspoon)
+-- HermesWire — two-key push-to-talk (Hammerspoon)
 -- ============================================================================
 -- Drop this in ~/.hammerspoon/init.lua (or `require` it from yours) and reload
 -- (Hammerspoon menu > Reload Config, or ⌘⇧R).
@@ -7,7 +7,7 @@
 --
 --   ⌥Space   — talk to the TAB TARGET. Tap to start recording, tap again to
 --              stop + transcribe + send to whichever session the portal is
---              focused on (read from ~/.agentwire/active-session). Falls back
+--              focused on (read from ~/.hermeswire/active-session). Falls back
 --              to a default session if the file is missing/empty.
 --
 --   ⌥⌘Space  — PICK-AND-TALK. Tap to open a session chooser AND start
@@ -17,26 +17,26 @@
 --              session. Esc / dismiss cancels with no send. You pick visually,
 --              so it can never misroute — there's no voice name-matching.
 --
--- It shells out to the agentwire CLI:
---   agentwire listen start              -- begin recording (async)
---   agentwire listen stop -s <session>  -- stop, transcribe, send to session
---   agentwire listen cancel             -- stop and discard (no send)
---   agentwire list --sessions --json    -- live session list, as JSON
+-- It shells out to the hermeswire CLI:
+--   hermeswire listen start              -- begin recording (async)
+--   hermeswire listen stop -s <session>  -- stop, transcribe, send to session
+--   hermeswire listen cancel             -- stop and discard (no send)
+--   hermeswire list --sessions --json    -- live session list, as JSON
 -- ============================================================================
 
 require("hs.ipc")  -- needed for the `hs` CLI; first load may prompt to install
 
 -- ── Config ──────────────────────────────────────────────────────────────────
--- Hammerspoon launches with a stripped PATH (/usr/bin:/bin), so the agentwire
+-- Hammerspoon launches with a stripped PATH (/usr/bin:/bin), so the hermeswire
 -- CLI and its child processes (ffmpeg, etc.) won't resolve. Prepend the usual
 -- Homebrew + user-local bin dirs.
 local PATH = "/opt/homebrew/bin:" .. os.getenv("HOME") .. "/.local/bin:"
     .. (os.getenv("PATH") or "/usr/bin:/bin")
-local agentwire = os.getenv("HOME") .. "/.local/bin/agentwire"
+local hermeswire = os.getenv("HOME") .. "/.local/bin/hermeswire"
 
 -- The portal writes the focused session here (see docs: active-session contract).
-local ACTIVE_FILE = os.getenv("HOME") .. "/.agentwire/active-session"
-local DEFAULT_TARGET = "agentwire"   -- used when the shadow file is missing/empty
+local ACTIVE_FILE = os.getenv("HOME") .. "/.hermeswire/active-session"
+local DEFAULT_TARGET = "hermeswire"   -- used when the shadow file is missing/empty
 
 local SAFETY_SECS = 120   -- force-stop a capture left running this long
 
@@ -53,7 +53,7 @@ local safetyTimer = nil
 
 -- Fire-and-forget. Optional onDone() runs when the process exits.
 local function run(args, onDone)
-    local cmd = "PATH=" .. PATH .. " " .. agentwire .. " " .. table.concat(args, " ")
+    local cmd = "PATH=" .. PATH .. " " .. hermeswire .. " " .. table.concat(args, " ")
     hs.task.new("/bin/bash", function()
         if onDone then onDone() end
     end, {"-c", cmd}):start()
@@ -61,7 +61,7 @@ end
 
 -- Like run(), but hands stdout (trimmed) back to onDone(stdout).
 local function runCapture(args, onDone)
-    local cmd = "PATH=" .. PATH .. " " .. agentwire .. " " .. table.concat(args, " ")
+    local cmd = "PATH=" .. PATH .. " " .. hermeswire .. " " .. table.concat(args, " ")
     hs.task.new("/bin/bash", function(_, stdout)
         onDone((stdout or ""):gsub("%s+$", ""))
     end, {"-c", cmd}):start()
@@ -197,4 +197,4 @@ end
 hs.hotkey.bind({"alt"}, "space", toggleTab)          -- ⌥Space  — talk to tab target
 hs.hotkey.bind({"alt", "cmd"}, "space", togglePick)  -- ⌥⌘Space — pick-and-talk
 
-hs.alert.show("AgentWire PTT ready — ⌥Space talk · ⌥⌘Space pick+talk")
+hs.alert.show("HermesWire PTT ready — ⌥Space talk · ⌥⌘Space pick+talk")

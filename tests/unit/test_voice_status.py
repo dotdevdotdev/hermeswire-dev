@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-import agentwire.voice_status as vs
+import hermeswire.voice_status as vs
 
 
 @pytest.fixture(autouse=True)
@@ -95,7 +95,7 @@ def test_stt_cloud_missing_key(monkeypatch):
 
 
 def test_stt_default_browser_fallback(monkeypatch):
-    import agentwire.stt as stt_mod
+    import hermeswire.stt as stt_mod
     monkeypatch.setattr(stt_mod, "moonshine_importable", lambda: False)
     st = vs.resolve_stt_status(_cfg(stt_backend="default"))
     assert st.ready is True
@@ -104,7 +104,7 @@ def test_stt_default_browser_fallback(monkeypatch):
 
 
 def test_stt_default_probes_shim_when_moonshine_present(monkeypatch):
-    import agentwire.stt as stt_mod
+    import hermeswire.stt as stt_mod
     monkeypatch.setattr(stt_mod, "moonshine_importable", lambda: True)
     monkeypatch.setattr(vs, "_probe", lambda url, endpoint="/health", timeout=2.0: (True, None))
     st = vs.resolve_stt_status(_cfg(stt_backend="default"))
@@ -154,7 +154,7 @@ def test_stt_portal_runtime_no_stt_wins_over_config(monkeypatch):
 
 def test_stt_portal_unreachable_falls_back_to_config(monkeypatch):
     monkeypatch.setattr(vs, "_portal_effective_stt_backend", lambda: None)
-    import agentwire.stt as stt_mod
+    import hermeswire.stt as stt_mod
     monkeypatch.setattr(stt_mod, "moonshine_importable", lambda: True)
     monkeypatch.setattr(vs, "_probe", lambda url, endpoint="/health", timeout=2.0: (True, None))
     st = vs.resolve_stt_status(_cfg(stt_backend="default"))
@@ -166,7 +166,7 @@ def test_stt_no_portal_query_when_probe_off(monkeypatch):
     def boom():
         raise AssertionError("portal queried with probe=False")
     monkeypatch.setattr(vs, "_portal_effective_stt_backend", boom)
-    import agentwire.stt as stt_mod
+    import hermeswire.stt as stt_mod
     monkeypatch.setattr(stt_mod, "moonshine_importable", lambda: True)
     st = vs.resolve_stt_status(_cfg(stt_backend="default"), probe=False)
     assert st.tier == "default"

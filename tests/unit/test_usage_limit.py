@@ -1,4 +1,4 @@
-"""Tests for provider-limit recovery (agentwire/usage_limit.py, issue #8).
+"""Tests for provider-limit recovery (hermeswire/usage_limit.py, issue #8).
 
 Claude's usage-limit select-menu (park/reset dialog) is gone — Hermes surfaces
 provider limits as structured ``AuthError`` codes on the failed turn's stderr
@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from agentwire import usage_limit
+from hermeswire import usage_limit
 
 # Original reader, captured before the autouse fixture stubs it per-test.
 _ORIG_RECOVERY_CONFIG = usage_limit._recovery_config
@@ -83,7 +83,7 @@ class TestDetectLimit:
 
     def test_preflight_hard_auth(self, monkeypatch):
         monkeypatch.setattr(
-            "agentwire.auth_expired.probe_provider_auth",
+            "hermeswire.auth_expired.probe_provider_auth",
             lambda provider: {
                 "provider": provider,
                 "code": "no_usable_credits",
@@ -222,7 +222,7 @@ class TestResume:
             usage_limit, "_capture",
             lambda target, scrollback=None: f"> {usage_limit.RESUME_NUDGE}\n",
         )
-        import agentwire.pane_manager as pm
+        import hermeswire.pane_manager as pm
         monkeypatch.setattr(
             pm, "send_to_target", lambda target, text, enter=True: sent.append((target, text))
         )
@@ -244,7 +244,7 @@ class TestResume:
         state = self._parked()
         monkeypatch.setattr(usage_limit, "_session_exists", lambda s: True)
         monkeypatch.setattr(usage_limit, "_capture", lambda *a, **k: "no echo here")
-        import agentwire.pane_manager as pm
+        import hermeswire.pane_manager as pm
         monkeypatch.setattr(pm, "send_to_target", lambda *a, **k: None)
 
         assert usage_limit.resume_session(state) is False
@@ -254,7 +254,7 @@ class TestResume:
         state = self._parked(resume_attempts=usage_limit.MAX_RESUME_ATTEMPTS - 1)
         monkeypatch.setattr(usage_limit, "_session_exists", lambda s: True)
         monkeypatch.setattr(usage_limit, "_capture", lambda *a, **k: "")
-        import agentwire.pane_manager as pm
+        import hermeswire.pane_manager as pm
         monkeypatch.setattr(pm, "send_to_target", lambda *a, **k: None)
 
         assert usage_limit.resume_session(state) is False
@@ -414,14 +414,14 @@ class TestCheckAndPark:
 
 class TestRecoveryConfig:
     def test_defaults_when_section_absent(self):
-        from agentwire.config import _dict_to_config
+        from hermeswire.config import _dict_to_config
 
         cfg = _dict_to_config({})
         assert cfg.usage_limit.enabled is True
         assert cfg.usage_limit.exclude_sessions == []
 
     def test_section_parsed(self):
-        from agentwire.config import _dict_to_config
+        from hermeswire.config import _dict_to_config
 
         cfg = _dict_to_config({
             "usage_limit": {
@@ -433,7 +433,7 @@ class TestRecoveryConfig:
         assert cfg.usage_limit.exclude_sessions == ["jordan", "fragmentz"]
 
     def test_malformed_section_falls_back_to_defaults(self):
-        from agentwire.config import _dict_to_config
+        from hermeswire.config import _dict_to_config
 
         cfg = _dict_to_config({"usage_limit": "nonsense"})
         assert cfg.usage_limit.enabled is True
@@ -443,8 +443,8 @@ class TestRecoveryConfig:
         assert cfg.usage_limit.exclude_sessions == []
 
     def test_recovery_config_reads_config_object(self, monkeypatch):
-        import agentwire.config as config_mod
-        from agentwire.config import UsageLimitConfig
+        import hermeswire.config as config_mod
+        from hermeswire.config import UsageLimitConfig
 
         class FakeConfig:
             usage_limit = UsageLimitConfig(enabled=False, exclude_sessions=["a", "b"])
@@ -462,7 +462,7 @@ class TestRecoveryConfig:
 
 class TestStatusMappings:
     def test_completion_exit_code(self):
-        from agentwire.completion import status_to_exit_code
+        from hermeswire.completion import status_to_exit_code
 
         assert status_to_exit_code("usage_limit") == 7
         assert status_to_exit_code("complete") == 0
@@ -470,7 +470,7 @@ class TestStatusMappings:
         assert status_to_exit_code("incomplete") == 2
 
     def test_scheduler_status_map(self):
-        from agentwire.scheduler import _EXIT_TO_STATUS, _EXIT_USAGE_LIMIT
+        from hermeswire.scheduler import _EXIT_TO_STATUS, _EXIT_USAGE_LIMIT
 
         assert _EXIT_USAGE_LIMIT == 7
         assert _EXIT_TO_STATUS[7] == "usage_limit"

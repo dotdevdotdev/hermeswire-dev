@@ -1,0 +1,51 @@
+# HermesWire infrastructure damage control rules
+
+bashToolPatterns:
+  # ---------------------------------------------------------------------------
+  # HERMESWIRE INFRASTRUCTURE PROTECTION
+  # ---------------------------------------------------------------------------
+  # Protect HermesWire's core infrastructure from catastrophic damage
+  # HermesWire manages parallel agent sessions via tmux and stores state in ~/.hermeswire/
+
+  # Tmux session destruction
+  - pattern: '\btmux\s+kill-server\b'
+    reason: tmux kill-server (destroys ALL tmux sessions including HermesWire)
+    anchored: true
+
+  - pattern: '\btmux\s+kill-session\s+.*\bhermeswire'
+    reason: tmux kill-session targeting HermesWire sessions
+    anchored: true
+
+  - pattern: '\btmux\s+kill-session\s+.*-a\b'
+    reason: tmux kill-session -a (kills all except current)
+    ask: true
+    anchored: true
+
+  # HermesWire CLI destructive commands (future-proofing)
+  - pattern: '\bhermeswire\s+destroy\b'
+    reason: hermeswire destroy (if implemented - destroys HermesWire state)
+    anchored: true
+
+  - pattern: '\bhermeswire\s+.*--force.*remove\b'
+    reason: hermeswire force remove operations
+    anchored: true
+
+  # HermesWire directory destruction — keyed to the OPERATION, not the spelling
+  # (#949). The old ``\brm\s+.*\.hermeswire`` matched ANY rm that mentioned the
+  # path anywhere, so every legitimate single-file cleanup inside the state
+  # directory (stale registry entries, dead-letter files, log rotation) was
+  # refused with a message claiming the command destroys all state. What is
+  # actually worth a hard block here is a recursive/forced rm whose TARGET is
+  # the .hermeswire directory itself: both a -r/-R/-f (or --recursive/--force)
+  # flag AND a path terminating at .hermeswire — a nested file cannot destroy
+  # the directory and falls through to core.yaml's ordinary (bypassable) rm
+  # rules with an honest reason.
+  - pattern: '\brm\s+(?:[^;&|]*\s)?-(?:[a-zA-Z]*[rRf][a-zA-Z]*|-recursive|-force)\b[^;&|]*\s(?:(?:~|\$HOME|/Users/[^/\s]+|/home/[^/\s]+)/)?\.hermeswire/?(?=\s|$|[;&|])'
+    reason: Recursive/forced rm of the .hermeswire directory itself (destroys HermesWire state)
+    anchored: true
+
+  # Note: `hermeswire tasks promote` (#720/#721) is blocked via
+  # safety/_core.py's PROTECTED_COMMAND_PATTERNS instead of an ordinary
+  # bashToolPatterns entry here — it needs escape-hatch/kill-switch immunity,
+  # which only the code-level protected-command check provides (a rule in
+  # this file would still be overridable by `# allow:`).

@@ -99,10 +99,10 @@ Properties the tests pin, because each is easy to break silently:
 
 ### The reachability rationale is pinned by tests
 
-`PYSEC-2026-3483` is ignored because agentwire never serves MCP over WebSocket.
+`PYSEC-2026-3483` is ignored because hermeswire never serves MCP over WebSocket.
 An ignore justified by "we don't use that path" is only as strong as the path
 staying unused, so `tests/unit/test_pip_audit_report.py` asserts the premise:
-`mcp_server.py` runs `transport="stdio"`, and nothing under `agentwire/` imports
+`mcp_server.py` runs `transport="stdio"`, and nothing under `hermeswire/` imports
 `mcp.server.websocket`. If either changes, the tests fail and name the ignore.
 A rationale that has quietly become false is worse than none.
 
@@ -118,7 +118,7 @@ A rationale that has quietly become false is worse than none.
 (`mcp.server.websocket.websocket_server`) accepts the handshake without `Host` /
 `Origin` validation.
 
-**Why it's acceptable:** agentwire runs its MCP server on **stdio**
+**Why it's acceptable:** hermeswire runs its MCP server on **stdio**
 (`mcp_server.py`: `mcp.run(transport="stdio")`) and never imports that module —
 same reachability argument as the starlette entries below.
 
@@ -150,7 +150,7 @@ universal version across all extras — so the default install is held at
 `starlette 0.50.x`.
 
 **Why it's acceptable:** these are HTTP request-handling CVEs in starlette's
-server. agentwire speaks MCP over **stdio** and serves the portal with
+server. hermeswire speaks MCP over **stdio** and serves the portal with
 **aiohttp**, so starlette's HTTP path is not reachable in normal operation.
 
 **Revisit when:** `mcp` drops its starlette dependency, or `chatterbox-tts` /

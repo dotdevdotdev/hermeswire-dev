@@ -20,8 +20,8 @@ import aiohttp
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
-from agentwire.config import load_config
-from agentwire.server import AgentWireServer
+from hermeswire.config import load_config
+from hermeswire.server import HermesWireServer
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -32,7 +32,7 @@ from agentwire.server import AgentWireServer
 async def portal_client(tmp_path, monkeypatch):
     """Server with mocked subprocess + agent backend, ready for WS connections."""
     config = load_config(tmp_path / "nonexistent.yaml")
-    server = AgentWireServer(config)
+    server = HermesWireServer(config)
 
     # Default agent stub — individual tests can replace .get_output as needed.
     server.agent = MagicMock()
@@ -40,7 +40,7 @@ async def portal_client(tmp_path, monkeypatch):
     server.agent.machines = []
 
     # Subprocess shouldn't fire from any WS path we test.
-    server.run_agentwire_cmd = AsyncMock(return_value=(True, {"sessions": []}))
+    server.run_hermeswire_cmd = AsyncMock(return_value=(True, {"sessions": []}))
 
     async with TestClient(TestServer(server.app)) as client:
         yield client, server
@@ -51,11 +51,11 @@ async def portal_client_with_token(tmp_path):
     """Server with bearer-token auth enforced on WS upgrades."""
     config = load_config(tmp_path / "nonexistent.yaml")
     config.server.auth_token = "testtoken123"
-    server = AgentWireServer(config)
+    server = HermesWireServer(config)
     server.agent = MagicMock()
     server.agent.get_output = MagicMock(return_value="initial scrollback")
     server.agent.machines = []
-    server.run_agentwire_cmd = AsyncMock(return_value=(True, {"sessions": []}))
+    server.run_hermeswire_cmd = AsyncMock(return_value=(True, {"sessions": []}))
     async with TestClient(TestServer(server.app)) as client:
         yield client, server
 
@@ -371,7 +371,7 @@ class TestWebSocketSecurity:
         client, _ = portal_client_with_token
         with pytest.raises(aiohttp.WSServerHandshakeError) as exc:
             await client.ws_connect(
-                "/ws/test-session", protocols=("agentwire.bearer.wrong",)
+                "/ws/test-session", protocols=("hermeswire.bearer.wrong",)
             )
         assert exc.value.status == 401
 
@@ -381,9 +381,9 @@ class TestWebSocketSecurity:
     ):
         client, _ = portal_client_with_token
         async with client.ws_connect(
-            "/ws/test-session", protocols=("agentwire.bearer.testtoken123",)
+            "/ws/test-session", protocols=("hermeswire.bearer.testtoken123",)
         ) as ws:
-            assert ws.protocol == "agentwire.bearer.testtoken123"
+            assert ws.protocol == "hermeswire.bearer.testtoken123"
             msg = await _recv_json(ws)
             assert msg["type"] == "output"
 
@@ -405,7 +405,7 @@ class TestWebSocketSecurity:
         with pytest.raises(aiohttp.WSServerHandshakeError) as exc:
             await client.ws_connect(
                 "/ws/test-session",
-                protocols=("agentwire.bearer.testtoken123",),
+                protocols=("hermeswire.bearer.testtoken123",),
                 headers={"Origin": "https://evil.example"},
             )
         assert exc.value.status == 403
@@ -418,7 +418,7 @@ class TestWebSocketSecurity:
         # Token via subprotocol coexists with cols/rows query params.
         async with client.ws_connect(
             "/ws/terminal/local-session?cols=80&rows=24",
-            protocols=("agentwire.bearer.testtoken123",),
+            protocols=("hermeswire.bearer.testtoken123",),
         ) as ws:
             try:
                 await asyncio.wait_for(ws.receive(), timeout=2.0)

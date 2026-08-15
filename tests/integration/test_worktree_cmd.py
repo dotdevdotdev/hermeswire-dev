@@ -1,4 +1,4 @@
-"""Integration tests for `agentwire worktree` git mechanics (#307).
+"""Integration tests for `hermeswire worktree` git mechanics (#307).
 
 Exercises base-branch derivation, naming templates, monorepo project
 inference, and the local branch↔session registry — with the tmux/session
@@ -12,10 +12,10 @@ from pathlib import Path
 
 import pytest
 
-from agentwire import session_cli as m
-from agentwire import worktree_registry as reg
-from agentwire.config import Config, WorktreeConfig
-from agentwire.worktree import find_git_worktree, main_worktree
+from hermeswire import session_cli as m
+from hermeswire import worktree_registry as reg
+from hermeswire.config import Config, WorktreeConfig
+from hermeswire.worktree import find_git_worktree, main_worktree
 
 
 def _git(repo, *a):
@@ -73,8 +73,8 @@ def _config(worktree_dir, **wt):
 
 def _run(monkeypatch, cfg, **arg_overrides):
     monkeypatch.setattr(m, "load_config", lambda *a, **k: cfg, raising=False)
-    # cmd_worktree imports the typed loader lazily from agentwire.config.
-    import agentwire.config as config_mod
+    # cmd_worktree imports the typed loader lazily from hermeswire.config.
+    import hermeswire.config as config_mod
     monkeypatch.setattr(config_mod, "load_config", lambda *a, **k: cfg)
     base = dict(
         name=None, base=None, current=False, existing=False, ref=None,
@@ -230,7 +230,7 @@ def test_explicit_created_by_wins_over_orchestrator_joint_default(tmp_path, monk
 
 
 def test_orchestrator_sugar_verb_forces_kind(tmp_path, monkeypatch, wt_env):
-    """`agentwire orchestrator` = `worktree --kind orchestrator` — cmd_orchestrator
+    """`hermeswire orchestrator` = `worktree --kind orchestrator` — cmd_orchestrator
     is a thin wrapper that forces args.kind before delegating to cmd_worktree.
     The joint rooting default itself resolves downstream in cmd_new (SSOT —
     see test_cli_commands.py), so this only pins that the sugar verb forces
@@ -245,7 +245,7 @@ def test_orchestrator_sugar_verb_forces_kind(tmp_path, monkeypatch, wt_env):
         roles=None, env=None, created_by=None, caller_session=None, kind=None,
     )
     monkeypatch.setattr(m, "load_config", lambda *a, **k: cfg, raising=False)
-    import agentwire.config as config_mod
+    import hermeswire.config as config_mod
     monkeypatch.setattr(config_mod, "load_config", lambda *a, **k: cfg)
     rc = m.cmd_orchestrator(Namespace(**base))
     assert rc == 0
@@ -254,7 +254,7 @@ def test_orchestrator_sugar_verb_forces_kind(tmp_path, monkeypatch, wt_env):
 
 
 def _fake_agent(**kw):
-    from agentwire.core import AgentCommand
+    from hermeswire.core import AgentCommand
     kw.setdefault("command", "claude")
     kw.setdefault("posture", "bypass")
     return AgentCommand(**kw)
@@ -263,9 +263,9 @@ def _fake_agent(**kw):
 def test_record_session_launch_persists_creator(tmp_path, monkeypatch):
     """The creator-registry mechanism cmd_new uses records the spawner so
     _display_parent (and resolve_parent) returns it for a worktree session."""
-    from agentwire import core
+    from hermeswire import core
 
-    monkeypatch.setattr(core, "CONFIG_DIR", tmp_path / "agentwire")
+    monkeypatch.setattr(core, "CONFIG_DIR", tmp_path / "hermeswire")
     monkeypatch.setattr(core, "get_parent_from_config", lambda *_a, **_k: None)
 
     core.record_session_launch("clone-repo-fix-bug", _fake_agent(), tmp_path,
@@ -277,9 +277,9 @@ def test_record_session_launch_persists_creator(tmp_path, monkeypatch):
 def test_record_session_launch_role_persists_and_merges_with_creator(tmp_path, monkeypatch):
     """#747 — role (orchestrator/worker) is a separate merge-preserving field
     alongside created_by, so the session_created broadcast can carry both."""
-    from agentwire import core
+    from hermeswire import core
 
-    monkeypatch.setattr(core, "CONFIG_DIR", tmp_path / "agentwire")
+    monkeypatch.setattr(core, "CONFIG_DIR", tmp_path / "hermeswire")
 
     core.record_session_launch("clone-repo-fix-bug", _fake_agent(), tmp_path,
                                created_by="orchestrator", created_via="worktree",
@@ -297,9 +297,9 @@ def test_record_session_launch_role_persists_and_merges_with_creator(tmp_path, m
 def test_record_session_launch_records_conversation_identity(tmp_path, monkeypatch):
     """#871 — the launch identity, sufficient to REGENERATE the system prompt
     and to detect history orphaned by a moved worktree."""
-    from agentwire import core
+    from hermeswire import core
 
-    monkeypatch.setattr(core, "CONFIG_DIR", tmp_path / "agentwire")
+    monkeypatch.setattr(core, "CONFIG_DIR", tmp_path / "hermeswire")
     cwd = tmp_path / "wt"
     cwd.mkdir()
 
@@ -318,9 +318,9 @@ def test_record_session_launch_records_conversation_identity(tmp_path, monkeypat
 def test_conversation_ids_are_a_chain_not_a_scalar(tmp_path, monkeypatch):
     """`--fork-session` mints a new id on each resume, so relaunching a session
     must APPEND — a scalar would silently lose everything before the last one."""
-    from agentwire import core
+    from hermeswire import core
 
-    monkeypatch.setattr(core, "CONFIG_DIR", tmp_path / "agentwire")
+    monkeypatch.setattr(core, "CONFIG_DIR", tmp_path / "hermeswire")
 
     core.record_session_launch("s", _fake_agent(conversation_id="a"), tmp_path)
     core.record_session_launch("s", _fake_agent(conversation_id="b"), tmp_path)
@@ -330,9 +330,9 @@ def test_conversation_ids_are_a_chain_not_a_scalar(tmp_path, monkeypatch):
 
 def test_created_at_survives_relaunch_while_launched_at_moves(tmp_path, monkeypatch):
     """created_at is when the session was born; launched_at is this launch."""
-    from agentwire import core
+    from hermeswire import core
 
-    monkeypatch.setattr(core, "CONFIG_DIR", tmp_path / "agentwire")
+    monkeypatch.setattr(core, "CONFIG_DIR", tmp_path / "hermeswire")
 
     first = core.record_session_launch("s", _fake_agent(conversation_id="a"), tmp_path,
                                        created_by="orch")
@@ -344,9 +344,9 @@ def test_created_at_survives_relaunch_while_launched_at_moves(tmp_path, monkeypa
 def test_remote_launch_records_path_but_never_guesses_git(tmp_path, monkeypatch):
     """A remote path may coincidentally exist locally; answering with THIS
     machine's repo/branch for it would be a confident lie."""
-    from agentwire import core
+    from hermeswire import core
 
-    monkeypatch.setattr(core, "CONFIG_DIR", tmp_path / "agentwire")
+    monkeypatch.setattr(core, "CONFIG_DIR", tmp_path / "hermeswire")
     monkeypatch.setattr(core, "git_identity",
                         lambda _p: {"repo": "WRONG", "branch": "WRONG",
                                     "worktree_path": "WRONG"})
@@ -364,7 +364,7 @@ def test_git_identity_asks_git_and_distinguishes_linked_worktree(tmp_path):
     so its presence alone answers "is this session in a worktree"."""
     import subprocess
 
-    from agentwire import core
+    from hermeswire import core
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -401,7 +401,7 @@ def test_notify_portal_session_created_posts_enriched_payload(monkeypatch):
     import json as _json
     import urllib.request
 
-    from agentwire import core
+    from hermeswire import core
 
     seen = {}
 
@@ -434,7 +434,7 @@ def test_notify_portal_session_created_swallows_failures(monkeypatch):
     """Fire-and-forget: the portal may not be running — never raise."""
     import urllib.request
 
-    from agentwire import core
+    from hermeswire import core
 
     def fail(*a, **k):
         raise OSError("connection refused")
@@ -575,15 +575,15 @@ def test_remove_by_full_session_name(tmp_path, monkeypatch, wt_env):
     assert reg.entries(clone.resolve()) == []
 
 
-# --- Per-project overrides via .agentwire.yml `worktree:` block (#705) ---
+# --- Per-project overrides via .hermeswire.yml `worktree:` block (#705) ---
 
 def _write_project_override(repo, **kv):
     import yaml
-    (repo / ".agentwire.yml").write_text(yaml.safe_dump({"worktree": kv}))
+    (repo / ".hermeswire.yml").write_text(yaml.safe_dump({"worktree": kv}))
 
 
 def test_project_dir_override_creates_under_project_dir(tmp_path, monkeypatch, wt_env):
-    """`worktree.dir` in .agentwire.yml moves the root for THIS repo only;
+    """`worktree.dir` in .hermeswire.yml moves the root for THIS repo only;
     the nesting shape <dir>/<project>/<name>/ is unchanged."""
     _, clone = _origin_and_clone(tmp_path, default_branch="develop")
     global_dir = tmp_path / "global-worktrees"
@@ -619,7 +619,7 @@ def test_project_dir_override_remove_round_trip(tmp_path, monkeypatch, wt_env):
 
 
 def test_project_base_override_beats_global(tmp_path, monkeypatch, wt_env):
-    """`worktree.base` in .agentwire.yml wins over config default_base."""
+    """`worktree.base` in .hermeswire.yml wins over config default_base."""
     _, clone = _origin_and_clone(tmp_path, default_branch="develop")
     origin = tmp_path / "origin"
     _git(origin, "branch", "release")
@@ -667,10 +667,10 @@ def test_current_flag_beats_project_base(tmp_path, monkeypatch, wt_env):
 
 
 def test_no_override_falls_through_to_global(tmp_path, monkeypatch, wt_env):
-    """An .agentwire.yml WITHOUT a worktree block changes nothing — global
+    """An .hermeswire.yml WITHOUT a worktree block changes nothing — global
     dir/base apply as before."""
     _, clone = _origin_and_clone(tmp_path, default_branch="develop")
-    (clone / ".agentwire.yml").write_text("posture: bypass\n")
+    (clone / ".hermeswire.yml").write_text("posture: bypass\n")
 
     global_dir = tmp_path / "global-worktrees"
     rc = _run(monkeypatch, _config(global_dir), name="fix-bug", project=str(clone))
@@ -1065,7 +1065,7 @@ def test_remove_does_not_kill_session_when_worktree_removal_fails(tmp_path, monk
 
 def test_gc_merged_alone_runs_as_standalone_action(tmp_path, monkeypatch, wt_env):
     """--gc-merged without --prune must actually run the GC sweep instead of
-    falling through to the 'Usage: agentwire worktree <name>...' error —
+    falling through to the 'Usage: hermeswire worktree <name>...' error —
     --help advertises it, so invoking it standalone must behave, not error (#740)."""
     _, clone = _origin_and_clone(tmp_path, default_branch="develop")
     wt_dir = tmp_path / "worktrees"
@@ -1134,7 +1134,7 @@ def test_remove_reports_the_real_path_not_the_derived_one(tmp_path, monkeypatch,
 
 def test_remove_heals_a_registry_entry_whose_recorded_path_is_stale(tmp_path, monkeypatch, wt_env):
     """Registry says one path, git says another → git wins. The registry is
-    agentwire's bookkeeping; git is ground truth."""
+    hermeswire's bookkeeping; git is ground truth."""
     _, clone = _origin_and_clone(tmp_path, default_branch="develop")
     cfg = _config(tmp_path / "worktrees")
     real = _worktree_at(clone, tmp_path / "real-place" / "drifted", "drifted")
@@ -1184,7 +1184,7 @@ def test_main_checkout_is_never_resolvable_as_a_worktree(tmp_path, monkeypatch, 
     assert main_worktree(clone).resolve() == clone.resolve()
 
 
-# --- #837: `agentwire new -s project/branch` registers too ---
+# --- #837: `hermeswire new -s project/branch` registers too ---
 
 def test_cmd_new_worktree_session_is_registered(tmp_path, monkeypatch):
     """The scheduler's worktree dispatch shells out to exactly this path, so

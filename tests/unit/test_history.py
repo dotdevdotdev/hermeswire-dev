@@ -1,4 +1,4 @@
-"""Tests for agentwire/history.py — Hermes session-store reads (#9).
+"""Tests for hermeswire/history.py — Hermes session-store reads (#9).
 
 The Claude transcript store (``~/.claude/history.jsonl`` +
 ``~/.claude/projects/<encoded-cwd>/<id>.jsonl``) is gone. These pin the Hermes
@@ -11,7 +11,7 @@ unchanged.
 
 import pytest
 
-from agentwire import history
+from hermeswire import history
 
 
 class FakeDB:

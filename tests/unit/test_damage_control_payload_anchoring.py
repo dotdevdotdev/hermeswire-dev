@@ -1,6 +1,6 @@
 """#915 — a report-back must not be refused because of what it SAYS.
 
-``agentwire msg send --to X --kind done "<text>"`` runs its payload through the
+``hermeswire msg send --to X --kind done "<text>"`` runs its payload through the
 Bash rules, so a message that merely *describes* a blocked operation was itself
 blocked. It is not a ``msg send`` bug: any command whose ARGUMENTS discuss a
 guarded operation is refused — ``echo``, ``grep`` for a rule's own reason text,
@@ -19,7 +19,7 @@ PURPOSE so a green run cannot read as "the reported symptom is fixed". See
 ``TestRemainingPayloadMechanisms``.
 
 RULE SET UNDER TEST: the BUNDLED rules at
-``agentwire/hooks/damage-control/rules/*.yaml`` — not ``~/.agentwire/
+``hermeswire/hooks/damage-control/rules/*.yaml`` — not ``~/.hermeswire/
 damage-control/``, which the live hook prefers and which has drifted (#916).
 Every assertion here is a claim about what ships.
 
@@ -35,8 +35,8 @@ import pytest
 import yaml
 
 REPO = Path(__file__).resolve().parent.parent.parent
-RULES_DIR = REPO / "agentwire" / "hooks" / "damage-control" / "rules"
-TOOLDEFS_DIR = REPO / "agentwire" / "tooldefs"
+RULES_DIR = REPO / "hermeswire" / "hooks" / "damage-control" / "rules"
+TOOLDEFS_DIR = REPO / "hermeswire" / "tooldefs"
 
 REFUSED = {"block", "ask"}
 SAFETY = {"enabled": True, "disabled_rules": [], "unattended_allow": []}
@@ -66,7 +66,7 @@ def bundled_config(bash_hook):
     ask-rules are ~87 of the 265 patterns the hook actually sees, and omitting
     them makes commands read ``allow`` here that are ``ask`` in reality. That
     matters for this file specifically, because ``ask`` resolves to a BLOCK
-    under ``AGENTWIRE_UNATTENDED=1`` — so a payload carrier that is merely
+    under ``HERMESWIRE_UNATTENDED=1`` — so a payload carrier that is merely
     "ask" is still broken on a scheduler dispatch.
     """
     cfg = bash_hook.load_config(RULES_DIR, TOOLDEFS_DIR)
@@ -187,13 +187,13 @@ class TestAnchoringIsFileWide:
 
 DANGEROUS_SAMPLE = {
     '\\btmux\\s+kill-server\\b': 'tmux kill-server',
-    '\\btmux\\s+kill-session\\s+.*\\bagentwire': 'tmux kill-session -t agentwire-main',
+    '\\btmux\\s+kill-session\\s+.*\\bhermeswire': 'tmux kill-session -t hermeswire-main',
     '\\btmux\\s+kill-session\\s+.*-a\\b': 'tmux kill-session -t main -a',
-    '\\bagentwire\\s+destroy\\b': 'agentwire destroy',
-    '\\bagentwire\\s+.*--force.*remove\\b': 'agentwire worktree --force --remove old',
+    '\\bhermeswire\\s+destroy\\b': 'hermeswire destroy',
+    '\\bhermeswire\\s+.*--force.*remove\\b': 'hermeswire worktree --force --remove old',
     '\\brm\\s+(?:[^;&|]*\\s)?-(?:[a-zA-Z]*[rRf][a-zA-Z]*|-recursive|-force)\\b'
     '[^;&|]*\\s(?:(?:~|\\$HOME|/Users/[^/\\s]+|/home/[^/\\s]+)/)?'
-    '\\.agentwire/?(?=\\s|$|[;&|])': 'rm -r ~/.agentwire',
+    '\\.hermeswire/?(?=\\s|$|[;&|])': 'rm -r ~/.hermeswire',
     '\\baws\\s+s3\\s+rm\\s+.*--recursive': 'aws s3 rm s3://bucket/data --recursive',
     '\\baws\\s+s3\\s+rb\\s+.*--force': 'aws s3 rb s3://bucket --force',
     '\\baws\\s+ec2\\s+terminate-instances\\b': 'aws ec2 terminate-instances',
@@ -325,8 +325,8 @@ DANGEROUS_SAMPLE = {
     '\\bsam\\s+deploy\\b': 'sam deploy',
     '\\bcdk\\s+deploy\\b': 'cdk deploy',
     '\\bansible-playbook\\b': 'ansible-playbook',
-    '\\bagentwire\\s+email\\b': 'agentwire email',
-    '\\bagentwire\\s+quo\\b': 'agentwire quo',
+    '\\bhermeswire\\s+email\\b': 'hermeswire email',
+    '\\bhermeswire\\s+quo\\b': 'hermeswire quo',
     '\\btwilio\\s+api[:\\w.]*messages[:\\w.]*create\\b': 'twilio api:core:messages:create --to +15551234567 --body hi',
     '\\baws\\s+ses(v2)?\\s+send-email\\b': 'aws ses send-email --to a@b.c',
     '\\baws\\s+sns\\s+publish\\b': 'aws sns publish',
@@ -598,7 +598,7 @@ class TestComposedWithGitNormalization:
             "I did not rm the file",
             "git reset --hard was refused by damage-control",
         ):
-            cmd = f'agentwire msg send --to orch --kind done "{body}"'
+            cmd = f'hermeswire msg send --to orch --kind done "{body}"'
             assert bash_hook.check_command(cmd, bundled_config)["decision"] == "allow"
 
 
@@ -606,7 +606,7 @@ class TestComposedWithPathScopedGrants:
     """Composition with #917's path-scoped `unattended_allow` grants.
 
     #917 evaluates a scope only for a rule that MATCHED and resolved to ``ask``
-    under ``AGENTWIRE_UNATTENDED=1``. This PR changes WHICH rules match. The
+    under ``HERMESWIRE_UNATTENDED=1``. This PR changes WHICH rules match. The
     hazard is therefore specific: a rule that stops matching because of
     anchoring never reaches grant evaluation at all, so the scope check silently
     does not run for it — and the command lands on ``allow`` for the *absence*
@@ -616,11 +616,11 @@ class TestComposedWithPathScopedGrants:
     ``DEFAULT_UNATTENDED_ALLOW`` names six ids; five are tooldef-derived
     (``git.add``, ``git.add-u``, ``git.commit``, ``git.push``, ``gh.pr-create``)
     and were already anchored by #675, so this PR does not touch them. The sixth,
-    ``outbound.agentwire-email``, lives in ``outbound.yaml`` and IS newly
+    ``outbound.hermeswire-email``, lives in ``outbound.yaml`` and IS newly
     anchored here. That one row is the whole intersection.
     """
 
-    GRANTED_HAND_WRITTEN_RULE = "outbound.agentwire-email"
+    GRANTED_HAND_WRITTEN_RULE = "outbound.hermeswire-email"
 
     def test_the_intersection_is_exactly_one_rule(self, bash_hook, bundled_config):
         """Pin the premise — if a future grant names another hand-written rule,
@@ -644,7 +644,7 @@ class TestComposedWithPathScopedGrants:
         """The load-bearing assertion. Anchoring must not stop the granted rule
         matching, or #917's scope check never runs for it."""
         result = bash_hook.check_command(
-            "agentwire email --to a@b.c --subject hi --body hi", bundled_config
+            "hermeswire email --to a@b.c --subject hi --body hi", bundled_config
         )
         assert result["decision"] == "ask", (
             f"the granted rule resolved {result['decision']}, not ask — #917 "
@@ -664,8 +664,8 @@ class TestComposedWithPathScopedGrants:
         because nothing is being sent.
         """
         result = bash_hook.check_command(
-            'agentwire msg send --to orch --kind done '
-            '"agentwire email was refused, so the owner was not notified"',
+            'hermeswire msg send --to orch --kind done '
+            '"hermeswire email was refused, so the owner was not notified"',
             bundled_config,
         )
         assert result["decision"] == "allow"
@@ -676,7 +676,7 @@ class TestQuotedCommandSubstitutionIsNotContent:
     """A dangerous command INSIDE a quoted substitution must still refuse.
 
     The hole this closes, found in review: ``git commit -m "$(rm -rf /x)"`` went
-    BLOCK -> ALLOW **including under AGENTWIRE_UNATTENDED=1**, removing the
+    BLOCK -> ALLOW **including under HERMESWIRE_UNATTENDED=1**, removing the
     fail-closed guarantee that is the entire point of the unattended tier.
 
     Three things had to line up and no one of them does it alone:
@@ -768,7 +768,7 @@ class TestQuotedCommandSubstitutionIsNotContent:
     ):
         """The #915 fix survives the repair — a plain report still sends."""
         result = bash_hook.check_command(
-            'agentwire msg send --to orch --kind done '
+            'hermeswire msg send --to orch --kind done '
             '"the merge could not be completed -- I did not rm the file"',
             bundled_config,
         )
@@ -938,7 +938,7 @@ class TestMutationProvesTheAssertionsHaveTeeth:
             {**p, "anchored": False} for p in bundled_config["bashToolPatterns"]
         ]
         command = (
-            'agentwire msg send --to memory-manager --kind done '
+            'hermeswire msg send --to memory-manager --kind done '
             '"the merge could not be completed -- I did not rm the file"'
         )
         assert bash_hook.check_command(command, bundled_config)["decision"] == "allow"
@@ -968,7 +968,7 @@ PAYLOADS = [
 class TestReportBackPayloadsAreDelivered:
     @pytest.mark.parametrize("body", PAYLOADS)
     def test_msg_send_done_is_allowed(self, bash_hook, bundled_config, body):
-        command = f'agentwire msg send --to memory-manager --kind done "{body}"'
+        command = f'hermeswire msg send --to memory-manager --kind done "{body}"'
         result = bash_hook.check_command(command, bundled_config)
         assert result["decision"] == "allow", (
             f"a report-back was refused for its own text: {result['reason']}"
@@ -976,7 +976,7 @@ class TestReportBackPayloadsAreDelivered:
 
     @pytest.mark.parametrize("body", PAYLOADS)
     def test_notify_parent_is_allowed(self, bash_hook, bundled_config, body):
-        command = f'agentwire notify-parent --to orchestrator "{body}"'
+        command = f'hermeswire notify-parent --to orchestrator "{body}"'
         assert bash_hook.check_command(command, bundled_config)["decision"] == "allow"
 
 
@@ -996,7 +996,7 @@ class TestItIsNotOnlyMsgSend:
         ('git commit -m "{}"', "note: rm -rf of the build dir was blocked"),
         ('gh issue comment 915 --body "{}"', "damage-control refused rm -rf here"),
         ("gh pr create --body-file - <<EOF\n{}\nEOF", "rm -rf was refused here"),
-        ('agentwire msg send --to orch --kind done "{}"',
+        ('hermeswire msg send --to orch --kind done "{}"',
          "damage-control refused rm -rf on the stale worktree"),
     ]
     INNOCUOUS = "everything went fine and nothing needed attention"
@@ -1034,10 +1034,10 @@ class TestItIsNotOnlyMsgSend:
         (mechanism 2, #922); see TestRemainingPayloadMechanisms.
         """
         for command in (
-            "diff ~/.agentwire/damage-control/core.yaml "
-            "agentwire/hooks/damage-control/rules/core.yaml",
-            'grep -n "rm -rf" agentwire/hooks/damage-control/rules/core.yaml',
-            'rg --fixed-strings "git reset --hard" agentwire/',
+            "diff ~/.hermeswire/damage-control/core.yaml "
+            "hermeswire/hooks/damage-control/rules/core.yaml",
+            'grep -n "rm -rf" hermeswire/hooks/damage-control/rules/core.yaml',
+            'rg --fixed-strings "git reset --hard" hermeswire/',
         ):
             result = bash_hook.check_command(command, bundled_config)
             assert result["decision"] == "allow", (
@@ -1078,28 +1078,28 @@ class TestRemainingPayloadMechanisms:
     # look like a real home — the same reason and the same marker as
     # test_damage_control_bypass.py (a tmp HOME under /tmp is allowlisted
     # `allow: all`, which outranks the ladders and makes the rows meaningless).
-    pytestmark = pytest.mark.real_agentwire_home
+    pytestmark = pytest.mark.real_hermeswire_home
 
     # mechanism 2 — the literal incident from #915's body, in its literal form,
     # now released. Destructive companions asserted below.
     LADDER_READS = [
-        'grep -rn "rm -rf" ~/.agentwire/',
+        'grep -rn "rm -rf" ~/.hermeswire/',
         'rg "rm -rf" ~/.hermes/hooks/',
         # `.git/` is a RELATIVE noDeletePath — no $HOME and no tmp prefix, so
         # this row holds regardless of how the suite redirects HOME.
         'grep -rn "rm -rf" .git/',
         # the #922 acceptance command, verbatim
-        'grep -rn "rm file deletion" ~/.agentwire/damage-control/',
+        'grep -rn "rm file deletion" ~/.hermeswire/damage-control/',
     ]
 
     # The guard half: a real destructive verb against the same paths must still
     # refuse — by the mechanism that owns it, not incidentally.
     LADDER_DESTRUCTIVE = [
-        ("shred ~/.agentwire/sessions.json", "noDeletePath"),
+        ("shred ~/.hermeswire/sessions.json", "noDeletePath"),
         ("unlink .git/HEAD", "noDeletePath"),
         # quoted path operand with internal whitespace: the ladder
         # keep-predicate is what keeps this token visible
-        ('shred "~/.agentwire/dead letters.json"', "noDeletePath"),
+        ('shred "~/.hermeswire/dead letters.json"', "noDeletePath"),
     ]
 
     @pytest.mark.parametrize("command", LADDER_READS)
@@ -1176,7 +1176,7 @@ class TestRemainingPayloadMechanisms:
             "echo x > ~/.hermes/config.yaml",
             "sed -i s/x/y/ ~/.hermes/hooks/idle-handler.sh",
             'shred "~/.hermes/hooks/idle handler.sh"',
-            "python3 -c 'open(p, \"w\").write(x)' ~/.agentwire/damagecontrol.yml",
+            "python3 -c 'open(p, \"w\").write(x)' ~/.hermeswire/damagecontrol.yml",
         ):
             blocked, reason = bash_hook.check_protected_command(command, [])
             assert blocked, (
@@ -1212,7 +1212,7 @@ class TestRemainingPayloadMechanisms:
     @pytest.mark.parametrize(
         "command,expected",
         [
-            ('agentwire msg send --to orch --kind done "rmdir"', "allow"),
+            ('hermeswire msg send --to orch --kind done "rmdir"', "allow"),
             ("true  # note: git reset --hard was blocked", "allow"),
             ('ssh prod "reboot"', "ask"),
             ('mongosh --eval "db.dropDatabase()"', "block"),
@@ -1256,7 +1256,7 @@ class TestSshWrappedCoverageReduction:
         ('ssh prod "docker volume rm pgdata"', "containers"),
         ('ssh prod "npm unpublish my-pkg"', "cloud-hosting"),
         ('ssh prod "chmod 777 /srv"', "core"),
-        ('ssh prod "tmux kill-server"', "agentwire"),
+        ('ssh prod "tmux kill-server"', "hermeswire"),
         ('ssh prod "prisma migrate reset"', "db"),
         ('ssh prod "history -c"', "core"),
     ]
@@ -1370,7 +1370,7 @@ class TestExecSurfacePayloadsStayVisible:
         pattern instead of the table.
         """
         result = bash_hook.check_command(
-            "agentwire msg send --to orch --kind done "
+            "hermeswire msg send --to orch --kind done "
             '"the merge failed -- I did not rm -rf the file"',
             bundled_config,
         )
@@ -1410,7 +1410,7 @@ class TestPayloadRescanAndHaystackSynthesisDisagreeOnPurpose:
     ECHOES = [
         "echo git -C /repo push --force",
         'echo "git -C /repo push --force was refused by damage-control"',
-        'agentwire msg send --to orch --kind done '
+        'hermeswire msg send --to orch --kind done '
         '"git -C /repo push --force was refused"',
     ]
 

@@ -1,10 +1,10 @@
 <!--
-Thanks for contributing to AgentWire!
+Thanks for contributing to HermesWire!
 
 Before submitting, please make sure:
 
-1. You've read the CONTRIBUTING guide: https://github.com/dotdevdotdev/agentwire-dev/blob/main/CONTRIBUTING.md
-2. You've run `uvx ruff check agentwire/` with no errors
+1. You've read the CONTRIBUTING guide: https://github.com/dotdevdotdev/hermeswire-dev/blob/main/CONTRIBUTING.md
+2. You've run `uvx ruff check hermeswire/` with no errors
 3. You've tested your changes locally
 4. For bug fixes: include a test that would have caught the bug
 5. For new features: include tests and update docs if needed
@@ -29,7 +29,7 @@ By submitting this PR, you certify the Developer Certificate of Origin
 
 <!--
 How did you verify this works? Examples:
-- "Ran `agentwire say 'test'` and confirmed audio played"
+- "Ran `hermeswire say 'test'` and confirmed audio played"
 - "Added unit test in test_foo.py"
 - "Tested manually with screenshot below"
 

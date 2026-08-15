@@ -18,8 +18,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from agentwire import core, inbox
-from agentwire.voice_layer import delivery, identity, instructions, realtime, tools
+from hermeswire import core, inbox
+from hermeswire.voice_layer import delivery, identity, instructions, realtime, tools
 
 
 @pytest.fixture
@@ -123,7 +123,7 @@ class TestDrainSeam:
         def _never(*a, **k):
             raise AssertionError("safe_deliver must not be reached for an adapter target")
 
-        monkeypatch.setattr("agentwire.prompt_router.safe_deliver", _never)
+        monkeypatch.setattr("hermeswire.prompt_router.safe_deliver", _never)
 
         result = inbox.flush_session("buddy")
         assert result["delivered"] == 1
@@ -155,7 +155,7 @@ class TestDrainSeam:
 
     def test_unadapted_session_still_dead_letters(self, isolate, monkeypatch):
         """Control: the gone gate is untouched for ordinary sessions."""
-        monkeypatch.setattr("agentwire.inbox._escalate_dead_letters", lambda *a, **k: None)
+        monkeypatch.setattr("hermeswire.inbox._escalate_dead_letters", lambda *a, **k: None)
         inbox.enqueue("ghost-session", "hello", kind="note", sender="worker-1")
         result = inbox.flush_session("ghost-session")
         assert result["reason"] == "target_gone"
@@ -445,7 +445,7 @@ class TestBuddyInboxAckThrough:
 class TestSendTimeWarning:
     def test_no_false_gone_warning_for_a_buddy(self, isolate, capsys):
         """``msg send`` must not predict a dead-letter that cannot happen."""
-        from agentwire import msg_cli
+        from hermeswire import msg_cli
 
         identity.register("buddy")
         args = SimpleNamespace(to="buddy", text="hi", kind="note", sender="w",
@@ -496,16 +496,16 @@ class TestToolAllowlist:
     def test_valid_session_name_builds_its_own_argv(self, monkeypatch):
         seen = {}
         monkeypatch.setattr(
-            "agentwire.voice_layer.tools.run_agentwire_cmd",
+            "hermeswire.voice_layer.tools.run_hermeswire_cmd",
             lambda args, **kw: seen.setdefault("args", args) or {"success": True},
         )
-        tools.dispatch("fleet_session_output", {"session": "agentwire-spike", "lines": 10}, "b")
-        assert seen["args"] == ["output", "-s", "agentwire-spike", "-n", "10"]
+        tools.dispatch("fleet_session_output", {"session": "hermeswire-spike", "lines": 10}, "b")
+        assert seen["args"] == ["output", "-s", "hermeswire-spike", "-n", "10"]
 
     def test_line_count_is_clamped_not_trusted(self, monkeypatch):
         seen = {}
         monkeypatch.setattr(
-            "agentwire.voice_layer.tools.run_agentwire_cmd",
+            "hermeswire.voice_layer.tools.run_hermeswire_cmd",
             lambda args, **kw: seen.setdefault("args", args) or {"success": True},
         )
         tools.dispatch("fleet_session_output", {"session": "s", "lines": 10 ** 9}, "b")
@@ -528,7 +528,7 @@ class TestToolAllowlist:
         """The awareness read (#1016) — clamped, and dispatched through the CLI."""
         seen = {}
         monkeypatch.setattr(
-            "agentwire.voice_layer.tools.run_agentwire_cmd",
+            "hermeswire.voice_layer.tools.run_hermeswire_cmd",
             lambda args, **kw: seen.setdefault("args", args) or {"success": True},
         )
         tools.dispatch("fleet_activity", {"limit": 10 ** 9, "hours": 3,
@@ -606,7 +606,7 @@ class TestRealtime:
 
     def test_missing_api_key_names_the_blessed_location(self, monkeypatch):
         monkeypatch.delenv(realtime.API_KEY_ENV, raising=False)
-        with pytest.raises(realtime.RealtimeError, match=r"~/\.agentwire"):
+        with pytest.raises(realtime.RealtimeError, match=r"~/\.hermeswire"):
             realtime.api_key()
 
 
@@ -694,14 +694,14 @@ class TestInstructions:
 
 class TestBridge:
     def test_tool_route_dispatches_through_the_allowlist(self, isolate):
-        from agentwire.voice_layer import server
+        from hermeswire.voice_layer import server
 
         identity.register("buddy")
         bridge = server.BuddyBridge("buddy", "tok")
         assert bridge.tool_call({"name": "nope", "arguments": {}})["success"] is False
 
     def test_malformed_arguments_do_not_raise(self, isolate):
-        from agentwire.voice_layer import server
+        from hermeswire.voice_layer import server
 
         bridge = server.BuddyBridge("buddy", "tok")
         assert bridge.tool_call({"name": "fleet_sessions", "arguments": "{{"})[
@@ -709,12 +709,12 @@ class TestBridge:
         ] is False
 
     def test_page_embeds_the_token_as_json(self):
-        from agentwire.voice_layer import client
+        from hermeswire.voice_layer import client
 
         page = client.page("buddy", 'tok"with-quote')
         assert 'const TOKEN = "tok\\"with-quote"' in page
 
     def test_default_port_avoids_the_portal(self):
-        from agentwire.voice_layer import server
+        from hermeswire.voice_layer import server
 
         assert server.DEFAULT_PORT not in (8100, 8765, 8101)

@@ -16,14 +16,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import numpy as np
 import pytest
 
-from agentwire.tts.audio import pcm_float_to_wav_bytes
-from agentwire.tts.engines.kokoro import (
+from hermeswire.tts.audio import pcm_float_to_wav_bytes
+from hermeswire.tts.engines.kokoro import (
     DEFAULT_VOICE,
     PRESET_VOICES,
     KokoroEngine,
     resolve_voice_name,
 )
-from agentwire.tts.local import LocalKokoro
+from hermeswire.tts.local import LocalKokoro
 
 # ---------------------------------------------------------------------------
 # pcm_float_to_wav_bytes
@@ -178,7 +178,7 @@ class TestLocalKokoro:
         async def on_change(m):
             states.append(m.state)
 
-        with patch("agentwire.tts.engines.kokoro.KokoroEngine", _fake_engine_cls()):
+        with patch("hermeswire.tts.engines.kokoro.KokoroEngine", _fake_engine_cls()):
             manager.start(on_change)
             await manager._task
 
@@ -189,7 +189,7 @@ class TestLocalKokoro:
     async def test_download_failure_reaches_failed(self):
         manager = LocalKokoro()
         fake = _fake_engine_cls(cached=False, download_error=OSError("network down"))
-        with patch("agentwire.tts.engines.kokoro.KokoroEngine", fake):
+        with patch("hermeswire.tts.engines.kokoro.KokoroEngine", fake):
             manager.start()
             await manager._task
 
@@ -199,7 +199,7 @@ class TestLocalKokoro:
 
     async def test_not_importable_is_terminal_unavailable(self):
         manager = LocalKokoro()
-        with patch("agentwire.tts.local.kokoro_importable", return_value=False):
+        with patch("hermeswire.tts.local.kokoro_importable", return_value=False):
             manager.start()
 
         assert manager.state == "unavailable"
@@ -207,7 +207,7 @@ class TestLocalKokoro:
 
     async def test_start_is_idempotent(self):
         manager = LocalKokoro()
-        with patch("agentwire.tts.engines.kokoro.KokoroEngine", _fake_engine_cls()):
+        with patch("hermeswire.tts.engines.kokoro.KokoroEngine", _fake_engine_cls()):
             manager.start()
             task = manager._task
             manager.start()
@@ -241,7 +241,7 @@ class TestLocalKokoro:
         # Short sleep: the to_thread worker can't be interrupted, only the
         # awaiting task — keep it brief so executor shutdown doesn't drag.
         fake.download_models.side_effect = lambda cb=None: __import__("time").sleep(1)
-        with patch("agentwire.tts.engines.kokoro.KokoroEngine", fake):
+        with patch("hermeswire.tts.engines.kokoro.KokoroEngine", fake):
             manager.start()
             await manager.close()
         assert manager._task is None
@@ -254,14 +254,14 @@ class TestLocalKokoro:
 
 class TestWavDurationSeconds:
     def test_exact_duration_from_header(self):
-        from agentwire.server import AgentWireServer
+        from hermeswire.server import HermesWireServer
         wav = pcm_float_to_wav_bytes(np.zeros(36000, dtype=np.float32), 24000)
-        assert AgentWireServer._wav_duration_seconds(wav) == pytest.approx(1.5)
+        assert HermesWireServer._wav_duration_seconds(wav) == pytest.approx(1.5)
 
     def test_garbage_returns_none(self):
-        from agentwire.server import AgentWireServer
-        assert AgentWireServer._wav_duration_seconds(b"not a wav") is None
-        assert AgentWireServer._wav_duration_seconds(b"") is None
+        from hermeswire.server import HermesWireServer
+        assert HermesWireServer._wav_duration_seconds(b"not a wav") is None
+        assert HermesWireServer._wav_duration_seconds(b"") is None
 
 
 # ---------------------------------------------------------------------------
@@ -271,34 +271,34 @@ class TestWavDurationSeconds:
 
 class TestLocalSayDispatch:
     def _dispatch(self, tts_config):
-        from agentwire.channels_cli import _local_say_dispatch
+        from hermeswire.channels_cli import _local_say_dispatch
         return _local_say_dispatch("hello", "default", 0.5, 0.5, tts_config)
 
     def test_default_tier_prefers_kokoro(self):
-        with patch("agentwire.channels_cli._local_say_kokoro", return_value=0) as kokoro, \
-             patch("agentwire.channels_cli._local_say_os") as os_say:
+        with patch("hermeswire.channels_cli._local_say_kokoro", return_value=0) as kokoro, \
+             patch("hermeswire.channels_cli._local_say_os") as os_say:
             # Returns (return_code, sink) — the sink names the path that played.
             assert self._dispatch({"backend": "default"}) == (0, "local-speakers (kokoro)")
         kokoro.assert_called_once()
         os_say.assert_not_called()
 
     def test_default_tier_falls_back_to_os_voice(self):
-        with patch("agentwire.channels_cli._local_say_kokoro", return_value=1), \
-             patch("agentwire.channels_cli._local_say_os", return_value=0) as os_say:
+        with patch("hermeswire.channels_cli._local_say_kokoro", return_value=1), \
+             patch("hermeswire.channels_cli._local_say_os", return_value=0) as os_say:
             assert self._dispatch({"backend": "default"}) == (0, "os-voice")
         os_say.assert_called_once()
 
     def test_backend_none_never_synthesizes(self):
-        with patch("agentwire.channels_cli._local_say_kokoro") as kokoro, \
-             patch("agentwire.channels_cli._local_say_os", return_value=0) as os_say:
+        with patch("hermeswire.channels_cli._local_say_kokoro") as kokoro, \
+             patch("hermeswire.channels_cli._local_say_os", return_value=0) as os_say:
             assert self._dispatch({"backend": "none"}) == (0, "os-voice")
         kokoro.assert_not_called()
         os_say.assert_called_once()
 
     def test_custom_tier_uses_shim(self):
-        with patch("agentwire.channels_cli._local_say", return_value=0) as shim, \
-             patch("agentwire.channels_cli._local_say_kokoro") as kokoro, \
-             patch("agentwire.channels_cli._local_say_os") as os_say:
+        with patch("hermeswire.channels_cli._local_say", return_value=0) as shim, \
+             patch("hermeswire.channels_cli._local_say_kokoro") as kokoro, \
+             patch("hermeswire.channels_cli._local_say_os") as os_say:
             assert self._dispatch({"backend": "custom"}) == (0, "custom-server")
         shim.assert_called_once()
         kokoro.assert_not_called()
@@ -320,7 +320,7 @@ class TestKokoroServer:
     def _client(self, fake):
         from fastapi.testclient import TestClient
 
-        from agentwire.tts import kokoro_server
+        from hermeswire.tts import kokoro_server
 
         # Replace the module-level engine with a controllable fake for the whole
         # test (the patch must outlive lifespan startup, which calls start(),
@@ -408,10 +408,10 @@ class TestTorchFreeImport:
     def test_kokoro_import_pulls_no_torch_or_sibling_engines(self):
         code = (
             "import sys; "
-            "import agentwire.tts.engines.kokoro; "
-            "import agentwire.tts.local; "
+            "import hermeswire.tts.engines.kokoro; "
+            "import hermeswire.tts.local; "
             "assert 'torch' not in sys.modules, 'torch leaked'; "
-            "assert 'agentwire.tts.engines.chatterbox' not in sys.modules, "
+            "assert 'hermeswire.tts.engines.chatterbox' not in sys.modules, "
             "'chatterbox eagerly imported'"
         )
         result = subprocess.run(

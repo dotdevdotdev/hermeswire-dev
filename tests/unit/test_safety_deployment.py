@@ -26,9 +26,9 @@ from pathlib import Path
 
 import pytest
 
-from agentwire import safety_commands
-from agentwire.safety import provenance as prov
-from agentwire.safety._core import load_config
+from hermeswire import safety_commands
+from hermeswire.safety import provenance as prov
+from hermeswire.safety._core import load_config
 
 BUNDLED_RULES = Path(safety_commands.__file__).parent / "hooks" / "damage-control" / "rules"
 BUNDLED_TOOLDEFS = Path(safety_commands.__file__).parent / "tooldefs"
@@ -45,7 +45,7 @@ def sha256(b: bytes) -> str:
 
 @pytest.fixture
 def machine(tmp_path, monkeypatch):
-    """A throwaway ~/.agentwire. Never the real one — that is the incident."""
+    """A throwaway ~/.hermeswire. Never the real one — that is the incident."""
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
@@ -61,7 +61,7 @@ def machine(tmp_path, monkeypatch):
     # command-position damage-control rule (#946 review, F1).
     monkeypatch.setattr(prov, "canonical_package_dir", lambda: RUNNING_PKG.resolve())
 
-    cfg = home / ".agentwire"
+    cfg = home / ".hermeswire"
     monkeypatch.setattr(safety_commands, "CONFIG_DIR", cfg)
     monkeypatch.setattr(safety_commands, "HOOKS_DIR", cfg / "hooks" / "damage-control")
     monkeypatch.setattr(safety_commands, "LOGS_DIR", cfg / "logs" / "damage-control")
@@ -104,14 +104,14 @@ class TestProvenance:
         `rebuild` is the only installer-adjacent command that CHANGES the answer
         every other provenance check reads:
 
-            uv run agentwire hooks install  (worktree) -> refused
-            uv run agentwire rebuild        (worktree) -> worktree becomes canonical
-            agentwire hooks install                    -> proceeds, legitimately
+            uv run hermeswire hooks install  (worktree) -> refused
+            uv run hermeswire rebuild        (worktree) -> worktree becomes canonical
+            hermeswire hooks install                    -> proceeds, legitimately
 
         and that last step is the one CLAUDE.md tells people to run after a code
         change. Guarding `heal` alone is a guard with a door beside it.
         """
-        from agentwire import system_cli
+        from hermeswire import system_cli
 
         class Args:
             force = False
@@ -136,7 +136,7 @@ class TestProvenance:
     def test_rebuild_proceeds_from_a_primary_checkout(self, capsys):
         """Must-fail control for the test above: same call, guard says not a
         worktree, and rebuild gets past it to the git-drift check."""
-        from agentwire import system_cli
+        from hermeswire import system_cli
 
         class Args:
             force = False
@@ -159,7 +159,7 @@ class TestProvenance:
         documented staleness override silently carry a second meaning."""
         import inspect
 
-        from agentwire import system_cli
+        from hermeswire import system_cli
 
         src = inspect.getsource(system_cli.cmd_rebuild)
         guard = src.split("is_worktree_checkout", 1)[1].split("return 1", 1)[0]
@@ -168,17 +168,17 @@ class TestProvenance:
 
     def test_worktree_detection_reads_the_dot_git_kind(self, tmp_path):
         """worktree -> .git is a FILE; primary checkout -> a DIR; installed -> neither."""
-        wt = tmp_path / "wt" / "agentwire"
+        wt = tmp_path / "wt" / "hermeswire"
         wt.mkdir(parents=True)
         (wt.parent / ".git").write_text("gitdir: /somewhere/.git/worktrees/wt\n")
         assert prov.in_git_worktree(wt) is True
 
-        primary = tmp_path / "primary" / "agentwire"
+        primary = tmp_path / "primary" / "hermeswire"
         primary.mkdir(parents=True)
         (primary.parent / ".git").mkdir()
         assert prov.in_git_worktree(primary) is False
 
-        installed = tmp_path / "site-packages" / "agentwire"
+        installed = tmp_path / "site-packages" / "hermeswire"
         installed.mkdir(parents=True)
         assert prov.in_git_worktree(installed) is False
 
@@ -188,7 +188,7 @@ class TestProvenance:
         assert canonical == running == RUNNING_PKG.resolve()
 
     def test_other_install_is_foreign(self, machine, monkeypatch, tmp_path):
-        other = tmp_path / "installed" / "agentwire"
+        other = tmp_path / "installed" / "hermeswire"
         other.mkdir(parents=True)
         monkeypatch.setattr(prov, "canonical_package_dir", lambda: other.resolve())
         state, canonical, running = prov.install_provenance()
@@ -202,13 +202,13 @@ class TestProvenance:
         # fixture's pin first — otherwise it asserts against its own stub.
         monkeypatch.setattr(prov, "canonical_package_dir", _REAL_CANONICAL)
         tools = tmp_path / "tools"
-        pkg = tools / "agentwire-dev" / "lib" / "python3.13" / "site-packages" / "agentwire"
+        pkg = tools / "hermeswire-dev" / "lib" / "python3.13" / "site-packages" / "hermeswire"
         pkg.mkdir(parents=True)
         monkeypatch.setenv("UV_TOOL_DIR", str(tools))
         assert prov.canonical_package_dir() == pkg.resolve()
 
     def test_foreign_heal_refuses_and_writes_nothing(self, machine, monkeypatch, tmp_path, capsys):
-        other = tmp_path / "installed" / "agentwire"
+        other = tmp_path / "installed" / "hermeswire"
         other.mkdir(parents=True)
         monkeypatch.setattr(prov, "canonical_package_dir", lambda: other.resolve())
 
@@ -230,7 +230,7 @@ class TestProvenance:
         Without this the refusal test would also pass if the heal were broken
         for some entirely different reason.
         """
-        other = tmp_path / "installed" / "agentwire"
+        other = tmp_path / "installed" / "hermeswire"
         other.mkdir(parents=True)
         monkeypatch.setattr(prov, "canonical_package_dir", lambda: other.resolve())
 
@@ -241,16 +241,16 @@ class TestProvenance:
 
     def test_install_cmd_returns_nonzero_when_refused(self, machine, monkeypatch, tmp_path):
         """A refusal must never be reportable as a successful install."""
-        other = tmp_path / "installed" / "agentwire"
+        other = tmp_path / "installed" / "hermeswire"
         other.mkdir(parents=True)
         monkeypatch.setattr(prov, "canonical_package_dir", lambda: other.resolve())
         assert safety_commands.safety_install_cmd(assume_yes=True) == 1
 
     def test_hooks_install_refuses_from_foreign_package(self, machine, monkeypatch, tmp_path):
         """`hooks install` SYMLINKS machine-global hooks at its own checkout."""
-        from agentwire import hooks_cli
+        from hermeswire import hooks_cli
 
-        other = tmp_path / "installed" / "agentwire"
+        other = tmp_path / "installed" / "hermeswire"
         other.mkdir(parents=True)
         monkeypatch.setattr(prov, "canonical_package_dir", lambda: other.resolve())
 
@@ -269,8 +269,8 @@ class TestProvenance:
 # ===========================================================================
 
 
-STAMP_BEGIN = "# === BEGIN AGENTWIRE HOOK STAMP (generated — do not edit) ==="
-STAMP_END = "# === END AGENTWIRE HOOK STAMP ==="
+STAMP_BEGIN = "# === BEGIN HERMESWIRE HOOK STAMP (generated — do not edit) ==="
+STAMP_END = "# === END HERMESWIRE HOOK STAMP ==="
 
 
 def _restamp(text: str, generated_at: str) -> str:
@@ -280,7 +280,7 @@ def _restamp(text: str, generated_at: str) -> str:
     stamp = json.loads(body.split("=", 1)[1].strip())
     stamp["generated_at"] = generated_at
     return (
-        f"{head}{STAMP_BEGIN}\nAGENTWIRE_HOOK_STAMP = "
+        f"{head}{STAMP_BEGIN}\nHERMESWIRE_HOOK_STAMP = "
         f"{json.dumps(stamp, sort_keys=True)}\n{STAMP_END}{tail}"
     )
 
@@ -295,7 +295,7 @@ class TestHookOrdering:
             if fn == "audit_logger.py":
                 continue  # hand-written, deliberately unstamped
             stamp = safety_commands.read_hook_stamp(BUNDLED_RULES.parent / fn)
-            assert stamp, f"{fn} has no AGENTWIRE_HOOK_STAMP"
+            assert stamp, f"{fn} has no HERMESWIRE_HOOK_STAMP"
             assert len(stamp["core_sha256"]) == 64
             assert stamp["generated_at"].endswith("Z")
 
@@ -576,7 +576,7 @@ class TestRuleIdUniqueness:
 
 
 def _render_doctor():
-    from agentwire.doctor_cli import _render_damage_control_section
+    from hermeswire.doctor_cli import _render_damage_control_section
     return _render_damage_control_section()
 
 
@@ -681,14 +681,14 @@ def _run_installed_hook(machine_home: Path, command: str):
     """Execute the INSTALLED hook script, as Claude Code does.
 
     Not ``check_command`` in-process, and not the packaged source: the claim
-    under test is about the bytes at ``~/.agentwire/hooks/damage-control/``, so
-    the test drives exactly those, with ``AGENTWIRE_DIR`` pointed at the
+    under test is about the bytes at ``~/.hermeswire/hooks/damage-control/``, so
+    the test drives exactly those, with ``HERMESWIRE_DIR`` pointed at the
     throwaway machine.
     """
     hook = safety_commands.HOOKS_DIR / HOOK
     env = dict(os.environ)
-    env["AGENTWIRE_DIR"] = str(machine_home / ".agentwire")
-    env.pop("AGENTWIRE_UNATTENDED", None)
+    env["HERMESWIRE_DIR"] = str(machine_home / ".hermeswire")
+    env.pop("HERMESWIRE_UNATTENDED", None)
     payload = json.dumps({
         "tool_name": "terminal",
         "tool_input": {"command": command},
@@ -701,7 +701,7 @@ def _run_installed_hook(machine_home: Path, command: str):
 
 
 def _audit_rule_ids(machine_home: Path) -> list:
-    log_dir = machine_home / ".agentwire" / "logs" / "damage-control"
+    log_dir = machine_home / ".hermeswire" / "logs" / "damage-control"
     ids = []
     for f in sorted(log_dir.glob("*.jsonl")):
         for line in f.read_text().splitlines():
@@ -745,7 +745,7 @@ class TestInstalledPathBehaviour:
         # ssh twins (net -7 rules)
         assert len(live["bashToolPatterns"]) >= 255, "live corpus is suspiciously small"
         before_decision = __import__(
-            "agentwire.safety._core", fromlist=["check_command"]
+            "hermeswire.safety._core", fromlist=["check_command"]
         ).check_command(NETLIFY_CMD, live)
         assert before_decision["decision"] != "block", before_decision
 

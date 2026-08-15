@@ -1,7 +1,7 @@
 # Fan-out cohorts — waiting on children without being reaped (#852)
 
 A session that fans out child sessions has one problem nothing else in
-agentwire solves: **idle ≠ done for a parent with outstanding children.** The
+hermeswire solves: **idle ≠ done for a parent with outstanding children.** The
 parent goes idle while *waiting*, the idle handler reads idle as done, and the
 task is reaped — killing the roll-up the parent existed to write and orphaning
 the children's report-backs.
@@ -15,7 +15,7 @@ Enrollment is automatic, so a fan-out is safe by default.
 spawned one child per project needing review.
 
 ```bash
-agentwire new -s memrev/<project> -p ~/projects/<project> --kind worker \
+hermeswire new -s memrev/<project> -p ~/projects/<project> --kind worker \
   --posture bypass --first-message "<review instructions>"
 ```
 
@@ -38,7 +38,7 @@ happened:
 deliberately records **no parent for a cross-project spawn** — a session only
 inherits its caller when the new session's project is the caller's own.
 
-`memory-manager` runs in agentwire-dev and spawned into three other projects,
+`memory-manager` runs in hermeswire-dev and spawned into three other projects,
 so only one of its four children would have carried the link. A guard derived
 from `created_by` would have protected that one child and reaped the parent out
 from under the other three — a **silently half-linked** fan-out, worse than an
@@ -55,7 +55,7 @@ decision:
 
 ## The ledger
 
-`~/.agentwire/cohorts/<parent>.json`:
+`~/.hermeswire/cohorts/<parent>.json`:
 
 ```json
 {"parent": "memory-manager", "task": "memory-manager", "created_at": 1785595520,
@@ -71,7 +71,7 @@ resolving a child also kills its session; `torn_down` records what happened.
 `state` and `deadline` are read by the idle-handler's `jq` as well as by
 Python — renaming either silently disarms the guard.
 
-**Enrollment is automatic.** `agentwire new` (and therefore `agentwire
+**Enrollment is automatic.** `hermeswire new` (and therefore `hermeswire
 worktree`) appends to the caller's ledger whenever there is a caller. The
 failure being prevented is silent and unattended, so it must not depend on a
 task author remembering to register anything. Two spawns opt out: `--no-cohort`
@@ -80,10 +80,10 @@ definition, and rooted for the same reason).
 
 ## Three consumers
 
-### 1. `agentwire wait --children` — the join primitive
+### 1. `hermeswire wait --children` — the join primitive
 
 ```bash
-agentwire wait --children --timeout 300     # MCP: wait_children(timeout=300)
+hermeswire wait --children --timeout 300     # MCP: wait_children(timeout=300)
 ```
 
 Blocking here happens **inside a tool call, which is not idle** — the hook
@@ -113,7 +113,7 @@ branch and possibly an open PR, whose teardown follows merge verification
 trade a visible dangling PR for a silently destroyed working tree. It is still
 enrolled, still collected, and still named when it goes silent; `wait` reports
 it under `left_alive`, and an abandoned one is what `worktree --dangling`
-already flags. The children of the 2026-08-01 leak were `agentwire new`
+already flags. The children of the 2026-08-01 leak were `hermeswire new`
 sessions — `main` topology — and those *are* torn down, because nothing else
 ever reaps them.
 
@@ -126,7 +126,7 @@ can't race the collection and leave the child unresolved until its deadline.
 The hold is bounded by the ledger — once the cohort resolves or the sweeper
 drops it, anything left delivers normally.
 
-> **Collect-then-kill is load-bearing.** `agentwire kill` runs
+> **Collect-then-kill is load-bearing.** `hermeswire kill` runs
 > `inbox.gc_sender()`, which dead-letters the killed session's still-pending
 > load-bearing outbound **and emails the owner**. Kill-before-collect turns
 > every child's `done` report into owner email.
@@ -144,7 +144,7 @@ ledger must never wedge a task alive forever.
 
 ### 3. The watchdog sweeper — the anti-leak backstop
 
-On the existing 60s `agentwire limits tick`, after the zombie reap:
+On the existing 60s `hermeswire limits tick`, after the zombie reap:
 
 - **parent gone** → kill whatever is still pending (main topology only, per
   above) and delete the ledger. This is the crash path (usage limit, guard
@@ -170,7 +170,7 @@ half:
 
 Cohort teardown is deliberately **session-only** and, for worktree children,
 doesn't happen at all — a worktree's branch, open PR, and working tree stay
-entirely with `agentwire worktree --remove`, whose guards split by what's at
+entirely with `hermeswire worktree --remove`, whose guards split by what's at
 risk (#941): worktree/session removal refuses a dirty tree (durability),
 branch deletion demands a verified merge (integration).
 
@@ -178,13 +178,13 @@ branch deletion demands a verified merge (integration).
 
 | Piece | Where |
 |---|---|
-| Ledger + join + sweep | `agentwire/cohort.py` |
-| CLI | `agentwire/wait_cli.py` (`agentwire wait --children`) |
-| MCP | `wait_children` (`agentwire/mcp_session.py`) |
-| Enrollment | `agentwire/session_cli.py` (`cmd_new`) |
-| Idle guard | `agentwire/hooks/idle-handler.sh` |
-| Watchdog stage | `agentwire/limits_cli.py` (`cmd_limits_tick`) |
-| Events log | `~/.agentwire/cohort-events.jsonl` |
+| Ledger + join + sweep | `hermeswire/cohort.py` |
+| CLI | `hermeswire/wait_cli.py` (`hermeswire wait --children`) |
+| MCP | `wait_children` (`hermeswire/mcp_session.py`) |
+| Enrollment | `hermeswire/session_cli.py` (`cmd_new`) |
+| Idle guard | `hermeswire/hooks/idle-handler.sh` |
+| Watchdog stage | `hermeswire/limits_cli.py` (`cmd_limits_tick`) |
+| Events log | `~/.hermeswire/cohort-events.jsonl` |
 
 Related: [prompt routing](prompt-routing.md) (#276 guard shape),
 [polite messaging](messaging.md) (the inbox reports arrive through),

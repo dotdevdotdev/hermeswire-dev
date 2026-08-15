@@ -29,13 +29,13 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from agentwire import core, fleet_activity, fleet_alerts, inbox
+from hermeswire import core, fleet_activity, fleet_alerts, inbox
 
 
 @pytest.fixture
 def isolate(tmp_path, monkeypatch):
     """A throwaway config dir: session records, inboxes, ledger and event logs."""
-    root = tmp_path / "agentwire"
+    root = tmp_path / "hermeswire"
     (root / "sessions").mkdir(parents=True)
     monkeypatch.setattr(core, "CONFIG_DIR", root)
     monkeypatch.setattr(inbox, "INBOX_ROOT", root / "inbox")
@@ -168,7 +168,7 @@ def test_root_orchestrator_idle_is_ledger_only(isolate):
 @pytest.mark.parametrize(
     "fields",
     [
-        # THE SHAPE THE VERB ACTUALLY PRODUCES. `agentwire orchestrator` is
+        # THE SHAPE THE VERB ACTUALLY PRODUCES. `hermeswire orchestrator` is
         # sugar for `worktree --kind orchestrator`, so the owner's durable
         # window carries role=orchestrator, created_by='' AND worktree_path —
         # two live sessions on this machine look exactly like this. A plain OR
@@ -368,7 +368,7 @@ def test_a_corrupt_line_costs_one_entry_not_the_file(isolate):
 def test_an_unusable_timestamp_never_raises(isolate, ts):
     """The naive one is the sharp case: it PARSES, then raises on the comparison
     — outside the guard that wrapped only the parse. That tracebacked
-    `agentwire activity list` on a single hand-edited line, and falsified the
+    `hermeswire activity list` on a single hand-edited line, and falsified the
     "never raises" contract every producer here is written against."""
     fleet_activity.record("spoke", session="a", text="fine")
     with open(fleet_activity.ledger_path(), "a") as fh:
@@ -460,8 +460,8 @@ def _ns(**kw):
 
 
 def test_an_idle_session_records_through_the_notify_cli(isolate, monkeypatch):
-    from agentwire import notify_cli, pane_manager, prompt_router, services
-    from agentwire.notify_cli import cmd_notify_parent
+    from hermeswire import notify_cli, pane_manager, prompt_router, services
+    from hermeswire.notify_cli import cmd_notify_parent
 
     _subscribe()
     _record("child", created_by="orch")
@@ -482,12 +482,12 @@ def test_a_service_session_going_idle_is_not_even_recorded(isolate, monkeypatch)
     """Services cycle idle constantly and are nobody's delegated work. The
     existing skip runs BEFORE this producer, and that ordering is the whole
     reason the ledger isn't dominated by the portal."""
-    from agentwire import pane_manager, services
-    from agentwire.notify_cli import cmd_notify_parent
+    from hermeswire import pane_manager, services
+    from hermeswire.notify_cli import cmd_notify_parent
 
     _subscribe()
-    _record("agentwire-portal", created_by="orch")
-    monkeypatch.setattr(pane_manager, "get_current_session", lambda: "agentwire-portal")
+    _record("hermeswire-portal", created_by="orch")
+    monkeypatch.setattr(pane_manager, "get_current_session", lambda: "hermeswire-portal")
     monkeypatch.setattr(pane_manager, "get_current_pane_index", lambda: 0)
     monkeypatch.setattr(services, "is_service_session", lambda s: True)
 
@@ -514,15 +514,15 @@ def portal(monkeypatch):
 
     calls = []
     monkeypatch.setattr(
-        "agentwire.core.portal_request",
+        "hermeswire.core.portal_request",
         lambda method, url, **kw: calls.append((method, url, kw.get("json"))) or _Response(),
     )
     return calls
 
 
 def test_a_toast_records_through_the_notify_cli(isolate, portal, monkeypatch):
-    from agentwire import notify_cli
-    from agentwire.notify_cli import cmd_notify_user
+    from hermeswire import notify_cli
+    from hermeswire.notify_cli import cmd_notify_user
 
     _subscribe()
     monkeypatch.setattr(notify_cli, "_output_result", lambda *a, **kw: 0)
@@ -540,7 +540,7 @@ def test_a_toast_records_through_the_mcp_tool(isolate, portal):
     posted — and none of the ones the fleet posts. It POSTed on its own
     transport; now every toast producer goes through one seam."""
     _subscribe()
-    from agentwire.mcp_notify import notify_user
+    from hermeswire.mcp_notify import notify_user
 
     notify_user("deploy needs a decision", session="ci", priority="high")
 
@@ -559,8 +559,8 @@ def test_a_refused_toast_keeps_the_portal_s_own_reason(isolate, monkeypatch):
         def json():
             return {"success": False, "error": "artifact.url required"}
 
-    monkeypatch.setattr("agentwire.core.portal_request", lambda *a, **kw: _Response())
-    from agentwire.mcp_notify import notify_user
+    monkeypatch.setattr("hermeswire.core.portal_request", lambda *a, **kw: _Response())
+    from hermeswire.mcp_notify import notify_user
 
     assert "artifact.url required" in notify_user("here is the report", session="ci")
     # Recorded anyway: a toast the portal refused is the case where the voice
@@ -572,7 +572,7 @@ def test_a_textless_toast_is_not_a_ledger_entry(isolate, portal):
     """Nothing was shown, so nothing happened worth remembering — an entry with
     an empty body is one the buddy would offer as news and then have nothing to
     say about. Same reason `mcp_desktop._announce_artifact` stays off this seam."""
-    from agentwire.mcp_notify import notify_user
+    from hermeswire.mcp_notify import notify_user
 
     notify_user("   ", session="ci")
     assert fleet_activity.recent() == []
@@ -580,7 +580,7 @@ def test_a_textless_toast_is_not_a_ledger_entry(isolate, portal):
 
 def test_the_briefing_display_card_records_too(isolate, portal, monkeypatch):
     """`say(display=...)` posts its own toast — the third producer."""
-    from agentwire import channels_cli
+    from hermeswire import channels_cli
 
     _say_env(channels_cli, monkeypatch, rc=0)
     channels_cli.cmd_say(_ns(text=["spoken", "headline"], json=True, voice=None,
@@ -593,13 +593,13 @@ def test_the_briefing_display_card_records_too(isolate, portal, monkeypatch):
 
 def test_a_toast_the_portal_refused_is_still_recorded(isolate, monkeypatch):
     """The case where awareness matters MOST: the screen never got it."""
-    from agentwire import notify_cli
-    from agentwire.notify_cli import cmd_notify_user
+    from hermeswire import notify_cli
+    from hermeswire.notify_cli import cmd_notify_user
 
     def unreachable(*a, **kw):
         raise OSError("connection refused")
 
-    monkeypatch.setattr("agentwire.core.portal_request", unreachable)
+    monkeypatch.setattr("hermeswire.core.portal_request", unreachable)
     monkeypatch.setattr(notify_cli, "_output_result", lambda *a, **kw: 1)
 
     cmd_notify_user(_ns(text=["heads", "up"], session="ci", priority="normal", json=False))
@@ -612,8 +612,8 @@ def test_different_high_toasts_are_not_throttled_into_silence(isolate, portal, m
     made 'build is red' swallow 'deploy rolled back' a minute later — and on the
     one surface whose caller declared the message urgent, a false-reject is
     silence with no screen behind it."""
-    from agentwire import notify_cli
-    from agentwire.notify_cli import cmd_notify_user
+    from hermeswire import notify_cli
+    from hermeswire.notify_cli import cmd_notify_user
 
     _subscribe()
     monkeypatch.setattr(notify_cli, "_output_result", lambda *a, **kw: 0)
@@ -632,8 +632,8 @@ def test_different_high_toasts_are_not_throttled_into_silence(isolate, portal, m
 def test_portal_churn_is_not_recorded(isolate, monkeypatch):
     """`notify-event` fires on every glance at a terminal. Recording all of it
     would bury the events that mean something."""
-    from agentwire import notify_cli
-    from agentwire.notify_cli import cmd_notify
+    from hermeswire import notify_cli
+    from hermeswire.notify_cli import cmd_notify
 
     monkeypatch.setattr(notify_cli, "_get_portal_url", lambda: "")
     for event in ("client_attached", "pane_focused", "window_activity"):
@@ -649,7 +649,7 @@ def test_portal_churn_is_not_recorded(isolate, monkeypatch):
 def test_a_finished_scheduled_run_records_through_the_scheduler(isolate, monkeypatch):
     """Driven through the scheduler's own event log, which is the seam BOTH
     dispatch paths (in-place and worktree) go through exactly once per run."""
-    from agentwire.scheduler import report
+    from hermeswire.scheduler import report
 
     _subscribe()
     monkeypatch.setattr(report, "append_event", lambda *a, **kw: None)
@@ -664,7 +664,7 @@ def test_a_finished_scheduled_run_records_through_the_scheduler(isolate, monkeyp
 
 
 def test_other_scheduler_events_are_not_activity(isolate, monkeypatch):
-    from agentwire.scheduler import report
+    from hermeswire.scheduler import report
 
     monkeypatch.setattr(report, "append_event", lambda *a, **kw: None)
     report._log_event("task_skipped", task="t", session="s", reason="lock_conflict")
@@ -687,7 +687,7 @@ def _say_env(channels_cli, monkeypatch, *, rc: int = 0, browser: bool = True):
 def test_speaking_records_the_sink_through_the_say_cli(isolate, monkeypatch):
     """The sink is part of the record, and a FAILED dispatch is never recorded
     as spoken."""
-    from agentwire import channels_cli
+    from hermeswire import channels_cli
 
     _subscribe()
     _say_env(channels_cli, monkeypatch, rc=0)
@@ -706,7 +706,7 @@ def test_speaking_records_the_sink_through_the_say_cli(isolate, monkeypatch):
 
 
 def test_a_failed_say_is_not_recorded_as_spoken(isolate, monkeypatch):
-    from agentwire import channels_cli
+    from hermeswire import channels_cli
 
     _say_env(channels_cli, monkeypatch, rc=1)
 
@@ -723,11 +723,11 @@ def test_a_partly_spoken_say_records_exactly_what_played(isolate, monkeypatch):
     out loud — recording the whole string claims the owner heard a sentence
     that never played, and recording nothing lets the buddy later offer, as
     news, something they already heard."""
-    from agentwire import channels_cli
+    from hermeswire import channels_cli
 
     _say_env(channels_cli, monkeypatch, browser=False)
     monkeypatch.setattr(channels_cli, "chunk_text", None, raising=False)
-    monkeypatch.setattr("agentwire.utils.chunker.chunk_text",
+    monkeypatch.setattr("hermeswire.utils.chunker.chunk_text",
                         lambda t: ["first part.", "second part.", "third part."])
     played = []
 

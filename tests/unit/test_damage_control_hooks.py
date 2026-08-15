@@ -1,4 +1,4 @@
-"""Tests for agentwire/hooks/damage-control/ — Bash/Edit/Write tool hooks.
+"""Tests for hermeswire/hooks/damage-control/ — Bash/Edit/Write tool hooks.
 
 These hooks are PEP 723 inline-deps scripts invoked by Claude Code. They live
 under hyphenated filenames (`bash-tool-damage-control.py`), so they're loaded
@@ -302,11 +302,11 @@ class TestUnattendedAllowlist:
     """Pure-function tests for the unattended (no-human) ask resolution (#401)."""
 
     def test_is_unattended_reads_env(self, bash_hook, monkeypatch):
-        monkeypatch.delenv("AGENTWIRE_UNATTENDED", raising=False)
+        monkeypatch.delenv("HERMESWIRE_UNATTENDED", raising=False)
         assert bash_hook.is_unattended() is False
-        monkeypatch.setenv("AGENTWIRE_UNATTENDED", "1")
+        monkeypatch.setenv("HERMESWIRE_UNATTENDED", "1")
         assert bash_hook.is_unattended() is True
-        monkeypatch.setenv("AGENTWIRE_UNATTENDED", "0")
+        monkeypatch.setenv("HERMESWIRE_UNATTENDED", "0")
         assert bash_hook.is_unattended() is False
 
     # `resolve_unattended_allow` (a flat set) became `resolve_unattended_grants`
@@ -315,7 +315,7 @@ class TestUnattendedAllowlist:
     # tests/unit/test_unattended_scoped_allow.py.
 
     def test_default_allowlist_covers_work_and_pr(self, bash_hook, monkeypatch):
-        monkeypatch.delenv("AGENTWIRE_UNATTENDED_ALLOW", raising=False)
+        monkeypatch.delenv("HERMESWIRE_UNATTENDED_ALLOW", raising=False)
         allow = bash_hook.resolve_unattended_grants({"safety": {}})
         # work + open a PR, nothing irreversible/outward
         assert {"git.add", "git.commit", "git.push", "gh.pr-create"} <= set(allow)
@@ -324,7 +324,7 @@ class TestUnattendedAllowlist:
         assert allow["git.commit"] == [[]]
 
     def test_config_extends_default(self, bash_hook, monkeypatch):
-        monkeypatch.delenv("AGENTWIRE_UNATTENDED_ALLOW", raising=False)
+        monkeypatch.delenv("HERMESWIRE_UNATTENDED_ALLOW", raising=False)
         allow = bash_hook.resolve_unattended_grants(
             {"safety": {"unattended_allow": ["custom.rule"]}}
         )
@@ -332,18 +332,18 @@ class TestUnattendedAllowlist:
         assert "git.commit" in allow  # default still present
 
     def test_env_extension_merges(self, bash_hook, monkeypatch):
-        monkeypatch.setenv("AGENTWIRE_UNATTENDED_ALLOW", "task.rule-a, task.rule-b")
+        monkeypatch.setenv("HERMESWIRE_UNATTENDED_ALLOW", "task.rule-a, task.rule-b")
         allow = bash_hook.resolve_unattended_grants({"safety": {}})
         assert {"task.rule-a", "task.rule-b"} <= set(allow)
 
-    def test_default_allowlist_covers_agentwire_email(self, bash_hook, monkeypatch):
-        # `agentwire email` is a blanket unattended-allow (#804) — the primary
+    def test_default_allowlist_covers_hermeswire_email(self, bash_hook, monkeypatch):
+        # `hermeswire email` is a blanket unattended-allow (#804) — the primary
         # way an unattended agent reports back, so fail-closed blocking it
-        # defeats the use case. `agentwire quo` (SMS) is deliberately NOT here.
-        monkeypatch.delenv("AGENTWIRE_UNATTENDED_ALLOW", raising=False)
+        # defeats the use case. `hermeswire quo` (SMS) is deliberately NOT here.
+        monkeypatch.delenv("HERMESWIRE_UNATTENDED_ALLOW", raising=False)
         allow = bash_hook.resolve_unattended_grants({"safety": {}})
-        assert "outbound.agentwire-email" in allow
-        assert "outbound.agentwire-quo" not in allow
+        assert "outbound.hermeswire-email" in allow
+        assert "outbound.hermeswire-quo" not in allow
 
 
 class TestUnattendedSubprocess:
@@ -354,12 +354,12 @@ class TestUnattendedSubprocess:
     def _run(self, command, unattended, allow_env=None):
         env = {
             "PATH": "/usr/bin:/bin:/usr/local/bin",
-            "HOME": "/tmp",  # no ~/.agentwire/config.yaml → safety enabled (default)
+            "HOME": "/tmp",  # no ~/.hermeswire/config.yaml → safety enabled (default)
         }
         if unattended:
-            env["AGENTWIRE_UNATTENDED"] = "1"
+            env["HERMESWIRE_UNATTENDED"] = "1"
         if allow_env:
-            env["AGENTWIRE_UNATTENDED_ALLOW"] = allow_env
+            env["HERMESWIRE_UNATTENDED_ALLOW"] = allow_env
         payload = {
             "tool_name": "terminal",
             "tool_input": {"command": command},
@@ -409,18 +409,18 @@ class TestUnattendedSubprocess:
         assert proc.returncode == 0
 
     def test_email_any_recipient_allowed_when_unattended(self):
-        # outbound.agentwire-email is a blanket unattended-allow (#804) — ANY
+        # outbound.hermeswire-email is a blanket unattended-allow (#804) — ANY
         # recipient, not just the owner's own address (owner-accepted tradeoff).
-        proc = self._run("agentwire email --to anyone@example.com", unattended=True)
+        proc = self._run("hermeswire email --to anyone@example.com", unattended=True)
         assert proc.returncode == 0
 
     def test_quo_still_blocks_when_unattended(self):
-        # agentwire quo (SMS) is a separate outbound channel and unaffected —
+        # hermeswire quo (SMS) is a separate outbound channel and unaffected —
         # still fails closed unless explicitly allowlisted.
-        proc = self._run("agentwire quo --to +15551234567", unattended=True)
+        proc = self._run("hermeswire quo --to +15551234567", unattended=True)
         d = self._directive(proc)
         assert proc.returncode == 0 and d["action"] == "block"
-        assert "outbound.agentwire-quo" in d["message"]
+        assert "outbound.hermeswire-quo" in d["message"]
 
 
 # ---------------------------------------------------------------------------
@@ -434,7 +434,7 @@ class TestUnattendedSubprocess:
 # read-only variants stay `allow` (so interactive mode isn't over-blocked).
 
 # Bundled rules + tooldefs evaluated through the real decision ladder.
-_DC_ROOT = Path(__file__).resolve().parent.parent.parent / "agentwire"
+_DC_ROOT = Path(__file__).resolve().parent.parent.parent / "hermeswire"
 _DC_RULES = _DC_ROOT / "hooks" / "damage-control" / "rules"
 _DC_TOOLDEFS = _DC_ROOT / "tooldefs"
 
@@ -462,7 +462,7 @@ class TestUnattendedVerbCoverage:
         "docker compose push", "kubectl apply -f x.yaml",
         "gh release create v1", "gh workflow run deploy.yml",
         # outbound comms
-        "agentwire email --to a@b.com", "agentwire quo --to +1 --body hi",
+        "hermeswire email --to a@b.com", "hermeswire quo --to +1 --body hi",
         "twilio api:core:messages:create --to +1",
         "aws ses send-email --to a@b.com", "aws sesv2 send-email --to a@b.com",
         "aws sns publish --message hi", "sendmail a@b.com", "mail -s subj a@b.com",
@@ -995,15 +995,15 @@ class TestCrossIssueBackstops:
 # tmux global options (#919, first of the class)
 # ---------------------------------------------------------------------------
 #
-# `tmux -L agentwire kill-server` was ALLOWED. That rule exists to stop an
+# `tmux -L hermeswire kill-server` was ALLOWED. That rule exists to stop an
 # agent destroying the fleet it is running inside, and every session on this
 # machine runs on a NAMED socket — so the guard held for the spelling nobody
 # uses and dropped for the one the fleet actually runs under.
 #
 # tmux is getopt-based, so the bypass has THREE spellings, not one:
-#   tmux -L agentwire kill-server     separate
-#   tmux -Lagentwire kill-server      ATTACHED
-#   tmux -2Lagentwire kill-server     BUNDLED flag + attached value
+#   tmux -L hermeswire kill-server     separate
+#   tmux -Lhermeswire kill-server      ATTACHED
+#   tmux -2Lhermeswire kill-server     BUNDLED flag + attached value
 # git REJECTS the attached form (`git -C/tmp` -> "unknown option"), which is
 # why #918 could ignore attached forms and document that as correct. Correct
 # for git, wrong here — hence `short_cluster` is a per-tool property of the
@@ -1012,37 +1012,37 @@ class TestCrossIssueBackstops:
 _KILL_SERVER = "kill-" + "server"
 
 # Expectations are the MEASURED plain-form verdicts, not the ones that would
-# be nice: `kill-session -a` is an `ask` rule in agentwire.yaml, and writing
+# be nice: `kill-session -a` is an `ask` rule in hermeswire.yaml, and writing
 # `block` here would have made the corpus disagree with the rule set rather
 # than with the bug.
 _TMUX_GATED = [
     (_KILL_SERVER, "block"),
-    (f"kill-session -t agentwire-{'dev'}", "block"),
+    (f"kill-session -t hermeswire-{'dev'}", "block"),
     ("kill-session -a", "ask"),
 ]
 
 # Measured against tmux 3.5a: `-L`/`-S`/`-f`/`-c`/`-T` take a value in all
 # three spellings; `-2`/`-u`/`-C` stand alone.
 _TMUX_PREFIXES = [
-    "-L agentwire",
-    "-Lagentwire",
-    "-2Lagentwire",
-    "-uLagentwire",
+    "-L hermeswire",
+    "-Lhermeswire",
+    "-2Lhermeswire",
+    "-uLhermeswire",
     "-S /tmp/tmux-501/default",
     "-S/tmp/tmux-501/default",
-    "-f /tmp/tmux.conf -L agentwire",
-    "-2 -L agentwire",
+    "-f /tmp/tmux.conf -L hermeswire",
+    "-2 -L hermeswire",
     "-2",
 ]
 
 _TMUX_STILL_ALLOWED = [
     "tmux list-sessions",
-    "tmux -L agentwire list-sessions",
-    "tmux -L agentwire display-message -p '#S'",
+    "tmux -L hermeswire list-sessions",
+    "tmux -L hermeswire display-message -p '#S'",
     "tmux kill-session -t scratch",
-    "tmux -L agentwire kill-session -t scratch",
+    "tmux -L hermeswire kill-session -t scratch",
     # Quoted content that merely MENTIONS the gated command (#675 masking).
-    f"echo 'tmux -L agentwire {_KILL_SERVER}'",
+    f"echo 'tmux -L hermeswire {_KILL_SERVER}'",
 ]
 
 
@@ -1086,7 +1086,7 @@ class TestTmuxGlobalOptionBypass:
         result = bash_hook.check_command(f"tmux {prefix} {_KILL_SERVER}", bundled_config)
         plain = bash_hook.check_command(f"tmux {_KILL_SERVER}", bundled_config)
         assert result.get("id") == plain.get("id"), result
-        assert result.get("id", "").startswith("agentwire.tmux-kill-server"), result
+        assert result.get("id", "").startswith("hermeswire.tmux-kill-server"), result
 
     @pytest.mark.parametrize("order", ["as-loaded", "reversed"])
     @pytest.mark.parametrize("prefix", _TMUX_PREFIXES)
@@ -1117,17 +1117,17 @@ class TestShortOptionClusterIsPerTool:
 
     def test_tmux_attached_short_option_is_normalized(self, bash_hook):
         assert bash_hook._strip_global_options(
-            ["tmux", "-Lagentwire", _KILL_SERVER]
+            ["tmux", "-Lhermeswire", _KILL_SERVER]
         ) == ["tmux", _KILL_SERVER]
 
     def test_tmux_bundled_flag_then_attached_value(self, bash_hook):
         assert bash_hook._strip_global_options(
-            ["tmux", "-2Lagentwire", _KILL_SERVER]
+            ["tmux", "-2Lhermeswire", _KILL_SERVER]
         ) == ["tmux", _KILL_SERVER]
 
     def test_tmux_bundled_flag_then_separate_value(self, bash_hook):
         assert bash_hook._strip_global_options(
-            ["tmux", "-uL", "agentwire", _KILL_SERVER]
+            ["tmux", "-uL", "hermeswire", _KILL_SERVER]
         ) == ["tmux", _KILL_SERVER]
 
     def test_git_attached_form_is_not_treated_as_a_bypass(self, bash_hook):
@@ -1323,7 +1323,7 @@ _CORPUS = [
      "mysqladmin -u root -h prod drop mydb",
      "mysqladmin drop mydb", "block"),
     ("tmux -L", "tmux",
-     f"tmux -L agentwire {_KILL_SERVER}", f"tmux {_KILL_SERVER}", "block"),
+     f"tmux -L hermeswire {_KILL_SERVER}", f"tmux {_KILL_SERVER}", "block"),
     ("tmux -S", "tmux",
      f"tmux -S /tmp/tmux-501/default {_KILL_SERVER}",
      f"tmux {_KILL_SERVER}", "block"),
@@ -1332,9 +1332,9 @@ _CORPUS = [
     # FOR GIT) leaves the fleet-kill rule bypassed in two of its three
     # spellings while the separate-form row goes green.
     ("tmux -L attached", "tmux",
-     f"tmux -Lagentwire {_KILL_SERVER}", f"tmux {_KILL_SERVER}", "block"),
+     f"tmux -Lhermeswire {_KILL_SERVER}", f"tmux {_KILL_SERVER}", "block"),
     ("tmux -2L bundled", "tmux",
-     f"tmux -2Lagentwire {_KILL_SERVER}", f"tmux {_KILL_SERVER}", "block"),
+     f"tmux -2Lhermeswire {_KILL_SERVER}", f"tmux {_KILL_SERVER}", "block"),
     ("pnpm -C", "pnpm", "pnpm -C /srv publish", "pnpm publish", "ask"),
     ("cargo +toolchain", "cargo", "cargo +nightly publish", "cargo publish", "ask"),
     ("git -C", "git",
@@ -1471,7 +1471,7 @@ _SAFE_NEAR_MISSES = [
     "supabase --workdir /srv db diff",
     "redis-cli -h prod.redis -p 6379 GET mykey",
     "mysqladmin -u root -h prod status",
-    "tmux -L agentwire list-sessions",
+    "tmux -L hermeswire list-sessions",
     "cargo +nightly build",
     "pnpm -C /srv install",
 ]
@@ -1672,8 +1672,8 @@ class TestWriteHookSubprocess:
 class TestAuditLogger:
     @pytest.fixture
     def audit_module(self, tmp_path, monkeypatch):
-        """Load audit_logger with AGENTWIRE_DIR pointing at tmp_path."""
-        monkeypatch.setenv("AGENTWIRE_DIR", str(tmp_path / ".agentwire"))
+        """Load audit_logger with HERMESWIRE_DIR pointing at tmp_path."""
+        monkeypatch.setenv("HERMESWIRE_DIR", str(tmp_path / ".hermeswire"))
         spec = importlib.util.spec_from_file_location(
             "audit_logger_test", HOOKS_DIR / "audit_logger.py"
         )
@@ -1710,14 +1710,14 @@ class TestAuditLogger:
         assert entry["user_approved"] is None
 
     def test_session_context_from_env(self, audit_module, monkeypatch):
-        monkeypatch.setenv("AGENTWIRE_SESSION_ID", "sess-123")
-        monkeypatch.setenv("AGENTWIRE_AGENT_ID", "worker-1")
+        monkeypatch.setenv("HERMESWIRE_SESSION_ID", "sess-123")
+        monkeypatch.setenv("HERMESWIRE_AGENT_ID", "worker-1")
         ctx = audit_module.get_session_context()
         assert ctx == {"session_id": "sess-123", "agent_id": "worker-1"}
 
     def test_session_context_defaults(self, audit_module, monkeypatch):
-        monkeypatch.delenv("AGENTWIRE_SESSION_ID", raising=False)
-        monkeypatch.delenv("AGENTWIRE_AGENT_ID", raising=False)
+        monkeypatch.delenv("HERMESWIRE_SESSION_ID", raising=False)
+        monkeypatch.delenv("HERMESWIRE_AGENT_ID", raising=False)
         ctx = audit_module.get_session_context()
         assert ctx == {"session_id": "unknown", "agent_id": "main"}
 
@@ -1725,7 +1725,7 @@ class TestAuditLogger:
         log_dir = audit_module.get_log_dir()
         assert log_dir.exists()
         assert log_dir.is_dir()
-        # AGENTWIRE_DIR fixture pointed it at tmp_path/.agentwire
+        # HERMESWIRE_DIR fixture pointed it at tmp_path/.hermeswire
         assert str(tmp_path) in str(log_dir)
 
     def test_multiple_entries_append(self, audit_module):
@@ -1742,40 +1742,40 @@ class TestAuditLogger:
 # mcp-tool-damage-control.py: outbound MCP tool gating (#457)
 # ---------------------------------------------------------------------------
 #
-# email_send / quo_send run `agentwire email …` / `agentwire quo …` under the
+# email_send / quo_send run `hermeswire email …` / `hermeswire quo …` under the
 # hood, so the hook synthesizes that command and runs it through the SAME
 # decision ladder + outbound.* rules as the Bash shell-out. These tests cover
 # the synthesizer, the unattended fail-closed ladder, the attended ask, and a
 # parity proof that the synthesized command decides identically to the literal
-# `agentwire email`/`quo` string.
+# `hermeswire email`/`quo` string.
 
 
 class TestMcpHookSynthesizer:
     def test_email_send_synthesizes_command(self, mcp_hook):
         cmd = mcp_hook._synthesize_command(
-            "mcp__agentwire__email_send",
+            "mcp__hermeswire__email_send",
             {"body": "secret payload", "to": "a@b.com", "subject": "Hi"},
         )
-        assert cmd == "agentwire email --to a@b.com --subject Hi"
+        assert cmd == "hermeswire email --to a@b.com --subject Hi"
         # body never leaks into the synthesized (audit-logged) command
         assert "secret payload" not in cmd
 
     def test_email_send_handles_list_recipients(self, mcp_hook):
         cmd = mcp_hook._synthesize_command(
-            "mcp__agentwire__email_send",
+            "mcp__hermeswire__email_send",
             {"body": "x", "to": ["a@b.com", "c@d.com"]},
         )
-        assert cmd == "agentwire email --to a@b.com --to c@d.com"
+        assert cmd == "hermeswire email --to a@b.com --to c@d.com"
 
     def test_quo_send_synthesizes_command(self, mcp_hook):
         cmd = mcp_hook._synthesize_command(
-            "mcp__agentwire__quo_send", {"body": "x", "to": "+15551234567"}
+            "mcp__hermeswire__quo_send", {"body": "x", "to": "+15551234567"}
         )
-        assert cmd == "agentwire quo --to +15551234567"
+        assert cmd == "hermeswire quo --to +15551234567"
 
     def test_non_gated_tool_returns_none(self, mcp_hook):
         assert mcp_hook._synthesize_command(
-            "mcp__agentwire__say", {"text": "hi"}
+            "mcp__hermeswire__say", {"text": "hi"}
         ) is None
 
 
@@ -1784,21 +1784,21 @@ class TestMcpHookParity:
 
     def test_email_parity(self, mcp_hook, bundled_config):
         synth = mcp_hook._synthesize_command(
-            "mcp__agentwire__email_send", {"body": "x", "to": "a@b.com"}
+            "mcp__hermeswire__email_send", {"body": "x", "to": "a@b.com"}
         )
-        literal = mcp_hook.check_command("agentwire email --to a@b.com", bundled_config)
+        literal = mcp_hook.check_command("hermeswire email --to a@b.com", bundled_config)
         from_synth = mcp_hook.check_command(synth, bundled_config)
         assert from_synth["decision"] == literal["decision"] == "ask"
-        assert from_synth["id"] == literal["id"] == "outbound.agentwire-email"
+        assert from_synth["id"] == literal["id"] == "outbound.hermeswire-email"
 
     def test_quo_parity(self, mcp_hook, bundled_config):
         synth = mcp_hook._synthesize_command(
-            "mcp__agentwire__quo_send", {"body": "x", "to": "+1555"}
+            "mcp__hermeswire__quo_send", {"body": "x", "to": "+1555"}
         )
-        literal = mcp_hook.check_command("agentwire quo --to +1555", bundled_config)
+        literal = mcp_hook.check_command("hermeswire quo --to +1555", bundled_config)
         from_synth = mcp_hook.check_command(synth, bundled_config)
         assert from_synth["decision"] == literal["decision"] == "ask"
-        assert from_synth["id"] == literal["id"] == "outbound.agentwire-quo"
+        assert from_synth["id"] == literal["id"] == "outbound.hermeswire-quo"
 
 
 class TestMcpHookSubprocess:
@@ -1809,12 +1809,12 @@ class TestMcpHookSubprocess:
     def _run(self, tool_name, tool_input, unattended=False, allow_env=None):
         env = {
             "PATH": "/usr/bin:/bin:/usr/local/bin",
-            "HOME": "/tmp",  # no ~/.agentwire/config.yaml → safety enabled (default)
+            "HOME": "/tmp",  # no ~/.hermeswire/config.yaml → safety enabled (default)
         }
         if unattended:
-            env["AGENTWIRE_UNATTENDED"] = "1"
+            env["HERMESWIRE_UNATTENDED"] = "1"
         if allow_env:
-            env["AGENTWIRE_UNATTENDED_ALLOW"] = allow_env
+            env["HERMESWIRE_UNATTENDED_ALLOW"] = allow_env
         payload = {
             "tool_name": tool_name,
             "tool_input": tool_input,
@@ -1832,15 +1832,15 @@ class TestMcpHookSubprocess:
         return json.loads(out) if out else None
 
     def test_non_gated_tool_passes(self):
-        proc = self._run("mcp__agentwire__say", {"text": "hi"})
+        proc = self._run("mcp__hermeswire__say", {"text": "hi"})
         assert proc.returncode == 0
 
     def test_email_unattended_allowed_by_default(self):
-        # outbound.agentwire-email is a blanket unattended-allow (#804) — no
+        # outbound.hermeswire-email is a blanket unattended-allow (#804) — no
         # unattended_allow entry needed, and ANY recipient (owner-accepted
         # tradeoff), not just the owner's own address.
         proc = self._run(
-            "mcp__agentwire__email_send",
+            "mcp__hermeswire__email_send",
             {"body": "x", "to": "someone-else@example.com", "subject": "s"},
             unattended=True,
         )
@@ -1848,24 +1848,24 @@ class TestMcpHookSubprocess:
 
     def test_quo_unattended_not_allowlisted_blocks(self):
         proc = self._run(
-            "mcp__agentwire__quo_send", {"body": "x", "to": "+1555"},
+            "mcp__hermeswire__quo_send", {"body": "x", "to": "+1555"},
             unattended=True,
         )
         d = self._directive(proc)
         assert proc.returncode == 0 and d["action"] == "block"
         assert "unattended" in d["message"].lower()
-        assert "outbound.agentwire-quo" in d["message"]
+        assert "outbound.hermeswire-quo" in d["message"]
 
     def test_quo_unattended_allowlisted_proceeds(self):
         proc = self._run(
-            "mcp__agentwire__quo_send", {"body": "x", "to": "+1555"},
-            unattended=True, allow_env="outbound.agentwire-quo",
+            "mcp__hermeswire__quo_send", {"body": "x", "to": "+1555"},
+            unattended=True, allow_env="outbound.hermeswire-quo",
         )
         assert proc.returncode == 0
 
     def test_attended_ask_escalates_to_approve(self):
         proc = self._run(
-            "mcp__agentwire__email_send", {"body": "x", "to": "a@b.com"},
+            "mcp__hermeswire__email_send", {"body": "x", "to": "a@b.com"},
             unattended=False,
         )
         assert proc.returncode == 0

@@ -42,14 +42,14 @@
 set -u
 
 PR="${1:?usage: ci_verdict <pr-number>}"
-REPO_SLUG="${GH_REPO:-dotdevdotdev/agentwire-dev}"
+REPO_SLUG="${GH_REPO:-dotdevdotdev/hermeswire-dev}"
 
 # The always-valid floor: every workflow on main with NO path filter. Derived
 # from .github/workflows/*.yml triggers, not from any observed run set — keep
 # it in sync with the workflows, not with what a PR happened to produce.
 FLOOR_NAMES=(pytest ruff security)
 # Path-filtered workflows and the filters that add them to the expected set.
-TTS_SMOKE_PATHS='^(pyproject\.toml|uv\.lock|agentwire/tts/|\.github/workflows/tts-smoke\.yml)'
+TTS_SMOKE_PATHS='^(pyproject\.toml|uv\.lock|hermeswire/tts/|\.github/workflows/tts-smoke\.yml)'
 
 PRJSON=$(gh pr view "$PR" -R "$REPO_SLUG" --json headRefOid,isCrossRepository,state 2>/dev/null)
 [ -n "$PRJSON" ] || { echo "could not read PR #$PR on $REPO_SLUG — refusing to query"; exit 1; }

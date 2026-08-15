@@ -1,4 +1,4 @@
-"""Unit tests for agentwire.security — origin policy, token lifecycle, bind policy."""
+"""Unit tests for hermeswire.security — origin policy, token lifecycle, bind policy."""
 
 import os
 from types import SimpleNamespace
@@ -6,8 +6,8 @@ from types import SimpleNamespace
 import pytest
 from aiohttp import web
 
-from agentwire import security
-from agentwire.config import load_config
+from hermeswire import security
+from hermeswire.config import load_config
 
 # ---------------------------------------------------------------------------
 # Loopback detection
@@ -308,11 +308,11 @@ class TestResolveDevice:
         assert security.resolve_device("nope", auth_token="boot") is None
 
     def test_paired_token_resolves(self, monkeypatch):
-        from agentwire.devices import DeviceRegistry
+        from hermeswire.devices import DeviceRegistry
 
         reg = DeviceRegistry.load()  # path patched to tmp by autouse fixture
         device, token = reg.add("phone")
-        from agentwire import devices as devices_mod
+        from hermeswire import devices as devices_mod
 
         devices_mod._cache.clear()
         resolved = security.resolve_device(token, auth_token="boot")

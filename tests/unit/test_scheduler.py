@@ -1,4 +1,4 @@
-"""Tests for the agentwire.scheduler package — Format helpers, pick logic, board I/O."""
+"""Tests for the hermeswire.scheduler package — Format helpers, pick logic, board I/O."""
 
 import time
 from datetime import datetime, timezone
@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from agentwire.scheduler import (
+from hermeswire.scheduler import (
     _EXIT_TO_STATUS,
     Board,
     Schedule,
@@ -65,15 +65,15 @@ class TestCheckGate:
     def _no_real_board_write(self):
         # A gate skip now persists `last_gate_skip` (#803) — patch save_board
         # so these pure decision-logic tests never touch the real
-        # ~/.agentwire/scheduler-state.yaml (same hazard TestGateError already
+        # ~/.hermeswire/scheduler-state.yaml (same hazard TestGateError already
         # guards against for the gate-error path). Also reset the module-level
         # `_gated_tasks` dedup set: it's keyed by task name ("t", shared by
         # every test in this class) and only the FIRST transition into a
         # gated state writes `last_gate_skip` — a leftover entry from an
         # earlier test would silently skip that write here too.
-        import agentwire.scheduler as sched
+        import hermeswire.scheduler as sched
         sched._gated_tasks.clear()
-        with patch("agentwire.scheduler.save_board"):
+        with patch("hermeswire.scheduler.save_board"):
             yield
         sched._gated_tasks.clear()
 
@@ -91,7 +91,7 @@ class TestCheckGate:
 
     @pytest.fixture
     def board(self, git_project):
-        from agentwire.scheduler import Board, SchedulerTask, TaskState
+        from hermeswire.scheduler import Board, SchedulerTask, TaskState
         task = SchedulerTask(name="t", project=str(git_project))
         return Board(tasks={"t": task}, state={"t": TaskState()})
 
@@ -109,22 +109,22 @@ class TestCheckGate:
         sp.run(["git", "-C", str(project), "commit", "-qm", "next"], check=True)
 
     def test_no_gate_passes(self, board):
-        from agentwire.scheduler import _check_gate
+        from hermeswire.scheduler import _check_gate
         assert _check_gate(board, "t") is True
 
     def test_git_commit_no_baseline_passes(self, board):
-        from agentwire.scheduler import _check_gate
+        from hermeswire.scheduler import _check_gate
         board.tasks["t"].gate = {"git_commit": True}
         assert _check_gate(board, "t") is True
 
     def test_git_commit_unchanged_blocks(self, board, git_project):
-        from agentwire.scheduler import _check_gate
+        from hermeswire.scheduler import _check_gate
         board.tasks["t"].gate = {"git_commit": True}
         board.state["t"].last_gate_commit = self._head(git_project)
         assert _check_gate(board, "t") is False
 
     def test_git_commit_advanced_passes(self, board, git_project):
-        from agentwire.scheduler import _check_gate
+        from hermeswire.scheduler import _check_gate
         board.tasks["t"].gate = {"git_commit": True}
         old_head = self._head(git_project)
         board.state["t"].last_gate_commit = old_head
@@ -132,14 +132,14 @@ class TestCheckGate:
         assert _check_gate(board, "t") is True
 
     def test_git_commit_invalid_project_fails_open(self, board, tmp_path):
-        from agentwire.scheduler import _check_gate
+        from hermeswire.scheduler import _check_gate
         board.tasks["t"].gate = {"git_commit": True}
         board.tasks["t"].project = str(tmp_path / "not-a-repo")
         board.state["t"].last_gate_commit = "deadbeef"
         assert _check_gate(board, "t") is True  # fail open
 
     def test_git_diff_no_changes_in_paths_blocks(self, board, git_project):
-        from agentwire.scheduler import _check_gate
+        from hermeswire.scheduler import _check_gate
         old_head = self._head(git_project)
         self._new_commit(git_project, file="other.txt")
         board.tasks["t"].gate = {"git_diff": ["src/"]}
@@ -149,7 +149,7 @@ class TestCheckGate:
     def test_git_diff_changes_in_paths_passes(self, board, git_project):
         import subprocess as sp
 
-        from agentwire.scheduler import _check_gate
+        from hermeswire.scheduler import _check_gate
         old_head = self._head(git_project)
         (git_project / "watched.txt").write_text("changed")
         sp.run(["git", "-C", str(git_project), "add", "-A"], check=True)
@@ -159,27 +159,27 @@ class TestCheckGate:
         assert _check_gate(board, "t") is True
 
     def test_git_diff_no_baseline_passes(self, board):
-        from agentwire.scheduler import _check_gate
+        from hermeswire.scheduler import _check_gate
         board.tasks["t"].gate = {"git_diff": ["src/"]}
         assert _check_gate(board, "t") is True
 
     def test_command_zero_exit_passes(self, board, git_project):
-        from agentwire.scheduler import _check_gate
+        from hermeswire.scheduler import _check_gate
         board.tasks["t"].gate = {"command": "true"}
         assert _check_gate(board, "t") is True
 
     def test_command_nonzero_exit_blocks(self, board, git_project):
-        from agentwire.scheduler import _check_gate
+        from hermeswire.scheduler import _check_gate
         board.tasks["t"].gate = {"command": "false"}
         assert _check_gate(board, "t") is False
 
     def test_command_with_pipe_runs_via_shell(self, board, git_project):
-        from agentwire.scheduler import _check_gate
+        from hermeswire.scheduler import _check_gate
         board.tasks["t"].gate = {"command": "echo ok | grep -q ok"}
         assert _check_gate(board, "t") is True
 
     def test_multiple_gates_all_required(self, board, git_project):
-        from agentwire.scheduler import _check_gate
+        from hermeswire.scheduler import _check_gate
         old = self._head(git_project)
         board.state["t"].last_gate_commit = old
         self._new_commit(git_project)
@@ -190,14 +190,14 @@ class TestCheckGate:
         # A clean "not ready yet" skip (distinct from a gate-eval exception)
         # is recorded on state so the board can show it instead of reading
         # as silently-falling-behind overdue (#803).
-        from agentwire.scheduler import _check_gate
+        from hermeswire.scheduler import _check_gate
         board.tasks["t"].gate = {"command": "false"}
         assert _check_gate(board, "t") is False
         assert "command" in board.state["t"].last_gate_skip
         assert "exit 1" in board.state["t"].last_gate_skip
 
     def test_gate_pass_clears_last_gate_skip(self, board, git_project):
-        from agentwire.scheduler import _check_gate
+        from hermeswire.scheduler import _check_gate
         board.tasks["t"].gate = {"command": "false"}
         _check_gate(board, "t")
         assert board.state["t"].last_gate_skip
@@ -209,7 +209,7 @@ class TestCheckGate:
     def test_no_gate_clears_stale_last_gate_skip(self, board, git_project):
         # Removing the gate entirely (not just satisfying it) must also
         # clear a stale skip note — same "gate no longer blocking" outcome.
-        from agentwire.scheduler import _check_gate
+        from hermeswire.scheduler import _check_gate
         board.tasks["t"].gate = {"command": "false"}
         _check_gate(board, "t")
         assert board.state["t"].last_gate_skip
@@ -223,7 +223,7 @@ class TestCheckGate:
         # command WITHOUT the gate ever fully passing in between, so
         # `_gated_tasks` (the log-spam dedup) never clears. The board must
         # still track the CURRENT blocker, not the original one.
-        from agentwire.scheduler import _check_gate
+        from hermeswire.scheduler import _check_gate
         old = self._head(git_project)
         board.state["t"].last_gate_commit = old
         board.tasks["t"].gate = {"git_commit": True, "command": "false"}
@@ -246,14 +246,14 @@ class TestGateError:
 
     @pytest.fixture(autouse=True)
     def _reset_spam_state(self):
-        import agentwire.scheduler as sched
+        import hermeswire.scheduler as sched
         sched._gate_errored.clear()
         yield
         sched._gate_errored.clear()
 
     @pytest.fixture
     def board(self, tmp_path):
-        from agentwire.scheduler import Board, SchedulerTask, TaskState
+        from hermeswire.scheduler import Board, SchedulerTask, TaskState
         task = SchedulerTask(name="t", project=str(tmp_path))
         task.gate = {"git_commit": True}
         board = Board(tasks={"t": task}, state={"t": TaskState()})
@@ -264,12 +264,12 @@ class TestGateError:
         import subprocess
         from unittest.mock import patch
 
-        from agentwire.scheduler import _check_gate
+        from hermeswire.scheduler import _check_gate
 
         boom = subprocess.TimeoutExpired(cmd="git", timeout=5)
-        with patch("agentwire.scheduler.subprocess.run", side_effect=boom), \
-             patch("agentwire.scheduler.save_board") as save, \
-             patch("agentwire.scheduler._log_event") as log:
+        with patch("hermeswire.scheduler.subprocess.run", side_effect=boom), \
+             patch("hermeswire.scheduler.save_board") as save, \
+             patch("hermeswire.scheduler._log_event") as log:
             assert _check_gate(board, "t") is True  # still fails OPEN
 
         assert "git_commit" in board.state["t"].last_gate_error
@@ -282,12 +282,12 @@ class TestGateError:
         import subprocess
         from unittest.mock import patch
 
-        from agentwire.scheduler import _check_gate
+        from hermeswire.scheduler import _check_gate
 
         boom = subprocess.TimeoutExpired(cmd="git", timeout=5)
-        with patch("agentwire.scheduler.subprocess.run", side_effect=boom), \
-             patch("agentwire.scheduler.save_board"), \
-             patch("agentwire.scheduler._log_event") as log:
+        with patch("hermeswire.scheduler.subprocess.run", side_effect=boom), \
+             patch("hermeswire.scheduler.save_board"), \
+             patch("hermeswire.scheduler._log_event") as log:
             assert _check_gate(board, "t") is True
             assert _check_gate(board, "t") is True  # same error, no re-log
         assert log.call_count == 1
@@ -296,18 +296,18 @@ class TestGateError:
         import subprocess
         from unittest.mock import patch
 
-        from agentwire.scheduler import _check_gate
+        from hermeswire.scheduler import _check_gate
 
         boom = subprocess.TimeoutExpired(cmd="git", timeout=5)
-        with patch("agentwire.scheduler.subprocess.run", side_effect=boom), \
-             patch("agentwire.scheduler.save_board"), \
-             patch("agentwire.scheduler._log_event"):
+        with patch("hermeswire.scheduler.subprocess.run", side_effect=boom), \
+             patch("hermeswire.scheduler.save_board"), \
+             patch("hermeswire.scheduler._log_event"):
             _check_gate(board, "t")
         assert board.state["t"].last_gate_error
 
         # Gate now has no preconditions → clean pass clears the recorded error.
         board.tasks["t"].gate = {}
-        with patch("agentwire.scheduler.save_board"):
+        with patch("hermeswire.scheduler.save_board"):
             assert _check_gate(board, "t") is True
         assert board.state["t"].last_gate_error == ""
 
@@ -318,13 +318,13 @@ class TestGateError:
         import subprocess
         from unittest.mock import patch
 
-        from agentwire.scheduler import _check_gate
+        from hermeswire.scheduler import _check_gate
 
         board.state["t"].last_gate_skip = "command: exit 1"
         boom = subprocess.TimeoutExpired(cmd="git", timeout=5)
-        with patch("agentwire.scheduler.subprocess.run", side_effect=boom), \
-             patch("agentwire.scheduler.save_board"), \
-             patch("agentwire.scheduler._log_event"):
+        with patch("hermeswire.scheduler.subprocess.run", side_effect=boom), \
+             patch("hermeswire.scheduler.save_board"), \
+             patch("hermeswire.scheduler._log_event"):
             assert _check_gate(board, "t") is True
         assert board.state["t"].last_gate_skip == ""
 
@@ -366,7 +366,7 @@ class TestPickNextTask:
                 board.state[name] = TaskState(last_run=dt, last_status="complete")
         return board
 
-    @patch("agentwire.scheduler._check_gate", return_value=True)
+    @patch("hermeswire.scheduler._check_gate", return_value=True)
     def test_most_overdue_wins(self, mock_gate):
         now = time.time()
         board = self._make_board([
@@ -377,7 +377,7 @@ class TestPickNextTask:
         assert name == "task-b"  # More overdue
         assert wait == 0.0
 
-    @patch("agentwire.scheduler._check_gate", return_value=True)
+    @patch("hermeswire.scheduler._check_gate", return_value=True)
     def test_disabled_skipped(self, mock_gate):
         now = time.time()
         board = self._make_board([
@@ -387,7 +387,7 @@ class TestPickNextTask:
         name, wait = pick_next_task(board)
         assert name == "enabled-task"
 
-    @patch("agentwire.scheduler._check_gate", return_value=True)
+    @patch("hermeswire.scheduler._check_gate", return_value=True)
     def test_fillers_after_main(self, mock_gate):
         now = time.time()
         board = self._make_board([
@@ -397,7 +397,7 @@ class TestPickNextTask:
         name, wait = pick_next_task(board)
         assert name == "filler-task"
 
-    @patch("agentwire.scheduler._check_gate", return_value=True)
+    @patch("hermeswire.scheduler._check_gate", return_value=True)
     def test_nothing_due_returns_wait(self, mock_gate):
         now = time.time()
         board = self._make_board([
@@ -407,12 +407,12 @@ class TestPickNextTask:
         assert name is None
         assert wait > 0
 
-    @patch("agentwire.scheduler._check_gate", return_value=False)
+    @patch("hermeswire.scheduler._check_gate", return_value=False)
     def test_due_but_gate_blocked_sleeps_not_spins(self, mock_gate):
         """#691: a due task whose gate fails must NOT yield (None, 0.0) —
         time.sleep(0) makes the daemon busy-loop (gate re-run + portal notify
         ~12×/sec) until the gate ever passes."""
-        from agentwire.scheduler.schedule import GATE_RETRY_FLOOR
+        from hermeswire.scheduler.schedule import GATE_RETRY_FLOOR
 
         now = time.time()
         board = self._make_board([
@@ -422,7 +422,7 @@ class TestPickNextTask:
         assert name is None
         assert wait >= GATE_RETRY_FLOOR
 
-    @patch("agentwire.scheduler._check_gate", return_value=True)
+    @patch("hermeswire.scheduler._check_gate", return_value=True)
     def test_never_run_task_is_overdue(self, mock_gate):
         board = self._make_board([
             ("new-task", "1h", True, False, 0),  # Never run (ts=0)
@@ -447,17 +447,17 @@ class TestValidateTaskPayload:
         return SchedulerTask(**defaults)
 
     def test_ensure_task_passes(self):
-        from agentwire.scheduler import _validate_task_payload
+        from hermeswire.scheduler import _validate_task_payload
         errors = _validate_task_payload("t", self._task())
         assert errors == []
 
     def test_missing_task_rejected(self):
-        from agentwire.scheduler import _validate_task_payload
+        from hermeswire.scheduler import _validate_task_payload
         errors = _validate_task_payload("t", self._task(task=""))
         assert any("must set 'task'" in e for e in errors)
 
     def test_git_gate_requires_project(self):
-        from agentwire.scheduler import _validate_task_payload
+        from hermeswire.scheduler import _validate_task_payload
         errors = _validate_task_payload("t", self._task(project="", gate={"git_commit": True}))
         assert any("gate git_commit requires 'project' path" in e for e in errors)
 
@@ -472,14 +472,14 @@ class TestWorktreeMode:
         return SchedulerTask(**defaults)
 
     def test_explicit_worktree_true_wins(self):
-        from agentwire.scheduler import _is_worktree_task
+        from hermeswire.scheduler import _is_worktree_task
         assert _is_worktree_task(self._task(worktree=True)) is True
 
     def test_explicit_worktree_false_wins(self, tmp_path):
         # Even a real git repo is skipped when explicitly disabled.
         import subprocess
 
-        from agentwire.scheduler import _is_worktree_task
+        from hermeswire.scheduler import _is_worktree_task
         subprocess.run(["git", "-C", str(tmp_path), "init", "-q"])
         t = self._task(project=str(tmp_path), worktree=False)
         assert _is_worktree_task(t) is False
@@ -487,16 +487,16 @@ class TestWorktreeMode:
     def test_auto_on_for_git_repo(self, tmp_path):
         import subprocess
 
-        from agentwire.scheduler import _is_worktree_task
+        from hermeswire.scheduler import _is_worktree_task
         subprocess.run(["git", "-C", str(tmp_path), "init", "-q"])
         assert _is_worktree_task(self._task(project=str(tmp_path))) is True
 
     def test_auto_off_for_non_repo(self, tmp_path):
-        from agentwire.scheduler import _is_worktree_task
+        from hermeswire.scheduler import _is_worktree_task
         assert _is_worktree_task(self._task(project=str(tmp_path))) is False
 
     def test_pr_number_from_url(self):
-        from agentwire.scheduler import _pr_number_from_url
+        from hermeswire.scheduler import _pr_number_from_url
         assert _pr_number_from_url("https://github.com/o/r/pull/231\n") == 231
         assert _pr_number_from_url("no number here") is None
 
@@ -507,7 +507,7 @@ class TestFinalizeWorktree:
     def test_no_changes_removes_worktree_and_skips_pr(self, tmp_path, monkeypatch):
         import subprocess
 
-        from agentwire import scheduler
+        from hermeswire import scheduler
 
         # A clean "worktree" (no uncommitted changes).
         d = tmp_path / "wt"
@@ -529,7 +529,7 @@ class TestReapWorktreePrs:
     """The reaper tears down worktrees only when their PR is merged/closed."""
 
     def _board_with_pr(self, state="OPEN"):
-        from agentwire.scheduler import Board, Schedule, SchedulerTask, TaskState
+        from hermeswire.scheduler import Board, Schedule, SchedulerTask, TaskState
         board = Board()
         board.tasks["t"] = SchedulerTask(name="t", project="/tmp/p", session="t",
                                          task="t", schedule=Schedule(every="1h"))
@@ -540,7 +540,7 @@ class TestReapWorktreePrs:
         return board
 
     def _patch(self, monkeypatch, pr_state):
-        from agentwire import scheduler
+        from hermeswire import scheduler
         killed, removed = [], []
         monkeypatch.setattr(scheduler, "_pr_state", lambda n, cwd: pr_state)
         monkeypatch.setattr(scheduler, "_kill_session", lambda s: killed.append(s))
@@ -550,7 +550,7 @@ class TestReapWorktreePrs:
         return killed, removed
 
     def test_open_pr_not_reaped(self, monkeypatch):
-        from agentwire import scheduler
+        from hermeswire import scheduler
         killed, removed = self._patch(monkeypatch, "OPEN")
         board = self._board_with_pr()
         assert scheduler.reap_worktree_prs(board) == []
@@ -558,7 +558,7 @@ class TestReapWorktreePrs:
         assert board.state["t"].pr_number == 42  # untouched
 
     def test_merged_pr_reaped(self, monkeypatch):
-        from agentwire import scheduler
+        from hermeswire import scheduler
         killed, removed = self._patch(monkeypatch, "MERGED")
         board = self._board_with_pr()
         reaped = scheduler.reap_worktree_prs(board)
@@ -570,13 +570,13 @@ class TestReapWorktreePrs:
         assert st.pr_number is None and st.worktree_path == "" and st.worktree_session == ""
 
     def test_closed_pr_reaped(self, monkeypatch):
-        from agentwire import scheduler
+        from hermeswire import scheduler
         self._patch(monkeypatch, "CLOSED")
         board = self._board_with_pr()
         assert len(scheduler.reap_worktree_prs(board)) == 1
 
     def test_pr_state_error_skips(self, monkeypatch):
-        from agentwire import scheduler
+        from hermeswire import scheduler
         killed, removed = self._patch(monkeypatch, None)
         board = self._board_with_pr()
         assert scheduler.reap_worktree_prs(board) == []
@@ -590,7 +590,7 @@ class TestPersistentSessionDispatch:
     def _project(self, tmp_path, task_yaml: str):
         proj = tmp_path / "proj"
         proj.mkdir()
-        (proj / ".agentwire.tasks.yml").write_text(task_yaml)
+        (proj / ".hermeswire.tasks.yml").write_text(task_yaml)
         return proj
 
     def _sched_task(self, proj, **kwargs):
@@ -600,27 +600,27 @@ class TestPersistentSessionDispatch:
     # --- _task_is_persistent ---
 
     def test_persistent_when_exit_on_complete_false(self, tmp_path):
-        from agentwire import scheduler
+        from hermeswire import scheduler
         proj = self._project(tmp_path, "tasks:\n  t:\n    prompt: do\n    exit_on_complete: false\n")
         assert scheduler._task_is_persistent(self._sched_task(proj)) is True
 
     def test_not_persistent_by_default(self, tmp_path):
-        from agentwire import scheduler
+        from hermeswire import scheduler
         proj = self._project(tmp_path, "tasks:\n  t:\n    prompt: do\n")
         assert scheduler._task_is_persistent(self._sched_task(proj)) is False
 
     def test_not_persistent_when_task_unloadable(self, tmp_path):
-        from agentwire import scheduler
+        from hermeswire import scheduler
         task = self._sched_task(tmp_path / "missing")
         assert scheduler._task_is_persistent(task) is False
 
     # --- _dispatch_inplace_task kill behavior ---
 
     def _patch_dispatch(self, monkeypatch):
-        import agentwire.locking
-        from agentwire import scheduler
+        import hermeswire.locking
+        from hermeswire import scheduler
         killed, precreated = [], []
-        monkeypatch.setattr(agentwire.locking, "remove_stale_lock", lambda s: None)
+        monkeypatch.setattr(hermeswire.locking, "remove_stale_lock", lambda s: None)
         monkeypatch.setattr(scheduler, "_kill_session", lambda s: killed.append(s))
         monkeypatch.setattr(scheduler, "_pre_create_session", lambda t: precreated.append(t.session))
         monkeypatch.setattr(scheduler, "_run_ensure", lambda cmd, env=None: (0, None, 1))
@@ -632,7 +632,7 @@ class TestPersistentSessionDispatch:
         return killed, precreated
 
     def _dispatch(self, proj, **task_kwargs):
-        from agentwire import scheduler
+        from hermeswire import scheduler
         task = self._sched_task(proj, **task_kwargs)
         board = Board()
         board.tasks["t"] = task
@@ -675,8 +675,8 @@ class TestDispatchWatchdog:
     def _fast_watchdog(self, monkeypatch, max_runtime):
         from types import SimpleNamespace
 
-        from agentwire import scheduler
-        from agentwire.scheduler import dispatch
+        from hermeswire import scheduler
+        from hermeswire.scheduler import dispatch
         monkeypatch.setattr(dispatch, "_WATCHDOG_POLL", 0.1)
         monkeypatch.setattr(
             scheduler, "_sched_config",
@@ -685,8 +685,8 @@ class TestDispatchWatchdog:
     # --- _run_ensure ---
 
     def test_hung_child_killed_at_ceiling(self, monkeypatch):
-        from agentwire import scheduler
-        from agentwire.scheduler import _EXIT_TIMEOUT
+        from hermeswire import scheduler
+        from hermeswire.scheduler import _EXIT_TIMEOUT
         self._fast_watchdog(monkeypatch, 1)
         start = time.time()
         exit_code, result, duration = scheduler._run_ensure(["sleep", "60"])
@@ -698,7 +698,7 @@ class TestDispatchWatchdog:
         # Child exits immediately but a background grandchild inherits the
         # stdout pipe — bare communicate() would block on pipe EOF forever.
         self._fast_watchdog(monkeypatch, 3600)
-        from agentwire import scheduler
+        from hermeswire import scheduler
         start = time.time()
         exit_code, result, duration = scheduler._run_ensure(
             ["sh", "-c", "echo hi; sleep 60 & exit 0"])
@@ -706,7 +706,7 @@ class TestDispatchWatchdog:
         assert time.time() - start < 30  # reaped by the poll, not pipe EOF
 
     def test_normal_completion_unaffected(self, monkeypatch):
-        from agentwire import scheduler
+        from hermeswire import scheduler
         self._fast_watchdog(monkeypatch, 3600)
         exit_code, result, duration = scheduler._run_ensure(
             ["sh", "-c", "echo done"])
@@ -714,7 +714,7 @@ class TestDispatchWatchdog:
         assert "done" in result.stdout
 
     def test_zero_ceiling_disables_watchdog_kill(self, monkeypatch):
-        from agentwire import scheduler
+        from hermeswire import scheduler
         self._fast_watchdog(monkeypatch, 0)
         exit_code, result, duration = scheduler._run_ensure(
             ["sh", "-c", "sleep 0.3; echo ok"])
@@ -723,11 +723,11 @@ class TestDispatchWatchdog:
     # --- dispatch aftermath ---
 
     def _patch_dispatch(self, monkeypatch, proj):
-        import agentwire.locking
-        from agentwire import scheduler
-        from agentwire.scheduler import _EXIT_TIMEOUT
+        import hermeswire.locking
+        from hermeswire import scheduler
+        from hermeswire.scheduler import _EXIT_TIMEOUT
         killed, notified = [], []
-        monkeypatch.setattr(agentwire.locking, "remove_stale_lock", lambda s: None)
+        monkeypatch.setattr(hermeswire.locking, "remove_stale_lock", lambda s: None)
         monkeypatch.setattr(scheduler, "_kill_session", lambda s: killed.append(s))
         monkeypatch.setattr(scheduler, "_pre_create_session", lambda t: None)
         monkeypatch.setattr(scheduler, "_run_ensure",
@@ -745,11 +745,11 @@ class TestDispatchWatchdog:
     def _project(self, tmp_path, task_yaml):
         proj = tmp_path / "proj"
         proj.mkdir()
-        (proj / ".agentwire.tasks.yml").write_text(task_yaml)
+        (proj / ".hermeswire.tasks.yml").write_text(task_yaml)
         return proj
 
     def _dispatch(self, proj, **task_kwargs):
-        from agentwire import scheduler
+        from hermeswire import scheduler
         task = SchedulerTask(name="t", project=str(proj), session="wd-s",
                              task="t", schedule=Schedule(every="1h"), **task_kwargs)
         board = Board()

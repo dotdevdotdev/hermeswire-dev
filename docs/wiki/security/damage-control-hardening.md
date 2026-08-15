@@ -8,7 +8,7 @@
 An internal adversarial review of the damage-control matcher (the
 `pre_tool_call`/permission layer that classifies agent actions as allow / ask /
 block) surfaced five classes of weakness. All five were fixed in one change.
-Public over-block issue [#492](https://github.com/dotdevdotdev/agentwire-dev/issues/492)
+Public over-block issue [#492](https://github.com/dotdevdotdev/hermeswire-dev/issues/492)
 was closed as part of the same work; the remaining four were held until the fix
 landed and are summarized here afterward. Credit: internal security review.
 
@@ -16,21 +16,21 @@ landed and are summarized here afterward. Credit: internal security review.
 
 1. **Control-plane path coverage.** The matcher already protected its own
    kill-switch/rule/hook files. It now also protects the *execution-plane*
-   configs whose strings agentwire runs through its **own**
-   `subprocess.run(..., shell=True)` calls — `~/.agentwire/scheduler.yaml`
-   (gate commands), `~/.agentwire/config.yaml` (service healthchecks), and
+   configs whose strings hermeswire runs through its **own**
+   `subprocess.run(..., shell=True)` calls — `~/.hermeswire/scheduler.yaml`
+   (gate commands), `~/.hermeswire/config.yaml` (service healthchecks), and
    per-project task commands. Those subprocesses never traverse the Hermes
    Agent hook, so write-access to them was a confused-deputy path to unguarded
    execution. Tradeoff: under worktree dispatch, task config is now authored
    host-side.
    > **Update (#720, 2026-07):** per-project task commands were split out of
-   > `.agentwire.yml` into a separate protected file, `.agentwire.tasks.yml` —
-   > `.agentwire.yml` itself is now purely declarative (posture/roles/voice/
+   > `.hermeswire.yml` into a separate protected file, `.hermeswire.tasks.yml` —
+   > `.hermeswire.yml` itself is now purely declarative (posture/roles/voice/
    > parent/worktree) and agent-writable again. The "authored host-side"
-   > tradeoff above is softened by a propose-and-promote flow (`agentwire tasks
-   > review` / `agentwire tasks promote`): an agent still drafts the task
+   > tradeoff above is softened by a propose-and-promote flow (`hermeswire tasks
+   > review` / `hermeswire tasks promote`): an agent still drafts the task
    > definitions, a human just has to promote them. See
-   > [Damage control § Task-execution config split](../internals/damage-control.md#task-execution-config-split-agentwiretasksyml-720).
+   > [Damage control § Task-execution config split](../internals/damage-control.md#task-execution-config-split-hermeswiretasksyml-720).
 
 2. **Tilde / `$HOME` canonicalization.** Commands are canonicalized (`~`,
    `$HOME`, `${HOME}` expanded) before path matching, so a home-relative
@@ -66,7 +66,7 @@ How `ask` resolves depends on the session:
 - **Interactive bypass / auto sessions** (most agent sessions): `ask` → allow,
   unchanged. No new friction.
 - **Interactive non-bypass sessions:** `ask` → the human confirms.
-- **Unattended scheduler dispatch** (`AGENTWIRE_UNATTENDED=1`, no human present):
+- **Unattended scheduler dispatch** (`HERMESWIRE_UNATTENDED=1`, no human present):
   the unattended guardrail turns `ask` → **block + owner email**. This is the
   safe default for cron-style work.
 
@@ -80,10 +80,10 @@ If a scheduled task legitimately needs a construct that now fails closed (e.g. a
 gate or command using `$(...)`), an operator opts it in — always a host-side act:
 
 - **Per task:** add the matched rule id to the task's `unattended_allow` list in
-  its `.agentwire.yml` (the scheduler stamps it into
-  `AGENTWIRE_UNATTENDED_ALLOW` for that dispatch).
+  its `.hermeswire.yml` (the scheduler stamps it into
+  `HERMESWIRE_UNATTENDED_ALLOW` for that dispatch).
 - **Globally:** add the rule id to `safety.unattended_allow` in the protected
-  `~/.agentwire/damagecontrol.yml`.
+  `~/.hermeswire/damagecontrol.yml`.
 
 The blocked-action email names the rule id to add. See
 [`docs/wiki/internals/damage-control.md`](../internals/damage-control.md) for the

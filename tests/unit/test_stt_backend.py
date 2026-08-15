@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from agentwire.stt import NullSTTBackend, STTServerBackend, _default_stt_url, get_stt_backend
+from hermeswire.stt import NullSTTBackend, STTServerBackend, _default_stt_url, get_stt_backend
 
 
 def _cfg(backend: str, url: str | None = None, timeout: int = 30):

@@ -1,7 +1,7 @@
-"""Tests for config validation (agentwire doctor's checks)."""
+"""Tests for config validation (hermeswire doctor's checks)."""
 
-from agentwire.config import load_config
-from agentwire.validation import validate_config
+from hermeswire.config import load_config
+from hermeswire.validation import validate_config
 
 
 def _validate(tmp_path, mutate=None):

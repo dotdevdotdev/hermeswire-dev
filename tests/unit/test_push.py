@@ -4,8 +4,8 @@ import base64
 
 import pytest
 
-from agentwire import push_store
-from agentwire.channels import push as push_channel
+from hermeswire import push_store
+from hermeswire.channels import push as push_channel
 
 
 @pytest.fixture

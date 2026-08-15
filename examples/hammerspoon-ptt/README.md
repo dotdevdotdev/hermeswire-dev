@@ -1,6 +1,6 @@
 # Hammerspoon — two-key push-to-talk
 
-A reference [Hammerspoon](https://www.hammerspoon.org/) config for AgentWire voice input on macOS. Two keys, both toggle-based (tap to start, tap to stop):
+A reference [Hammerspoon](https://www.hammerspoon.org/) config for HermesWire voice input on macOS. Two keys, both toggle-based (tap to start, tap to stop):
 
 - **⌥Space** — talk to the **tab target**: the session the portal is currently focused on.
 - **⌥⌘Space** — **pick-and-talk**: open a session chooser and start recording at the same time; talk while you pick.
@@ -10,8 +10,8 @@ The whole thing is in [`init.lua`](init.lua) — copy it to `~/.hammerspoon/init
 ## Prerequisites
 
 1. `brew install --cask hammerspoon`
-2. AgentWire on PATH (`~/.local/bin/agentwire`)
-3. A **custom STT shim** running: `agentwire stt start` with `stt.backend: custom` in `~/.agentwire/config.yaml`. The host CLI records on the host, so it can't use the browser-tier recognizer — see [`docs/wiki/voice/stt-self-hosted.md`](../../docs/wiki/voice/stt-self-hosted.md) and [`shim-contract.md`](../../docs/wiki/voice/shim-contract.md).
+2. HermesWire on PATH (`~/.local/bin/hermeswire`)
+3. A **custom STT shim** running: `hermeswire stt start` with `stt.backend: custom` in `~/.hermeswire/config.yaml`. The host CLI records on the host, so it can't use the browser-tier recognizer — see [`docs/wiki/voice/stt-self-hosted.md`](../../docs/wiki/voice/stt-self-hosted.md) and [`shim-contract.md`](../../docs/wiki/voice/shim-contract.md).
 4. `hs.ipc` (the `hs` CLI) — the script `require`s it; first load may prompt to install.
 
 ## Hotkeys
@@ -25,8 +25,8 @@ Tap once to start recording, tap the **same** key to stop. For ⌥⌘Space you c
 
 ## How it works
 
-- **⌥Space** reads the target from `~/.agentwire/active-session` at *stop* time, so it follows whichever portal tab you last focused. Empty/missing file → falls back to the `DEFAULT_TARGET` at the top of `init.lua` (`agentwire`). The portal keeps that file current — see the active-session contract in the canonical doc.
-- **⌥⌘Space** starts recording and opens an `hs.chooser` populated from `agentwire list --sessions --json`. You pick visually (type to filter / arrow / click), so it can **never misroute** — there's no voice name-matching. Second ⌥⌘Space press reads the highlighted row and sends there.
+- **⌥Space** reads the target from `~/.hermeswire/active-session` at *stop* time, so it follows whichever portal tab you last focused. Empty/missing file → falls back to the `DEFAULT_TARGET` at the top of `init.lua` (`hermeswire`). The portal keeps that file current — see the active-session contract in the canonical doc.
+- **⌥⌘Space** starts recording and opens an `hs.chooser` populated from `hermeswire list --sessions --json`. You pick visually (type to filter / arrow / click), so it can **never misroute** — there's no voice name-matching. Second ⌥⌘Space press reads the highlighted row and sends there.
 
 ## Gotchas (baked into `init.lua`)
 
@@ -38,8 +38,8 @@ Tap once to start recording, tap the **same** key to stop. For ⌥⌘Space you c
 
 | Problem | Check |
 |---------|-------|
-| Alert shows but no transcript | `agentwire stt status`; confirm `stt.backend: custom` |
-| ⌥Space sends to the wrong/default session | `cat ~/.agentwire/active-session`; focus a session window in the portal |
-| Chooser shows "No sessions running" | `agentwire list --sessions` from a normal shell |
-| `agentwire: not found` | Fix the `agentwire` path or `PATH` at the top of `init.lua` |
-| Debug the CLI side | `tail -f ~/.agentwire/logs/listen.log` |
+| Alert shows but no transcript | `hermeswire stt status`; confirm `stt.backend: custom` |
+| ⌥Space sends to the wrong/default session | `cat ~/.hermeswire/active-session`; focus a session window in the portal |
+| Chooser shows "No sessions running" | `hermeswire list --sessions` from a normal shell |
+| `hermeswire: not found` | Fix the `hermeswire` path or `PATH` at the top of `init.lua` |
+| Debug the CLI side | `tail -f ~/.hermeswire/logs/listen.log` |

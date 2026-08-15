@@ -14,8 +14,8 @@ operation the same way):
   as one), and anchored rules matched anywhere in the masked haystack (so a
   single-word quoted operand could supply the verb). Fixed by
   ``path_ladder_haystacks`` and command-position enforcement.
-- **#949** — ``agentwire.yaml``'s rm rules matched ANY rm that mentioned
-  ``.agentwire`` anywhere, refusing single-file cleanup inside the state dir
+- **#949** — ``hermeswire.yaml``'s rm rules matched ANY rm that mentioned
+  ``.hermeswire`` anywhere, refusing single-file cleanup inside the state dir
   with a message claiming directory destruction. Fixed by keying the rule on
   the operation: recursive/force flag AND a path terminating at the directory.
 
@@ -31,8 +31,8 @@ import pytest
 import yaml
 
 REPO = Path(__file__).resolve().parent.parent.parent
-RULES_DIR = REPO / "agentwire" / "hooks" / "damage-control" / "rules"
-TOOLDEFS_DIR = REPO / "agentwire" / "tooldefs"
+RULES_DIR = REPO / "hermeswire" / "hooks" / "damage-control" / "rules"
+TOOLDEFS_DIR = REPO / "hermeswire" / "tooldefs"
 
 REFUSED = {"block", "ask"}
 SAFETY = {"enabled": True, "disabled_rules": [], "unattended_allow": []}
@@ -111,7 +111,7 @@ class TestTooldefPrefixTruncation:
         ("rm -rf /tmp/x", "core.rm-with-recursive-or-force-flags"),
         ("sudo rm /etc/hosts", "core.sudo-rm"),
         ("tmux kill-server",
-         "agentwire.tmux-kill-server-destroys-all-tmux-sessions-including-agentw"),
+         "hermeswire.tmux-kill-server-destroys-all-tmux-sessions-including-agentw"),
         ("git -C /repo push --force", "git.git-push-force-use-force-with-lease"),
     ]
 
@@ -152,25 +152,25 @@ class TestTooldefPrefixTruncation:
 
 
 # ---------------------------------------------------------------------------
-# #949 — the .agentwire rule guards the operation, not the string
+# #949 — the .hermeswire rule guards the operation, not the string
 # ---------------------------------------------------------------------------
 
 
-AGENTWIRE_RM_RULE = (
-    "agentwire.recursive-forced-rm-of-the-agentwire-directory-itself-destro"
+HERMESWIRE_RM_RULE = (
+    "hermeswire.recursive-forced-rm-of-the-hermeswire-directory-itself-destro"
 )
-OLD_PATTERNS = [r'\brm\s+.*\.agentwire', r'\brm\s+.*~/.agentwire']
+OLD_PATTERNS = [r'\brm\s+.*\.hermeswire', r'\brm\s+.*~/.hermeswire']
 
 
-class TestAgentwireDirRule:
+class TestHermeswireDirRule:
     # The literal incident: a one-file registry cleanup, not recursive, cannot
     # remove a directory. It still lands in core's ordinary bypassable rm rule
     # (that is core policy, unchanged) — but never in the directory-destruction
     # rule, and the message no longer asserts something the command cannot do.
     SINGLE_FILE_CLEANUPS = [
-        'rm "/Users/dotdev/.agentwire/worktrees/stale-entry.json"',
-        "rm ~/.agentwire/inbox/session/msg-1.json",
-        "rm -v ~/.agentwire/logs/old.log",
+        'rm "/Users/dotdev/.hermeswire/worktrees/stale-entry.json"',
+        "rm ~/.hermeswire/inbox/session/msg-1.json",
+        "rm -v ~/.hermeswire/logs/old.log",
     ]
 
     @pytest.mark.parametrize("command", SINGLE_FILE_CLEANUPS)
@@ -178,8 +178,8 @@ class TestAgentwireDirRule:
         self, bash_hook, bundled_config, command
     ):
         result = bash_hook.check_command(command, bundled_config)
-        assert result.get("id") != AGENTWIRE_RM_RULE, (
-            f"{command!r} still refused as destroying the .agentwire "
+        assert result.get("id") != HERMESWIRE_RM_RULE, (
+            f"{command!r} still refused as destroying the .hermeswire "
             f"directory — the rule matches the spelling again"
         )
         # Rule set measured: bundled+bundled. In that set a plain single-file
@@ -187,33 +187,33 @@ class TestAgentwireDirRule:
         # core's rm rules key on recursive/force forms). A live machine's
         # damagecontrol.yml may still block these via its own ladders — that is
         # the machine's call, not this rule's, so the only pin here is that any
-        # block is NOT the .agentwire directory rule and names a real rule.
+        # block is NOT the .hermeswire directory rule and names a real rule.
         # (ladder verdicts carry `pattern`, rule verdicts carry `id`)
         if result["decision"] == "block":
             assert result.get("id") or result.get("pattern"), result
 
     DESTRUCTION_FORMS = [
-        "rm -rf ~/.agentwire",
-        "rm -rf ~/.agentwire/",
-        "rm -fr $HOME/.agentwire",
-        "rm -r /Users/dotdev/.agentwire",
-        "rm --recursive /home/ci/.agentwire",
-        "rm -r -f ~/.agentwire",
-        "rm -rf /tmp/x ~/.agentwire",
-        "cd ~ && rm -rf .agentwire",
+        "rm -rf ~/.hermeswire",
+        "rm -rf ~/.hermeswire/",
+        "rm -fr $HOME/.hermeswire",
+        "rm -r /Users/dotdev/.hermeswire",
+        "rm --recursive /home/ci/.hermeswire",
+        "rm -r -f ~/.hermeswire",
+        "rm -rf /tmp/x ~/.hermeswire",
+        "cd ~ && rm -rf .hermeswire",
     ]
 
     @pytest.mark.parametrize("command", DESTRUCTION_FORMS)
-    def test_directory_destruction_blocks_by_the_agentwire_rule(
+    def test_directory_destruction_blocks_by_the_hermeswire_rule(
         self, bash_hook, command
     ):
         """Solo config — no other rule may take the credit (core's rm -rf rule
         would otherwise catch every one of these first)."""
-        data = yaml.safe_load((RULES_DIR / "agentwire.yaml").read_text())
+        data = yaml.safe_load((RULES_DIR / "hermeswire.yaml").read_text())
         rule = next(
             p for p in data["bashToolPatterns"]
-            if "agentwire directory" in p.get("reason", "").lower()
-            or ".agentwire" in p.get("pattern", "")
+            if "hermeswire directory" in p.get("reason", "").lower()
+            or ".hermeswire" in p.get("pattern", "")
             and "rm" in p.get("pattern", "")
         )
         cfg = {
@@ -226,7 +226,7 @@ class TestAgentwireDirRule:
         }
         result = bash_hook.check_command(command, cfg)
         assert result["decision"] == "block", (
-            f"{command!r} not blocked by the .agentwire rule alone "
+            f"{command!r} not blocked by the .hermeswire rule alone "
             f"({result.get('reason')})"
         )
 
@@ -240,27 +240,27 @@ class TestAgentwireDirRule:
         """The mutation control: the exact incident command matched BOTH old
         patterns (that is the bug) and matches the shipped rule no more."""
         import re
-        incident = 'rm "/Users/dotdev/.agentwire/worktrees/stale-entry.json"'
+        incident = 'rm "/Users/dotdev/.hermeswire/worktrees/stale-entry.json"'
         # each old pattern against the spelling it over-matched
         for old, victim in (
             (OLD_PATTERNS[0], incident),
-            (OLD_PATTERNS[1], "rm ~/.agentwire/inbox/msg.json"),
+            (OLD_PATTERNS[1], "rm ~/.hermeswire/inbox/msg.json"),
         ):
             assert re.search(old, victim), "corpus did not change — old pattern never matched"
-        data = yaml.safe_load((RULES_DIR / "agentwire.yaml").read_text())
+        data = yaml.safe_load((RULES_DIR / "hermeswire.yaml").read_text())
         patterns = [p["pattern"] for p in data["bashToolPatterns"]]
         assert not any(p in OLD_PATTERNS for p in patterns), (
             "the spelling-keyed rm rules are still shipped"
         )
-        new = [p for p in patterns if ".agentwire" in p and "rm" in p]
+        new = [p for p in patterns if ".hermeswire" in p and "rm" in p]
         assert new, "the operation-keyed rm rule is missing"
         for p in new:
             assert not re.search(p, incident, re.IGNORECASE)
-            assert re.search(p, "rm -rf ~/.agentwire", re.IGNORECASE)
+            assert re.search(p, "rm -rf ~/.hermeswire", re.IGNORECASE)
 
 
 # ---------------------------------------------------------------------------
-# #922 — nested-file rm under .agentwire is refused HONESTLY, and the ladder
+# #922 — nested-file rm under .hermeswire is refused HONESTLY, and the ladder
 # keep-predicate keeps real path operands visible (the acceptance rows for the
 # grep cases live in test_damage_control_payload_anchoring.py's
 # TestRemainingPayloadMechanisms, next to the history they rewrite)
@@ -272,7 +272,7 @@ class TestLadderKeepPredicate:
         self, bash_hook, bundled_config
     ):
         result = bash_hook.check_command(
-            'shred "/Users/dotdev/.agentwire/dead letters.json"', bundled_config
+            'shred "/Users/dotdev/.hermeswire/dead letters.json"', bundled_config
         )
         assert result["decision"] == "block"
         assert "noDeletePath" in str(result.get("pattern", ""))
@@ -281,7 +281,7 @@ class TestLadderKeepPredicate:
         self, bash_hook, bundled_config
     ):
         result = bash_hook.check_command(
-            "sh -c 'unlink /Users/dotdev/.agentwire/state.json'", bundled_config
+            "sh -c 'unlink /Users/dotdev/.hermeswire/state.json'", bundled_config
         )
         assert result["decision"] == "block"
 
@@ -291,7 +291,7 @@ class TestLadderKeepPredicate:
         # the #922 acceptance command, verbatim
         result = bash_hook.check_command(
             'grep -rn "rm file deletion" '
-            "/Users/dotdev/.agentwire/damage-control/",
+            "/Users/dotdev/.hermeswire/damage-control/",
             bundled_config,
         )
         assert result["decision"] == "allow", result

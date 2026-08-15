@@ -2,13 +2,13 @@
 
 > Living document. Update this, don't create new versions.
 
-A single-page reference for how AgentWire's pieces fit together. For deep dives on any one piece, follow the links into the rest of the wiki.
+A single-page reference for how HermesWire's pieces fit together. For deep dives on any one piece, follow the links into the rest of the wiki.
 
 ---
 
 ## Process Model
 
-tmux is the substrate. One agentwire session = one tmux session. Inside that session, panes are organized as orchestrator + workers:
+tmux is the substrate. One hermeswire session = one tmux session. Inside that session, panes are organized as orchestrator + workers:
 
 ```
 tmux session "myproject"
@@ -20,7 +20,7 @@ tmux session "myproject"
 
 The orchestrator coordinates work and dispatches workers via the MCP `pane_spawn` tool. Workers fire an *idle notification* on completion (via `~/.hermes/hooks/idle-handler.sh`); the hook routes the alert to pane 0 and kills the worker. Pane 0's own idle notifications route to whatever session is named in `parent:` (typically the human-facing session).
 
-Role (orchestrator/worker) and topology (main/worktree/pane) are independent axes (#716): a worker doesn't have to live in a pane — `agentwire worktree <name>` spawns it as a standalone tmux session instead, pushing a branch and opening a draft PR on completion rather than firing a pane-idle notification. The pane diagram above is the pane-topology case; see [worktree sessions](sessions/worktree-sessions.md) for the other.
+Role (orchestrator/worker) and topology (main/worktree/pane) are independent axes (#716): a worker doesn't have to live in a pane — `hermeswire worktree <name>` spawns it as a standalone tmux session instead, pushing a branch and opening a draft PR on completion rather than firing a pane-idle notification. The pane diagram above is the pane-topology case; see [worktree sessions](sessions/worktree-sessions.md) for the other.
 
 For postures — bypass, prompted, auto (or bare) — see [Sessions index](INDEX.md#sessions). For the worker-pane lifecycle in detail, see [CLAUDE.md](../../CLAUDE.md#worker-pane-lifecycle).
 
@@ -33,12 +33,12 @@ Three surfaces, one source of truth.
 ```
 ┌──────────────────────────────┐  ┌──────────────────────────────┐
 │  Humans / scripts            │  │  Agents inside sessions      │
-│    agentwire <cmd>           │  │    MCP tools (107 of them)   │
+│    hermeswire <cmd>           │  │    MCP tools (107 of them)   │
 └─────────────┬────────────────┘  └─────────────┬────────────────┘
               │                                 │
               ▼                                 ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  agentwire CLI  (agentwire/core.py + agentwire/<domain>_cli.py) │
+│  hermeswire CLI  (hermeswire/core.py + hermeswire/<domain>_cli.py) │
 │  • single source of truth for all session/machine/task logic    │
 │  • every command supports --json for machine-readable output    │
 └────────────────┬────────────────────────────────────────────────┘
@@ -47,26 +47,26 @@ Three surfaces, one source of truth.
    ▼                          ▼
 Portal (server.py)       Direct subprocess
 • REST + WebSocket        (humans, hooks,
-• calls run_agentwire_cmd  scheduler, MCP)
+• calls run_hermeswire_cmd  scheduler, MCP)
 • never reimplements
   business logic
 ```
 
 **Rules:**
 1. New behavior implements first in the CLI with `--json` output.
-2. The portal calls the CLI via `run_agentwire_cmd(["cmd", "args"])` and parses the JSON result. It adds WebSocket / real-time / browser layers on top, never reimplements logic.
-3. Agents inside sessions reach for MCP tools, not the CLI. Same logic underneath; nicer ergonomics for agents. `agentwire-mcp-tools` skill has the full surface.
+2. The portal calls the CLI via `run_hermeswire_cmd(["cmd", "args"])` and parses the JSON result. It adds WebSocket / real-time / browser layers on top, never reimplements logic.
+3. Agents inside sessions reach for MCP tools, not the CLI. Same logic underneath; nicer ergonomics for agents. `hermeswire-mcp-tools` skill has the full surface.
 
-This is why bug fixes land in one place: change the CLI, the portal and MCP tools both pick it up after `agentwire rebuild && agentwire portal restart --dev`.
+This is why bug fixes land in one place: change the CLI, the portal and MCP tools both pick it up after `hermeswire rebuild && hermeswire portal restart --dev`.
 
 ---
 
 ## Storage Layout
 
-### Global — `~/.agentwire/`
+### Global — `~/.hermeswire/`
 
 ```
-~/.agentwire/
+~/.hermeswire/
 ├── config.yaml              # main config (TTS, STT, channels, services, session/posture defaults, …)
 ├── .env                     # all API keys/secrets, chmod 600 (see security/secrets.md)
 ├── machines.json            # remote machines registry
@@ -76,7 +76,7 @@ This is why bug fixes land in one place: change the CLI, the portal and MCP tool
 ├── voices/                  # TTS reference WAVs
 ├── damage-control/          # OPTIONAL user override for security rules
 ├── apps/, artifacts/        # agent-generated UIs and HTML artifacts
-├── locks/                   # session mutexes (acquired by `agentwire ensure`)
+├── locks/                   # session mutexes (acquired by `hermeswire ensure`)
 ├── sessions/                # per-session metadata.json
 ├── usage-limit/             # usage-limit recovery park state
 ├── tasks/                   # ensure-task summary files
@@ -87,14 +87,14 @@ This is why bug fixes land in one place: change the CLI, the portal and MCP tool
 └── cert.pem, key.pem        # self-signed TLS for the portal
 ```
 
-### Per-project — `.agentwire.yml` + `.agentwire.tasks.yml`
+### Per-project — `.hermeswire.yml` + `.hermeswire.tasks.yml`
 
-`.agentwire.yml` lives at the project root and is purely declarative: posture, roles, voice, parent (for cross-session notifications), worktree overrides — no execution vector, so it's agent-writable. Named tasks (`pre`/`post`/`on_task_end`/`shell` — code the scheduler runs via `shell=True`) live in a separate, protected sibling file, `.agentwire.tasks.yml` (#720), authored via propose-and-promote (`agentwire tasks review` / `agentwire tasks promote`) since a policed agent can't write it directly. See `agentwire-project-config` skill for the full schema and [Damage control](internals/damage-control.md#task-execution-config-split-agentwiretasksyml-720) for the protection model.
+`.hermeswire.yml` lives at the project root and is purely declarative: posture, roles, voice, parent (for cross-session notifications), worktree overrides — no execution vector, so it's agent-writable. Named tasks (`pre`/`post`/`on_task_end`/`shell` — code the scheduler runs via `shell=True`) live in a separate, protected sibling file, `.hermeswire.tasks.yml` (#720), authored via propose-and-promote (`hermeswire tasks review` / `hermeswire tasks promote`) since a policed agent can't write it directly. See `hermeswire-project-config` skill for the full schema and [Damage control](internals/damage-control.md#task-execution-config-split-hermeswiretasksyml-720) for the protection model.
 
-**Gitignore both.** They're personal/live config (voices, schedules, notification addresses, task shell commands) — not project code. Tracking either also breaks worktree dispatch subtly: worktree runs check out HEAD, so uncommitted live edits to a tracked file are silently ignored. Gitignored, they're seeded into worktrees via `projects.worktrees.copy_files` (default includes both), so the live file always wins. AgentWire adds `.agentwire.yml` to `.gitignore` automatically whenever it writes the file into a git repo; `agentwire tasks promote` does the same for `.agentwire.tasks.yml` on first promote.
+**Gitignore both.** They're personal/live config (voices, schedules, notification addresses, task shell commands) — not project code. Tracking either also breaks worktree dispatch subtly: worktree runs check out HEAD, so uncommitted live edits to a tracked file are silently ignored. Gitignored, they're seeded into worktrees via `projects.worktrees.copy_files` (default includes both), so the live file always wins. HermesWire adds `.hermeswire.yml` to `.gitignore` automatically whenever it writes the file into a git repo; `hermeswire tasks promote` does the same for `.hermeswire.tasks.yml` on first promote.
 
 ```yaml
-# .agentwire.yml
+# .hermeswire.yml
 posture: auto
 roles: [task-runner]
 voice: may
@@ -102,7 +102,7 @@ parent: main
 ```
 
 ```yaml
-# .agentwire.tasks.yml
+# .hermeswire.tasks.yml
 tasks:
   nightly-tests:
     starting_ref: main
@@ -121,7 +121,7 @@ tasks:
                   │                                       │            ▲
                   │ outbound notifications                ▼            │
        ┌─────────────────────────────────────────────────────────────────┐
-       │                      AgentWire sessions                          │
+       │                      HermesWire sessions                          │
        │                                                                  │
        │   parent: main ◄───── orchestrator ──── pane_spawn ──► worker   │
        │                            │                              │     │
@@ -132,7 +132,7 @@ tasks:
                   (browser if connected, else local)     ←── via portal WS
 ```
 
-- **Channels** are outbound-only notification integrations — a session calls `agentwire email` or `agentwire quo` to push a notification out; a third channel, `push` (Web Push/VAPID), auto-mirrors portal toasts to subscribed devices rather than being invoked directly. Inbound user input flows through the portal (web + tunnel), not channels. Inbound chat-platform bridges (Telegram, Discord, Slack) were removed; the portal is the single inbound surface. → [Channels](communication/channels.md).
+- **Channels** are outbound-only notification integrations — a session calls `hermeswire email` or `hermeswire quo` to push a notification out; a third channel, `push` (Web Push/VAPID), auto-mirrors portal toasts to subscribed devices rather than being invoked directly. Inbound user input flows through the portal (web + tunnel), not channels. Inbound chat-platform bridges (Telegram, Discord, Slack) were removed; the portal is the single inbound surface. → [Channels](communication/channels.md).
 - **Voice and STT** live on the portal side as `say()` / `listen()` agent tools.
 - **Idle notifications** form a tree: workers → pane 0 of the same session → the `parent:` session (typically human-facing). This is what makes hierarchical multi-session orchestration tractable.
 
@@ -144,21 +144,21 @@ Non-interactive work runs through the scheduler:
 
 | Path | Field | Dispatch | Best for |
 |---|---|---|---|
-| **Ensure task** | `task: <name>` in scheduler.yaml + `tasks: <name>:` in .agentwire.tasks.yml | `agentwire ensure` → tmux session → Hermes Agent | Recurring agent work |
+| **Ensure task** | `task: <name>` in scheduler.yaml + `tasks: <name>:` in .hermeswire.tasks.yml | `hermeswire ensure` → tmux session → Hermes Agent | Recurring agent work |
 
 ```
-                ┌──────── ~/.agentwire/scheduler.yaml ─────────┐
+                ┌──────── ~/.hermeswire/scheduler.yaml ─────────┐
                 │   tasks:                                     │
                 │     nightly-tests:    task: write-tests      │
                 └──────────────────┬───────────────────────────┘
                                    ▼
-                          agentwire ensure
+                          hermeswire ensure
                           (tmux + Hermes)
 ```
 
 Decision shortcut:
 - Recurring + autonomous → scheduler with `task:`.
-- Ad-hoc → `agentwire ensure` or just open a session.
+- Ad-hoc → `hermeswire ensure` or just open a session.
 
 → [Scheduled workloads](scheduling/scheduled-workloads.md).
 
@@ -168,7 +168,7 @@ Decision shortcut:
 
 Defense in depth, three layers:
 
-1. **Damage control hooks** (always on if `agentwire hooks install` was run): `pre_tool_call` hooks on `terminal`/`write_file`/`patch`/`read_file`/`search_files` match commands and paths against `agentwire/hooks/damage-control/rules/*.yaml`. Block hard-blocked patterns, escalate ask-patterns to the approval gate, run bypassable patterns through allowlist checks; the read-side hook additionally enforces `zeroAccessPaths` on content reads.
+1. **Damage control hooks** (always on if `hermeswire hooks install` was run): `pre_tool_call` hooks on `terminal`/`write_file`/`patch`/`read_file`/`search_files` match commands and paths against `hermeswire/hooks/damage-control/rules/*.yaml`. Block hard-blocked patterns, escalate ask-patterns to the approval gate, run bypassable patterns through allowlist checks; the read-side hook additionally enforces `zeroAccessPaths` on content reads.
 2. **Per-project allowlists** (`allowed_paths` in the protected `.damagecontrol.yml` at the repo root): override the global rules for paths inside this project (e.g., `dist/*` allow-all, `.env.development` allow read/write/edit). The allowlist is host-owned — an agent can't edit `.damagecontrol.yml` to widen its own freedom (#466/#467).
 3. **Hermes safety posture** (`posture: auto`/`bypass` → `--yolo`): Hermes's HARDLINE blocklist plus the damage-control hooks enforce safety at the tool layer, with `--checkpoints` available for rollback before destructive file ops. There is no classifier — see [Hermes safety posture](sessions/hermes-safety-posture.md).
 

@@ -1,4 +1,4 @@
-"""Tests for ``agentwire diff`` — the structured diff behind the mobile Review
+"""Tests for ``hermeswire diff`` — the structured diff behind the mobile Review
 window (#484). Covers the unified-diff parser and the command's JSON shape +
 base-resolution, with git fully mocked so no real repo is needed.
 """
@@ -7,7 +7,7 @@ import json
 import subprocess
 from types import SimpleNamespace
 
-from agentwire import diff_cli
+from hermeswire import diff_cli
 
 SAMPLE_DIFF = """\
 diff --git a/foo.py b/foo.py

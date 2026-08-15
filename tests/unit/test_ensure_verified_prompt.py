@@ -18,21 +18,21 @@ ignoring what it returns would reproduce the same silence with more machinery.
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from agentwire.ensure_cli import send_task_prompt
+from hermeswire.ensure_cli import send_task_prompt
 
 
 class TestSendTaskPromptVerifies:
     def test_uses_the_verified_path_not_the_blind_one(self):
         """The whole point: this must not call `send_to_pane`/`send_to_target`."""
-        with patch("agentwire.session_ready.send_verified", return_value=True) as sv, \
-             patch("agentwire.pane_manager.send_to_target") as blind:
+        with patch("hermeswire.session_ready.send_verified", return_value=True) as sv, \
+             patch("hermeswire.pane_manager.send_to_target") as blind:
             assert send_task_prompt("s", "do the thing") is True
         sv.assert_called_once()
         blind.assert_not_called()
 
     def test_paste_is_marker_tagged_and_the_marker_is_passed_through(self):
         """Per-attempt marker (#839) makes every downstream check a fact."""
-        with patch("agentwire.session_ready.send_verified", return_value=True) as sv:
+        with patch("hermeswire.session_ready.send_verified", return_value=True) as sv:
             send_task_prompt("s", "do the thing")
         args, kwargs = sv.call_args
         pasted, marker = args[1], kwargs["marker"]
@@ -42,16 +42,16 @@ class TestSendTaskPromptVerifies:
 
     def test_each_send_mints_a_fresh_marker(self):
         seen = []
-        with patch("agentwire.session_ready.send_verified", return_value=True) as sv:
+        with patch("hermeswire.session_ready.send_verified", return_value=True) as sv:
             send_task_prompt("s", "x")
             send_task_prompt("s", "x")
         seen = [c.kwargs["marker"] for c in sv.call_args_list]
         assert seen[0] != seen[1]
 
     def test_failure_is_reported_as_failure(self):
-        with patch("agentwire.session_ready.send_verified", return_value=False), \
-             patch("agentwire.session_ready.scrollback", return_value=""), \
-             patch("agentwire.session_ready.message_on_scrollback", return_value=False):
+        with patch("hermeswire.session_ready.send_verified", return_value=False), \
+             patch("hermeswire.session_ready.scrollback", return_value=""), \
+             patch("hermeswire.session_ready.message_on_scrollback", return_value=False):
             assert send_task_prompt("s", "do the thing") is False
 
     def test_ambiguous_confirm_that_actually_landed_is_not_a_failure(self):
@@ -60,16 +60,16 @@ class TestSendTaskPromptVerifies:
         The marker can only reach scrollback if THIS paste submitted, so its
         presence settles it as a fact rather than a text-similarity guess.
         """
-        with patch("agentwire.session_ready.send_verified", return_value=False), \
-             patch("agentwire.session_ready.scrollback", return_value="...output..."), \
-             patch("agentwire.session_ready.message_on_scrollback", return_value=True):
+        with patch("hermeswire.session_ready.send_verified", return_value=False), \
+             patch("hermeswire.session_ready.scrollback", return_value="...output..."), \
+             patch("hermeswire.session_ready.message_on_scrollback", return_value=True):
             assert send_task_prompt("s", "do the thing") is True
 
     def test_scrollback_is_checked_against_the_marker_not_the_prompt(self):
         """Matching bare prompt text would false-positive on a generic prompt."""
-        with patch("agentwire.session_ready.send_verified", return_value=False) as sv, \
-             patch("agentwire.session_ready.scrollback", return_value="hay"), \
-             patch("agentwire.session_ready.message_on_scrollback",
+        with patch("hermeswire.session_ready.send_verified", return_value=False) as sv, \
+             patch("hermeswire.session_ready.scrollback", return_value="hay"), \
+             patch("hermeswire.session_ready.message_on_scrollback",
                    return_value=False) as mos:
             send_task_prompt("s", "continue")
         needle = mos.call_args[0][1]
@@ -79,7 +79,7 @@ class TestSendTaskPromptVerifies:
 
 def _task(**overrides):
     """A real TaskConfig — parsed, so no field can silently go missing."""
-    from agentwire.tasks import parse_task_config
+    from hermeswire.tasks import parse_task_config
 
     return parse_task_config("t", {"prompt": "do the thing", **overrides})
 
@@ -93,22 +93,22 @@ class TestFailedSendEndsTheAttempt:
     """
 
     def _run(self, tmp_path, sent, task=None, signal=None):
-        from agentwire import ensure_cli
-        from agentwire.templating import TemplateContext
+        from hermeswire import ensure_cli
+        from hermeswire.templating import TemplateContext
 
         task = task or _task()
         ctx = TemplateContext(session="s", task="t", project_root=str(tmp_path))
         args = SimpleNamespace(session="s", task="t")
-        (tmp_path / ".agentwire").mkdir(exist_ok=True)
+        (tmp_path / ".hermeswire").mkdir(exist_ok=True)
 
         with patch.object(ensure_cli, "send_task_prompt", side_effect=sent) as send, \
-             patch("agentwire.ensure_cli.tmux_session_exists", return_value=True), \
-             patch("agentwire.session_ready.wait_for_session_ready", return_value=True), \
-             patch("agentwire.completion.wait_for_completion_signal") as wait, \
-             patch("agentwire.completion.write_task_context"), \
-             patch("agentwire.completion.clear_task_context"), \
-             patch("agentwire.ensure_cli.subprocess.run"), \
-             patch("agentwire.ensure_cli.time.sleep"):
+             patch("hermeswire.ensure_cli.tmux_session_exists", return_value=True), \
+             patch("hermeswire.session_ready.wait_for_session_ready", return_value=True), \
+             patch("hermeswire.completion.wait_for_completion_signal") as wait, \
+             patch("hermeswire.completion.write_task_context"), \
+             patch("hermeswire.completion.clear_task_context"), \
+             patch("hermeswire.ensure_cli.subprocess.run"), \
+             patch("hermeswire.ensure_cli.time.sleep"):
             wait.return_value = signal or {"status": "complete", "summary": "ok"}
             rc = ensure_cli._run_ensure_task(
                 args, "s", task, ctx, "/bin/sh", tmp_path, json_mode=False)

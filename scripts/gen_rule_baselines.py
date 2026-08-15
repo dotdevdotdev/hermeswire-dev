@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Generate ``agentwire/safety/rule_baselines.json`` — every version we ever shipped.
+"""Generate ``hermeswire/safety/rule_baselines.json`` — every version we ever shipped.
 
-``heal_damage_control`` may not blind-overwrite ``~/.agentwire/damage-control/``
-or ``~/.agentwire/tooldefs/``: those files are documented as host-editable, and
+``heal_damage_control`` may not blind-overwrite ``~/.hermeswire/damage-control/``
+or ``~/.hermeswire/tooldefs/``: those files are documented as host-editable, and
 clobbering a hand-written rule is a worse failure than shipping a stale one. But
 "install missing only" meant a rule file was written once at install and NEVER
 updated again, so every rule fix this repo ships was inert on every existing
@@ -40,12 +40,12 @@ from pathlib import Path
 from typing import Dict, List
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-MANIFEST_PATH = REPO_ROOT / "agentwire" / "safety" / "rule_baselines.json"
+MANIFEST_PATH = REPO_ROOT / "hermeswire" / "safety" / "rule_baselines.json"
 
 # (manifest section, repo-relative dir)
 SECTIONS = {
-    "rules": Path("agentwire/hooks/damage-control/rules"),
-    "tooldefs": Path("agentwire/tooldefs"),
+    "rules": Path("hermeswire/hooks/damage-control/rules"),
+    "tooldefs": Path("hermeswire/tooldefs"),
 }
 
 HEADER = (

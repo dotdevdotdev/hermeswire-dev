@@ -1,9 +1,9 @@
-"""Tests for agentwire/worktree_registry.py — local branch↔session store."""
+"""Tests for hermeswire/worktree_registry.py — local branch↔session store."""
 
 
 import pytest
 
-from agentwire import worktree_registry as reg
+from hermeswire import worktree_registry as reg
 
 
 @pytest.fixture(autouse=True)
@@ -116,7 +116,7 @@ def test_concurrent_registration_processes_all_survive(tmp_path, monkeypatch):
     prog = (
         "import sys\n"
         "from pathlib import Path\n"
-        "from agentwire import worktree_registry as reg\n"
+        "from hermeswire import worktree_registry as reg\n"
         "reg.REGISTRY_DIR = Path(sys.argv[1])\n"
         "i = sys.argv[2]\n"
         "reg.register(Path(sys.argv[3]), branch='b'+i, session='monorepo-'+i, "

@@ -1,16 +1,16 @@
 # Remote Access Setup
 
-Access your AgentWire portal from anywhere using Cloudflare Tunnel with Zero Trust authentication.
+Access your HermesWire portal from anywhere using Cloudflare Tunnel with Zero Trust authentication.
 
-> **agentwire ships no tunnel code (#420).** Internet exposure is bring-your-own —
-> cloudflared, tailscale, or a plain `ssh -L` you run yourself. agentwire owns only
+> **hermeswire ships no tunnel code (#420).** Internet exposure is bring-your-own —
+> cloudflared, tailscale, or a plain `ssh -L` you run yourself. hermeswire owns only
 > the portal's *local* security boundary: 127.0.0.1 default, per-device bearer
 > tokens, refuse-to-start on a non-loopback bind without a token, self-signed TLS.
-> The tunnel in front of it is yours to operate. (The internal `agentwire tunnels *`
+> The tunnel in front of it is yours to operate. (The internal `hermeswire tunnels *`
 > SSH service-router still exists as an opt-in manual helper for the vestigial
 > remote-GPU-service case, but is **no longer auto-spawned at portal start**.)
 >
-> Pair a device once with `agentwire portal pair` (prints a code + QR); see
+> Pair a device once with `hermeswire portal pair` (prints a code + QR); see
 > [remote-access-hardening](../security/remote-access-hardening.md) for the auth model.
 >
 > The "Failsafe Access" section below still uses the owner's personal
@@ -29,7 +29,7 @@ This guide covers:
 
 - A domain managed by Cloudflare (free tier works)
 - `cloudflared` CLI installed
-- AgentWire portal running locally
+- HermesWire portal running locally
 
 ## 1. Install cloudflared
 
@@ -54,7 +54,7 @@ This opens a browser to authenticate and stores credentials in `~/.cloudflared/`
 ## 3. Create a Tunnel
 
 ```bash
-cloudflared tunnel create agentwire
+cloudflared tunnel create hermeswire
 ```
 
 Note the tunnel ID (UUID) - you'll need it for configuration.
@@ -68,7 +68,7 @@ tunnel: YOUR_TUNNEL_ID
 credentials-file: /Users/YOUR_USER/.cloudflared/YOUR_TUNNEL_ID.json
 
 ingress:
-  - hostname: agentwire.yourdomain.com
+  - hostname: hermeswire.yourdomain.com
     service: https://localhost:8765
     originRequest:
       noTLSVerify: true  # Portal uses self-signed cert
@@ -78,7 +78,7 @@ ingress:
 ## 5. Create DNS Record
 
 ```bash
-cloudflared tunnel route dns agentwire agentwire.yourdomain.com
+cloudflared tunnel route dns hermeswire hermeswire.yourdomain.com
 ```
 
 This creates a CNAME record pointing to your tunnel.
@@ -93,9 +93,9 @@ Cloudflare Access adds authentication before anyone can reach your portal.
 2. Navigate to **Access → Applications**
 3. Click **Add an application** → **Self-hosted**
 4. Configure:
-   - **Application name**: AgentWire Portal
+   - **Application name**: HermesWire Portal
    - **Session duration**: 24 hours (or your preference)
-   - **Application domain**: `agentwire.yourdomain.com`
+   - **Application domain**: `hermeswire.yourdomain.com`
 
 ### Create Access Policy
 
@@ -108,14 +108,14 @@ Cloudflare Access adds authentication before anyone can reach your portal.
 4. Save the policy
 5. Go back to your application and **attach the policy**
 
-Now accessing `agentwire.yourdomain.com` requires email verification.
+Now accessing `hermeswire.yourdomain.com` requires email verification.
 
 ## 7. Run the Tunnel
 
 ### Manual (for testing)
 
 ```bash
-cloudflared tunnel run agentwire
+cloudflared tunnel run hermeswire
 ```
 
 ### As a Service (persistent)
@@ -170,7 +170,7 @@ autossh -M 0 -f -N -L 8100:localhost:8100 remote-server
 
 ### As a launchd Service (macOS)
 
-Create `~/Library/LaunchAgents/com.agentwire.tts-tunnel.plist`:
+Create `~/Library/LaunchAgents/com.hermeswire.tts-tunnel.plist`:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -178,7 +178,7 @@ Create `~/Library/LaunchAgents/com.agentwire.tts-tunnel.plist`:
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.agentwire.tts-tunnel</string>
+    <string>com.hermeswire.tts-tunnel</string>
     <key>ProgramArguments</key>
     <array>
         <string>/usr/bin/ssh</string>
@@ -198,18 +198,18 @@ Create `~/Library/LaunchAgents/com.agentwire.tts-tunnel.plist`:
 Load it:
 
 ```bash
-launchctl load ~/Library/LaunchAgents/com.agentwire.tts-tunnel.plist
+launchctl load ~/Library/LaunchAgents/com.hermeswire.tts-tunnel.plist
 ```
 
 ## Verification
 
 1. **Check tunnel status:**
    ```bash
-   cloudflared tunnel info agentwire
+   cloudflared tunnel info hermeswire
    ```
 
 2. **Test remote access:**
-   - Open `https://agentwire.yourdomain.com` on your phone
+   - Open `https://hermeswire.yourdomain.com` on your phone
    - Complete Cloudflare Access authentication
    - Verify portal loads and voice works
 
@@ -271,8 +271,8 @@ The tunnel config (`/etc/cloudflared/config.yml`) includes:
 
 ```yaml
 ingress:
-  # AgentWire portal
-  - hostname: agentwire.solodev.dev
+  # HermesWire portal
+  - hostname: hermeswire.solodev.dev
     service: https://localhost:8765
     originRequest:
       noTLSVerify: true
@@ -357,7 +357,7 @@ sudo tail -20 /Library/Logs/com.cloudflare.cloudflared.err.log
 
 | Problem | Solution |
 |---------|----------|
-| Portal not responding | SSH in via `ssh.solodev.dev` → `agentwire portal restart` |
+| Portal not responding | SSH in via `ssh.solodev.dev` → `hermeswire portal restart` |
 | Hermes Agent binary corrupted | SSH in → `brew reinstall hermes-agent` (or `uv tool install hermes-agent --force`) |
 | Can't type in browser SSH | Use Termux `ssh mac` or browser VNC instead |
 | VNC shows "connection closed" | Check Screen Sharing is enabled, VNC password is set |

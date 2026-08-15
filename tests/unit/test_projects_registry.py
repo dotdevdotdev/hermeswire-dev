@@ -1,4 +1,4 @@
-"""Tests for the out-of-tree project registry and `agentwire projects add` (#814)."""
+"""Tests for the out-of-tree project registry and `hermeswire projects add` (#814)."""
 
 import argparse
 import json
@@ -11,7 +11,7 @@ import pytest
 class TestRegistry:
     @pytest.fixture(autouse=True)
     def _isolate_registry(self, tmp_path, monkeypatch):
-        import agentwire.projects as mod
+        import hermeswire.projects as mod
         monkeypatch.setattr(mod, "PROJECTS_REGISTRY_FILE", tmp_path / "projects.json")
         self.mod = mod
 
@@ -57,7 +57,7 @@ class TestRegistry:
 class TestGetProjectsWithRegistry:
     @pytest.fixture(autouse=True)
     def _isolate(self, tmp_path, monkeypatch):
-        import agentwire.projects as mod
+        import hermeswire.projects as mod
         self.mod = mod
         self.tmp_path = tmp_path
         monkeypatch.setattr(mod, "PROJECTS_REGISTRY_FILE", tmp_path / "projects.json")
@@ -72,11 +72,11 @@ class TestGetProjectsWithRegistry:
     def test_registry_project_appears_alongside_scanned(self):
         scanned = self.tmp_path / "projects" / "in-tree"
         scanned.mkdir()
-        (scanned / ".agentwire.yml").write_text("posture: bypass\n")
+        (scanned / ".hermeswire.yml").write_text("posture: bypass\n")
 
         out_of_tree = self.tmp_path / "elsewhere"
         out_of_tree.mkdir()
-        (out_of_tree / ".agentwire.yml").write_text("posture: bypass\n")
+        (out_of_tree / ".hermeswire.yml").write_text("posture: bypass\n")
         self.mod.add_registry_entry(str(out_of_tree), "local")
 
         names = {p["name"] for p in self.mod.get_projects()}
@@ -86,7 +86,7 @@ class TestGetProjectsWithRegistry:
         """A registry entry that duplicates a scanned path doesn't double-list it."""
         scanned = self.tmp_path / "projects" / "dup"
         scanned.mkdir()
-        (scanned / ".agentwire.yml").write_text("posture: bypass\n")
+        (scanned / ".hermeswire.yml").write_text("posture: bypass\n")
         self.mod.add_registry_entry(str(scanned), "local")
 
         matches = [p for p in self.mod.get_projects() if p["name"] == "dup"]
@@ -95,7 +95,7 @@ class TestGetProjectsWithRegistry:
 
 # --- _resolve_extra_projects: remote path must never reach the shell unquoted ---
 #
-# `path` here is registry-supplied (ultimately user input via `agentwire
+# `path` here is registry-supplied (ultimately user input via `hermeswire
 # projects add` / POST /api/projects/bind), and _resolve_extra_projects
 # splices it into a command string handed to a remote shell over SSH on
 # every get_projects() poll. A shell metacharacter in a stored path is a
@@ -103,7 +103,7 @@ class TestGetProjectsWithRegistry:
 
 class TestResolveExtraProjectsRemoteShellSafety:
     def test_malicious_path_is_quoted_as_a_single_token(self, monkeypatch):
-        import agentwire.projects as mod
+        import hermeswire.projects as mod
 
         monkeypatch.setattr(mod, "_get_machine_config", lambda mid: {"id": mid, "host": "example.com"})
 
@@ -126,7 +126,7 @@ class TestResolveExtraProjectsRemoteShellSafety:
         assert malicious in shlex.split(d_line)
 
     def test_quoted_path_used_for_both_test_and_cat(self, monkeypatch):
-        import agentwire.projects as mod
+        import hermeswire.projects as mod
 
         monkeypatch.setattr(mod, "_get_machine_config", lambda mid: {"id": mid, "host": "example.com"})
 
@@ -155,8 +155,8 @@ def _add_args(path, machine=None, check=False, json_mode=True):
 class TestCmdProjectsAdd:
     @pytest.fixture(autouse=True)
     def _isolate(self, tmp_path, monkeypatch):
-        import agentwire.config as config_mod
-        import agentwire.projects as projects_mod
+        import hermeswire.config as config_mod
+        import hermeswire.projects as projects_mod
 
         self.tmp_path = tmp_path
         self.projects_mod = projects_mod
@@ -170,7 +170,7 @@ class TestCmdProjectsAdd:
         monkeypatch.setattr(config_mod, "get_config", lambda: fake_config)
 
     def _run(self, capsys, args):
-        from agentwire.roles_cli import cmd_projects_add
+        from hermeswire.roles_cli import cmd_projects_add
         rc = cmd_projects_add(args)
         out = capsys.readouterr().out
         return rc, (json.loads(out) if out.strip() else {})
@@ -186,7 +186,7 @@ class TestCmdProjectsAdd:
         assert payload["already_bound"] is False
         assert payload["wrote_config"] is True
         assert payload["mechanism"] == "registry"
-        assert (target / ".agentwire.yml").exists()
+        assert (target / ".hermeswire.yml").exists()
         assert self.projects_mod.is_registered(str(target), "local")
 
     def test_child_of_projects_dir_skips_registry(self, capsys):
@@ -202,7 +202,7 @@ class TestCmdProjectsAdd:
     def test_collision_reports_already_bound_without_overwriting(self, tmp_path, capsys):
         target = tmp_path / "existing"
         target.mkdir()
-        config_file = target / ".agentwire.yml"
+        config_file = target / ".hermeswire.yml"
         config_file.write_text("posture: auto\nroles: [custom]\n")
 
         rc, payload = self._run(capsys, _add_args(str(target)))
@@ -245,7 +245,7 @@ class TestCmdProjectsAdd:
         assert rc == 0
         assert payload["dry_run"] is True
         assert payload["wrote_config"] is False
-        assert not (target / ".agentwire.yml").exists()
+        assert not (target / ".hermeswire.yml").exists()
         assert not self.projects_mod.is_registered(str(target), "local")
 
     def test_check_mode_then_real_bind_writes(self, tmp_path, capsys):
@@ -257,10 +257,10 @@ class TestCmdProjectsAdd:
 
         assert rc == 0
         assert payload["wrote_config"] is True
-        assert (target / ".agentwire.yml").exists()
+        assert (target / ".hermeswire.yml").exists()
 
     def test_unknown_machine_fails(self, tmp_path, capsys, monkeypatch):
-        import agentwire.core as core_mod
+        import hermeswire.core as core_mod
         monkeypatch.setattr(core_mod, "_get_machine_config", lambda mid: None)
 
         rc, payload = self._run(capsys, _add_args("/tmp/whatever", machine="ghost"))

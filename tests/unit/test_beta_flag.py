@@ -20,15 +20,15 @@ from pathlib import Path
 
 import pytest
 
-from agentwire import beta as beta_mod
-from agentwire import config as config_mod
-from agentwire import roles as roles_mod
+from hermeswire import beta as beta_mod
+from hermeswire import config as config_mod
+from hermeswire import roles as roles_mod
 
 ROLES_DIR = Path(roles_mod.__file__).parent
 
 #: Every role file the voice layer gates. Any other role file that grows a
 #: beta block later must be added here or the flag-on/off checks miss it.
-GATED_ROLE_FILES = ["agentwire.md", "orchestrator.md", "worker.md", "worker-worktree.md"]
+GATED_ROLE_FILES = ["hermeswire.md", "orchestrator.md", "worker.md", "worker-worktree.md"]
 
 
 @pytest.fixture(autouse=True)
@@ -119,7 +119,7 @@ class TestConfigFlag:
         p = tmp_path / "config.yaml"
         p.write_text("beta:\n  voice_layer: false\n")
         monkeypatch.setattr(config_mod, "default_config_path", lambda: p)
-        monkeypatch.setenv("AGENTWIRE_BETA__VOICE_LAYER", "true")
+        monkeypatch.setenv("HERMESWIRE_BETA__VOICE_LAYER", "true")
         assert config_mod.enabled_beta_flags() == {"voice_layer"}
 
     def test_the_narrow_read_and_the_full_load_agree(self, tmp_path, monkeypatch):
@@ -187,7 +187,7 @@ class TestBuddyCliRefusal:
         monkeypatch.setattr(config_mod, "enabled_beta_flags", lambda: {"voice_layer"})
 
     def _run(self, subcommand, argv=()):
-        from agentwire import buddy_cli
+        from hermeswire import buddy_cli
 
         parser = argparse.ArgumentParser()
         buddy_cli.register_buddy_parser(parser.add_subparsers(dest="command"))
@@ -210,7 +210,7 @@ class TestBuddyCliRefusal:
     def test_every_buddy_subcommand_is_gated(self, off, capsys):
         """The pin against the next subcommand forgetting the decorator — a
         read-only verb that still works is a beta feature that is half-on."""
-        from agentwire import buddy_cli
+        from hermeswire import buddy_cli
 
         parser = argparse.ArgumentParser()
         buddy_cli.register_buddy_parser(parser.add_subparsers(dest="command"))
@@ -234,7 +234,7 @@ class TestBuddyCliRefusal:
     def test_the_gate_lets_the_command_through_when_on(self, on, monkeypatch):
         """The must-fail control: without it, a gate that refuses unconditionally
         would pass every assertion above."""
-        from agentwire import buddy_cli
+        from hermeswire import buddy_cli
 
         seen = {}
         monkeypatch.setattr(
@@ -251,7 +251,7 @@ class TestBuddyCliRefusal:
 
 class TestDoctorSection:
     def _render(self):
-        from agentwire.doctor_cli import _render_beta_section
+        from hermeswire.doctor_cli import _render_beta_section
 
         return _render_beta_section()
 
@@ -384,8 +384,8 @@ class TestMcpSchemaGate:
         """
         import asyncio
 
-        from agentwire import mcp_msg
-        from agentwire.mcp_core import mcp
+        from hermeswire import mcp_msg
+        from hermeswire.mcp_core import mcp
 
         registered = {t.name: t.description for t in asyncio.run(mcp.list_tools())}
         # FastMCP publishes the attribute untouched...
@@ -424,8 +424,8 @@ class TestMcpSchemaGate:
         """
         import asyncio
 
-        from agentwire import mcp_server  # noqa: F401  (registers every domain)
-        from agentwire.mcp_core import mcp
+        from hermeswire import mcp_server  # noqa: F401  (registers every domain)
+        from hermeswire.mcp_core import mcp
 
         published = {t.name: t.description or "" for t in asyncio.run(mcp.list_tools())}
         assert len(published) > 100, "registry looks unpopulated — the sweep is not real"
@@ -445,7 +445,7 @@ class TestMcpSchemaGate:
         stripping the ends could never have absorbed it, and would only ever
         have absorbed a real leading/trailing-whitespace regression.
         """
-        from agentwire import mcp_msg
+        from hermeswire import mcp_msg
 
         # ``__beta_enabled__`` existing at all is the wiring proof: only
         # ``gated_doc`` writes it. Its VALUE is the flag set the import-time
@@ -573,7 +573,7 @@ class TestConfigIsReadOncePerProcess:
         subject moved out from under it is worse than no pin, because its name
         still claims the coverage.
         """
-        from agentwire import beta as beta_live
+        from hermeswire import beta as beta_live
 
         beta_live.reset_cache()
         calls = []
@@ -592,7 +592,7 @@ class TestConfigIsReadOncePerProcess:
         and asserts the count it would produce is one the pin REJECTS. Without
         this, "at most once" can silently become "at most once because nothing
         asks more than once"."""
-        from agentwire import beta as beta_live
+        from hermeswire import beta as beta_live
 
         beta_live.reset_cache()
         calls = []
@@ -612,7 +612,7 @@ class TestConfigIsReadOncePerProcess:
     def test_the_cache_can_be_reset(self, monkeypatch):
         """The escape hatch the tests themselves depend on — without it, the
         first flag state a process observes is the only one it can ever see."""
-        from agentwire import beta as beta_live
+        from hermeswire import beta as beta_live
 
         monkeypatch.setattr(config_mod, "enabled_beta_flags", lambda: {"voice_layer"})
         beta_live.reset_cache()
@@ -642,7 +642,7 @@ class TestUnregisteredBuddyRefusalsNameTheNextMove:
 
     @pytest.mark.parametrize("subcommand", ["status", "inbox", "mint", "serve"])
     def test_the_refusal_names_the_register_command(self, subcommand, capsys, monkeypatch):
-        from agentwire import buddy_cli
+        from hermeswire import buddy_cli
 
         monkeypatch.setattr(buddy_cli.identity, "is_registered", lambda name: False)
         monkeypatch.setattr(
@@ -654,7 +654,7 @@ class TestUnregisteredBuddyRefusalsNameTheNextMove:
         args = parser.parse_args(["buddy", subcommand, "nosuch"])
         assert args.func(args) == 1
         err = capsys.readouterr().err
-        assert "agentwire buddy register nosuch" in err, (
+        assert "hermeswire buddy register nosuch" in err, (
             f"buddy {subcommand} refuses without naming the next move: {err!r}"
         )
 
@@ -664,7 +664,7 @@ class TestMarkerFreeTextIsFree:
         """Most gated surfaces contain no marker at all — 20 of 24 role files,
         107 of 108 MCP descriptions, several resolved at IMPORT time. They must
         not pay for a flag lookup that cannot change their content."""
-        from agentwire import beta as beta_live
+        from hermeswire import beta as beta_live
 
         beta_live.reset_cache()
         monkeypatch.setattr(
@@ -676,7 +676,7 @@ class TestMarkerFreeTextIsFree:
     def test_text_with_a_marker_still_consults_it(self, monkeypatch):
         """The must-fail control: a fast path that swallowed everything would
         make the gate a no-op and pass every test above."""
-        from agentwire import beta as beta_live
+        from hermeswire import beta as beta_live
 
         beta_live.reset_cache()
         monkeypatch.setattr(config_mod, "enabled_beta_flags", lambda: set())

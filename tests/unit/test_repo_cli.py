@@ -1,4 +1,4 @@
-"""Tests for ``agentwire repo-info`` / ``agentwire branches`` (#495 Phase 2).
+"""Tests for ``hermeswire repo-info`` / ``hermeswire branches`` (#495 Phase 2).
 
 These commands hold the git logic the portal's ``api_check_path`` /
 ``api_check_branches`` endpoints used to embed inline. The tests pin the JSON
@@ -12,7 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from agentwire import repo_cli
+from hermeswire import repo_cli
 
 
 def _ns(**kw):
