@@ -173,6 +173,11 @@ exclude = [
 # the source lives at .hermes/skills/wiki (also the project-scoped copy); this
 # maps it to hermeswire/skills/wiki in the wheel, so it is auto-current on every
 # rebuild — the same posture as hooks/roles/prompts bundled inside the package.
+#
+# Role skills (hermeswire/skills/hermeswire-<role>/SKILL.md) ship via
+# `packages = ["hermeswire"]` above — they live inside the package tree, so no
+# force-include entry is needed. The wiki/handoff-bundle skills live OUTSIDE the
+# package (.hermes/skills/) and are mapped in here.
 [tool.hatch.build.targets.wheel.force-include]
 ".hermes/skills/wiki" = "hermeswire/skills/wiki"
 ".hermes/skills/handoff-bundle" = "hermeswire/skills/handoff-bundle"
