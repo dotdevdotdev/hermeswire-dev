@@ -1,8 +1,11 @@
-"""Tests for hermeswire-owned GLOBAL skill install/drift (issue #475).
+"""Tests for hermeswire-owned GLOBAL skill install/drift (issue #475 + #23).
 
-Global skills (currently just `/wiki`) were hand-placed at wiki-setup and never
-resynced, so a stale or missing copy rotted invisibly. These tests cover the
-drift-aware symlink install + doctor-facing drift report. Everything runs against
+Global skills were hand-placed at wiki-setup and never resynced, so a stale or
+missing copy rotted invisibly (#475). Issue #23 extended the managed set from
+just ``/wiki`` to also include one ``hermeswire-<role>`` skill per role in
+``hermeswire/roles/*.md`` — ``build_agent_command`` emits ``-s hermeswire-<role>``
+and the skills must resolve on a fresh install. These tests cover the drift-aware
+symlink install + doctor-facing drift report. Everything runs against
 monkeypatched temp dirs — the real ~/.hermes/skills/ is never touched.
 """
 
@@ -14,6 +17,7 @@ import pytest
 import hermeswire.hooks_cli as m
 from hermeswire.doctor_cli import _render_skill_section
 from hermeswire.hooks_cli import (
+    _bundled_role_names,
     _managed_global_skills,
     _managed_skill_state,
     install_hooks,
@@ -24,10 +28,20 @@ from hermeswire.hooks_cli import (
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    """A fake packaged-source skills dir and a fake ~/.hermes/skills target dir."""
+    """A fake packaged-source skills dir and a fake ~/.hermes/skills target dir.
+
+    Scaffolds a source dir for every managed skill (wiki + one per bundled
+    role), so install_skills() finds a source for each. The role list is read
+    from the real packaged ``hermeswire/roles/*.md`` via ``_bundled_role_names``
+    — a new role file lands here automatically, mirroring the production path.
+    """
     source = tmp_path / "pkg" / "skills"
     (source / "wiki").mkdir(parents=True)
     (source / "wiki" / "SKILL.md").write_text("# wiki skill\n")
+    for role in _bundled_role_names():
+        skill_dir = source / f"hermeswire-{role}"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(f"# {role} role skill\n")
 
     target_root = tmp_path / "hermes" / "skills"
 
@@ -36,18 +50,30 @@ def env(tmp_path, monkeypatch):
     return source, target_root
 
 
-def test_managed_global_skills_is_just_wiki():
-    assert _managed_global_skills() == ["wiki"]
+def test_managed_global_skills_is_wiki_plus_roles():
+    """wiki + one hermeswire-<role> per bundled role, in stable (sorted) order."""
+    expected = ["wiki", *(f"hermeswire-{r}" for r in _bundled_role_names())]
+    assert _managed_global_skills() == expected
+
+
+def test_managed_global_skills_includes_core_roles():
+    """The roles hermeswire actually injects must be present (#23)."""
+    skills = set(_managed_global_skills())
+    for role in ("worker", "worker-worktree", "orchestrator", "reviewer",
+                 "reviewer-worktree", "soul", "voice"):
+        assert f"hermeswire-{role}" in skills
 
 
 def test_install_symlinks_fresh(env):
     source, target_root = env
     results = install_skills()
-    assert results == {"wiki": "installed"}
-
-    target = target_root / "wiki"
-    assert target.is_symlink()
-    assert target.resolve() == (source / "wiki").resolve()
+    assert results["wiki"] == "installed"
+    for role in _bundled_role_names():
+        name = f"hermeswire-{role}"
+        assert results[name] == "installed", name
+        target = target_root / name
+        assert target.is_symlink(), name
+        assert target.resolve() == (source / name).resolve()
 
 
 def test_install_replaces_real_dir_copy(env):
@@ -60,7 +86,7 @@ def test_install_replaces_real_dir_copy(env):
     assert _managed_skill_state(target, source / "wiki") == "stale"
 
     results = install_skills()
-    assert results == {"wiki": "updated"}
+    assert results["wiki"] == "updated"
     assert target.is_symlink()
     assert target.resolve() == (source / "wiki").resolve()
 
@@ -76,19 +102,22 @@ def test_install_heals_wrong_symlink(env, tmp_path):
     assert _managed_skill_state(target, source / "wiki") == "stale"
 
     results = install_skills()
-    assert results == {"wiki": "updated"}
+    assert results["wiki"] == "updated"
     assert target.resolve() == (source / "wiki").resolve()
 
 
 def test_install_is_idempotent(env):
-    assert install_skills() == {"wiki": "installed"}
-    assert install_skills() == {"wiki": "current"}
+    first = install_skills()
+    second = install_skills()
+    for name in _managed_global_skills():
+        assert first[name] == "installed", name
+        assert second[name] == "current", name
 
 
 def test_install_copy_mode(env):
     source, target_root = env
     results = install_skills(copy=True)
-    assert results == {"wiki": "installed"}
+    assert results["wiki"] == "installed"
 
     target = target_root / "wiki"
     assert not target.is_symlink()
@@ -99,24 +128,33 @@ def test_install_copy_mode(env):
 def test_install_missing_source(env):
     source, _ = env
     shutil.rmtree(source / "wiki")
-    assert install_skills() == {"wiki": "missing-source"}
+    results = install_skills()
+    assert results["wiki"] == "missing-source"
+    # Role skills are still installed from their intact sources.
+    for role in _bundled_role_names():
+        assert results[f"hermeswire-{role}"] == "installed"
 
 
 def test_skill_drift_ok_stale_missing(env):
     source, target_root = env
 
-    # missing
-    assert skill_drift() == {"wiki": "missing"}
+    # missing — every managed skill reports missing
+    drift = skill_drift()
+    for name in _managed_global_skills():
+        assert drift[name] == "missing", name
 
     # ok after install
     install_skills()
-    assert skill_drift() == {"wiki": "ok"}
+    assert skill_drift() == {name: "ok" for name in _managed_global_skills()}
 
-    # stale when replaced with a real dir
+    # stale when one is replaced with a real dir
     target = target_root / "wiki"
     target.unlink()
     target.mkdir()
-    assert skill_drift() == {"wiki": "stale"}
+    drift = skill_drift()
+    assert drift["wiki"] == "stale"
+    for role in _bundled_role_names():
+        assert drift[f"hermeswire-{role}"] == "ok"
 
 
 def test_skill_drift_source_unavailable_when_no_source(env, monkeypatch):
@@ -126,7 +164,9 @@ def test_skill_drift_source_unavailable_when_no_source(env, monkeypatch):
         raise FileNotFoundError("no skills dir")
 
     monkeypatch.setattr(m, "get_skills_source", boom)
-    assert skill_drift() == {"wiki": "source-unavailable"}
+    assert skill_drift() == {
+        name: "source-unavailable" for name in _managed_global_skills()
+    }
 
 
 def test_install_force_resymlinks_when_ok(env):
@@ -136,7 +176,7 @@ def test_install_force_resymlinks_when_ok(env):
     assert _managed_skill_state(target_root / "wiki", source / "wiki") == "ok"
 
     results = install_skills(force=True)
-    assert results == {"wiki": "updated"}
+    assert results["wiki"] == "updated"
     assert (target_root / "wiki").resolve() == (source / "wiki").resolve()
 
 
@@ -144,7 +184,8 @@ def test_install_force_resymlinks_when_ok(env):
 
 def test_doctor_section_flags_missing_and_increments(env):
     """Source resolvable + target absent → doctor reports an issue."""
-    assert _render_skill_section() == 1
+    # Every managed skill is missing → one issue per skill.
+    assert _render_skill_section() == len(_managed_global_skills())
 
 
 def test_doctor_section_flags_stale_and_increments(env):
@@ -152,7 +193,8 @@ def test_doctor_section_flags_stale_and_increments(env):
     _, target_root = env
     target = target_root / "wiki"
     target.mkdir(parents=True)
-    assert _render_skill_section() == 1
+    # wiki is stale, the rest are missing.
+    assert _render_skill_section() == len(_managed_global_skills())
 
 
 def test_doctor_section_clean_when_installed(env):
@@ -195,3 +237,8 @@ def test_install_hooks_installs_skills(env, tmp_path, monkeypatch):
     results = install_hooks()
     assert results.get("wiki") == "installed"
     assert target.is_symlink()
+    # Role skills install on the same pass (#23).
+    for role in _bundled_role_names():
+        name = f"hermeswire-{role}"
+        assert results.get(name) == "installed", name
+        assert (target_root / name).is_symlink(), name

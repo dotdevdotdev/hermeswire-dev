@@ -189,6 +189,19 @@ class TestInstallHooks:
         import hermeswire.safety_commands as cs
         monkeypatch.setattr(cs, "heal_damage_control", lambda **kw: {})
 
+        # Scaffold the packaged skills source (wiki + role skills, #23) so
+        # install_hooks() -> install_skills() finds a source for each. The
+        # role list is derived from the real packaged roles dir.
+        skills_src = tmp_path / "pkg-skills"
+        skills_src.mkdir()
+        (skills_src / "wiki").mkdir()
+        (skills_src / "wiki" / "SKILL.md").write_text("# wiki skill\n")
+        for role in main_mod._bundled_role_names():
+            rs = skills_src / f"hermeswire-{role}"
+            rs.mkdir()
+            (rs / "SKILL.md").write_text(f"# {role} role skill\n")
+        monkeypatch.setattr(main_mod, "get_skills_source", lambda: skills_src)
+
         return home, hooks_src
 
     def test_fresh_install_deploys_all_and_registers(self, env):
