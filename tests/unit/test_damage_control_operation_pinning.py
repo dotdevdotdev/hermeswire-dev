@@ -111,7 +111,7 @@ class TestTooldefPrefixTruncation:
         ("rm -rf /tmp/x", "core.rm-with-recursive-or-force-flags"),
         ("sudo rm /etc/hosts", "core.sudo-rm"),
         ("tmux kill-server",
-         "hermeswire.tmux-kill-server-destroys-all-tmux-sessions-including-agentw"),
+         "hermeswire.tmux-kill-server-destroys-all-tmux-sessions-including-hermes"),
         ("git -C /repo push --force", "git.git-push-force-use-force-with-lease"),
     ]
 

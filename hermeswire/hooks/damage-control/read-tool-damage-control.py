@@ -42,7 +42,7 @@ except ImportError:
 
 
 # === BEGIN HERMESWIRE HOOK STAMP (generated — do not edit) ===
-HERMESWIRE_HOOK_STAMP = {"core_sha256": "e5ddd9c2aa39a7611ff7d725e42a901022daa9468181ec56c5f738e63926b206", "generated_at": "2026-08-14T05:25:43Z"}
+HERMESWIRE_HOOK_STAMP = {"core_sha256": "1a72d56945fccbe88b92884e9e8bba32461a493328ad95baaf23638cffd5bdce", "generated_at": "2026-08-15T18:32:48Z"}
 # === END HERMESWIRE HOOK STAMP ===
 # === BEGIN GENERATED FROM hermeswire/safety/_core.py ===
 """
