@@ -393,8 +393,13 @@ def build_agent_command(
       automation sessions from user session lists (#4).
     - Permission postures: ``bypass`` and ``auto`` both map to ``--yolo``
       because HermesWire's own damage-control hooks are the safety layer.
-      Hermes has no ``--allowedTools``/``--enable-auto-mode`` equivalent
-      (issue #3); ``approvals.mode: smart`` is the manual alternative.
+      ``approvals.mode: smart`` (aux-LLM risk assessment) was investigated as
+      a safer ``auto`` (issue #25), but rejected: ``smart`` escalates uncertain
+      commands to an interactive prompt, which stalls unattended
+      scheduler/ensure sessions with no human watching.  ``--yolo`` (full
+      bypass) keeps the damage-control hooks as the sole guard — the same
+      posture ``bypass`` already trusts.  ``prompted`` uses Hermes's default
+      approvals (no ``--yolo``).
     - ``--session-id`` / ``--fork-session`` are gone: Hermes mints its own
       session id. ``resume_session_id`` maps to ``--resume <id>``, which
       continues the SAME session (no new id is minted), so the resulting
@@ -412,8 +417,10 @@ def build_agent_command(
 
     parts = ["hermes", "chat", "--cli", "--source", "tool", "--accept-hooks"]
 
-    # Permission-mode: both bypass and auto rely on damage-control hooks for
-    # safety, so both bypass Hermes approvals with --yolo (issue #3).
+    # Permission-mode: bypass and auto both rely on damage-control hooks for
+    # safety, so both bypass Hermes approvals with --yolo.  auto → --yolo
+    # (not approvals.mode=smart) because smart escalates uncertain commands
+    # to an interactive prompt, which stalls unattended sessions (issue #25).
     if posture in ("bypass", "auto"):
         parts.append("--yolo")
 
@@ -432,14 +439,13 @@ def build_agent_command(
             # -t selects TOOLSETS, not tool names — coarse fidelity (#3).
             parts.append(f"-t {','.join(merged.tools)}")
 
-        if merged.disallowed_tools:
-            # No Hermes equivalent to --disallowedTools; defer to
-            # approvals.deny patterns (issue #3).
-            logger.warning(
-                "role disallowed_tools (%s) have no Hermes equivalent yet "
-                "(issue #3); ignoring for this launch",
-                ",".join(merged.disallowed_tools),
-            )
+        # disallowed_tools are tool NAMES (Bash, Edit) — Hermes's only per-tool
+        # denial is approvals.deny, fnmatch globs against shell COMMANDS.  No
+        # clean mapping exists (a tool name is not a command pattern), so
+        # disallowed_tools is an unsupported feature, dropped deliberately
+        # rather than silently warn-and-dropped (issue #24).  Damage-control
+        # hooks are the safety layer for tool access.
+        # See docs/wiki/internals/hermes-removals.md.
 
     if role_names:
         # Role instructions are loadable skills, not pre-injected prompt text.

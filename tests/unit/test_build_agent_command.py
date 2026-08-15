@@ -47,7 +47,9 @@ class TestBuildAgentCommand:
 
     def test_auto(self):
         # auto and bypass both rely on HermesWire's damage-control hooks for
-        # safety, so both map to --yolo (issue #3).
+        # safety, so both map to --yolo.  smart mode was investigated and
+        # rejected for unattended sessions (issue #25) — see
+        # docs/wiki/internals/hermes-removals.md.
         cmd = self._build("auto")
         assert cmd.command.startswith("hermes chat --cli")
         assert "--yolo" in cmd.command
@@ -82,6 +84,24 @@ class TestBuildAgentCommand:
         cmd = self._build("bypass", roles=roles)
         assert "--append-system-prompt" not in cmd.command
         assert "-s hermeswire-test" in cmd.command
+
+    def test_disallowed_tools_silently_dropped(self, caplog):
+        # disallowed_tools are tool names (Bash, Edit) — Hermes's only
+        # per-tool denial is approvals.deny (fnmatch command globs), which is
+        # a different axis.  No mapping exists, so they are dropped deliberately
+        # (issue #24) — no warning, no flag, no error.
+        import logging
+        roles = [RoleConfig(name="test", tools=["Bash"],
+                            disallowed_tools=["Edit", "AskUserQuestion"])]
+        with caplog.at_level(logging.WARNING, logger="hermeswire.core"):
+            cmd = self._build("bypass", roles=roles)
+        # No --disallowedTools flag, no deny flag — nothing emitted.
+        assert "--disallowedTools" not in cmd.command
+        assert "deny" not in cmd.command
+        # No warning logged about disallowed_tools.
+        assert not any("disallowed" in r.message for r in caplog.records)
+        # The allowed tools still map to -t.
+        assert "-t Bash" in cmd.command
 
     def test_roles_apply_on_every_posture(self):
         roles = [RoleConfig(name="test", tools=["Read"], instructions="Hello")]
