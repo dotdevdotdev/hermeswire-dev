@@ -1,9 +1,8 @@
 """Tests for ``agentwire restart`` — relaunch in place, same conversation (#871).
 
 The behaviours worth pinning down are the ones a plausible implementation gets
-wrong: re-evaluating the stored launch line (whose ``--session-id`` is
-single-use), assuming a recorded id is resumable, and killing the session the
-command itself runs in.
+wrong: re-evaluating the stored launch line, assuming a recorded id is
+resumable, and killing the session the command itself runs in.
 """
 
 import types
@@ -22,25 +21,36 @@ STUB = '{"type":"ai-title"}\n{"type":"mode","mode":"normal"}\n'
 
 
 @pytest.fixture
-def store(tmp_path, monkeypatch):
-    """Isolated ~/.agentwire and ~/.claude/projects, plus a launch cwd."""
+def hermes_db(monkeypatch):
+    """A fake Hermes session store: a mutable set of 'present' session ids.
+
+    ``history.locate_conversation`` reads ``_db().get_session(id)``; a present id
+    is 'in the store' (resumable), an absent id is 'gone'. There is no orphan
+    state — a Hermes session's cwd is a data column, not part of its key.
+    """
+    present = set()
+
+    class FakeDB:
+        @staticmethod
+        def get_session(sid):
+            return {"id": sid} if sid in present else None
+
+    monkeypatch.setattr("agentwire.history._db", lambda: FakeDB())
+    return present
+
+
+@pytest.fixture
+def store(tmp_path, monkeypatch, hermes_db):
+    """Isolated ~/.agentwire + a launch cwd + the fake Hermes session store."""
     monkeypatch.setattr("agentwire.core.CONFIG_DIR", tmp_path / "agentwire")
-    monkeypatch.setattr("agentwire.history.PROJECTS_DIR", tmp_path / "projects")
     cwd = tmp_path / "worktree"
     cwd.mkdir()
-    (tmp_path / "projects").mkdir()
-    return types.SimpleNamespace(root=tmp_path, cwd=cwd, projects=tmp_path / "projects")
+    return types.SimpleNamespace(root=tmp_path, cwd=cwd, db=hermes_db)
 
 
 def write_history(store, cwd, conversation_id):
-    """Create the ``.jsonl`` Claude would write on the first turn."""
-    from agentwire.history import encode_project_path
-
-    d = store.projects / encode_project_path(str(cwd))
-    d.mkdir(parents=True, exist_ok=True)
-    f = d / f"{conversation_id}.jsonl"
-    f.write_text(TURN)
-    return f
+    """Mark *conversation_id* as present in the (fake) Hermes session store."""
+    store.db.add(conversation_id)
 
 
 def record(session="sess", *, cwd, ids=(), posture="bypass", roles=(), **extra):
@@ -101,35 +111,10 @@ class TestResolveResumeTarget:
                                                    str(store.cwd))
         assert rid == "older"
 
-    def test_orphaned_history_is_not_resumable(self, store):
-        moved = store.root / "elsewhere"
-        moved.mkdir()
-        write_history(store, moved, "cid")
-        rid, loc = restart_cli.resolve_resume_target(["cid"], str(store.cwd))
-        assert rid is None
-        assert loc.status == "orphaned"
-        assert loc.elsewhere
-
     def test_no_history_anywhere_is_gone(self, store):
         rid, loc = restart_cli.resolve_resume_target(["cid"], str(store.cwd))
         assert rid is None
         assert loc.status == "gone"
-
-    def test_orphaned_outranks_gone_when_reporting(self, store):
-        """A never-prompted newest id must not hide a recoverable orphan.
-
-        Chain tail is ``gone`` (launched, never spoken to), but an earlier
-        conversation is sitting under a stale key — that's the one finding
-        anyone can act on, so it's the one reported.
-        """
-        moved = store.root / "elsewhere"
-        moved.mkdir()
-        write_history(store, moved, "older")
-        rid, loc = restart_cli.resolve_resume_target(
-            ["older", "never-prompted"], str(store.cwd)
-        )
-        assert rid is None
-        assert loc.status == "orphaned" and loc.conversation_id == "older"
 
     def test_empty_chain(self, store):
         assert restart_cli.resolve_resume_target([], str(store.cwd)) == (None, None)
@@ -143,29 +128,26 @@ class TestRestartLaunch:
         assert run() == 0
         (name, path, _env, cmd) = launched.launch[0]
         assert name == "sess" and path == str(store.cwd)
-        # The flags are resolved by the shell at launch (#901), so they ride
-        # in the prelude rather than immediately after `claude`.
-        assert '--resume "cid-1" --fork-session --session-id ' in cmd
-        assert 'claude "${aw_flags[@]}"' in cmd
-        assert "--dangerously-skip-permissions" in cmd
+        # Phase 1: the recorded id is passed straight to Hermes --resume
+        # (the --session-id/--fork-session machinery is gone, issue #4).
+        assert "--resume cid-1" in cmd
+        assert cmd.startswith("hermes chat --cli")
+        assert "--source tool" in cmd
+        assert "--yolo" in cmd
         assert launched.killed == ["sess"]
 
-    def test_mints_a_fresh_session_id_never_reuses_the_recorded_one(self, store, launched):
-        """The recorded id goes to ``--resume`` only.
+    def test_no_session_id_flag_is_minted(self, store, launched):
+        """Hermes mints its own session id; agentwire no longer passes one.
 
-        Re-passing it as ``--session-id`` is fatal ("already in use") and drops
-        the pane to a bare shell — the exact zombie the guarded launch exists
-        to prevent. Restart regenerates the line rather than replaying the
-        stored one for the same reason (#901 made the stored line itself
-        re-runnable, which is a different guarantee).
+        The recorded id rides ``--resume`` only (issue #4 makes it a Hermes id).
         """
         write_history(store, store.cwd, "cid-1")
         record(cwd=store.cwd, ids=["cid-1"])
 
         run()
         cmd = launched.launch[0][3]
-        minted = cmd.split('--session-id "')[1].split('"')[0]
-        assert minted != "cid-1"
+        assert "--session-id" not in cmd
+        assert "--resume cid-1" in cmd
 
     def test_regenerates_flags_rather_than_replaying_a_stored_launch_line(
         self, store, launched
@@ -177,15 +159,15 @@ class TestRestartLaunch:
 
         run()
         cmd = launched.launch[0][3]
-        assert "--enable-auto-mode" in cmd  # regenerated from the recorded posture
-        assert "--dangerously-skip-permissions" not in cmd
+        assert "--yolo" in cmd  # regenerated from the recorded posture (auto -> yolo)
+        assert "claude" not in cmd
 
     def test_carries_the_recorded_model_override(self, store, launched):
         write_history(store, store.cwd, "cid-1")
         record(cwd=store.cwd, ids=["cid-1"], model="haiku")
 
         run()
-        assert "--model haiku" in launched.launch[0][3]
+        assert "-m haiku" in launched.launch[0][3]
 
     def test_appends_the_new_conversation_to_the_chain(self, store, launched):
         from agentwire.core import load_session_metadata
@@ -195,8 +177,11 @@ class TestRestartLaunch:
 
         run()
         meta = load_session_metadata("sess")
-        assert meta["conversation_ids"][0] == "cid-1"
-        assert len(meta["conversation_ids"]) == 2
+        # --resume continues the SAME Hermes session, so no new id is minted
+        # and the chain does not grow (issue #4).
+        assert meta["conversation_ids"] == ["cid-1"]
+        assert meta["resumed_from"] == "cid-1"
+        assert meta["source"] == "tool"
         # A restart is not a creation: parentage and role survive untouched.
         assert meta["created_by"] == "orch"
         assert meta["role"] == "worker"
@@ -241,26 +226,12 @@ class TestDegradedRestart:
 
         assert run() == 0
         cmd = launched.launch[0][3]
-        # The RECORDED id is never resumed. (The line still carries a
-        # `--resume <new-id>` branch — that is #901's re-entry case, keyed on
-        # the id this launch mints, not on the dead one.)
-        assert '--resume "cid-1"' not in cmd
-        assert "--fork-session" not in cmd
-        assert "--session-id" in cmd
+        # The RECORDED id is never resumed; Hermes mints its own id (no
+        # --session-id/--fork-session flags exist anymore, issue #4).
+        assert "--resume" not in cmd
+        assert "--session-id" not in cmd
         out = capsys.readouterr().out
         assert "No history found" in out and "role intact" in out
-
-    def test_orphaned_history_names_where_it_went(self, store, launched, capsys):
-        moved = store.root / "elsewhere"
-        moved.mkdir()
-        write_history(store, moved, "cid-1")
-        record(cwd=store.cwd, ids=["cid-1"])
-
-        assert run() == 0
-        cmd = launched.launch[0][3]
-        assert '--resume "cid-1"' not in cmd and "--fork-session" not in cmd
-        out = capsys.readouterr().out
-        assert "ORPHANED" in out
 
     def test_json_reports_the_degradation(self, store, launched, capsys):
         import json

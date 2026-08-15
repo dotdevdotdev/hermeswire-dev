@@ -304,15 +304,13 @@ def test_record_session_launch_records_conversation_identity(tmp_path, monkeypat
     cwd.mkdir()
 
     agent = _fake_agent(conversation_id="conv-1", posture="auto",
-                        roles=["worker-worktree", "soul"],
-                        role_prompt_path=str(tmp_path / "role-prompts" / "conv-1.txt"))
+                        roles=["worker-worktree", "soul"])
     meta = core.record_session_launch("proj-branch", agent, cwd, created_via="worktree")
 
     assert meta["conversation_ids"] == ["conv-1"]
     assert meta["cwd_at_launch"] == str(cwd)
     assert meta["posture"] == "auto"
     assert meta["roles"] == ["worker-worktree", "soul"]
-    assert meta["role_prompt_path"].endswith("conv-1.txt")
     # Off-repo tmp dir: git fields are absent, never guessed.
     assert meta["repo"] is None and meta["branch"] is None
 

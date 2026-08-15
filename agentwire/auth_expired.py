@@ -1,82 +1,91 @@
-"""Detect an expired Claude login and stop dispatching into it (#906).
+"""Detect Hermes provider auth failure and stop dispatching into it (#13).
 
 The failure this exists for, measured on 2026-08-04 (#867): a scheduled
-dispatch did everything right — session created, agent launched, a 20,433-byte
-prompt submitted at ``08:00:20.785Z`` — and the turn was rejected 15 ms later:
-
-.. code-block:: json
-
-    {"model": "<synthetic>",
-     "content": [{"type": "text", "text": "Login expired · Please run /login"}],
-     "usage": {"input_tokens": 0, "output_tokens": 0},
-     "error": "authentication_failed", "isApiErrorMessage": true}
-
-Zero tokens, no model call, ``turn_duration: 16ms``, transcript ends. Nothing
-noticed. ``memory-manager`` then sat until its ceiling and reported
+dispatch did everything right — session created, agent launched, a large
+prompt submitted — and the turn was rejected because the agent's provider
+credentials were no longer accepted. Zero tokens, no model call, the run
+failed in milliseconds. Nothing noticed; the task reported
 ``incomplete — Timeout waiting for task completion``, which describes the
-symptom and actively misleads about the cause; ``ai-morning-briefing`` hit the
-same outage four hours later and burned the scheduler's full 14400s. Six hours
-of dispatch time, and three investigation passes chasing a guardrail, a
-dispatcher, a timeout and a paste race.
+symptom and actively misleads about the cause. Six hours of dispatch time and
+three investigation passes chasing a guardrail, a dispatcher, a timeout and a
+paste race.
 
-**The transcript is the detector, and the pane deliberately is not.** Claude
-Code renders the phrase inline as an ordinary assistant message, so it also
-appears in any pane that merely *quotes* or reviews the incident — the pane
-investigating #867 had "Login expired · Please run /login" on screen all day.
-A pane-text rule would buy that false-positive class, and a false positive
-here **halts scheduling**, which is strictly worse than the hang it replaces.
-The transcript's ``error`` field is a structured fact about a turn that
-actually happened, so that is what is keyed on. This is the opposite trade
-from :mod:`usage_limit`, and for a concrete reason: the usage-limit signal is
-a *live select-menu* that can be proven live (nothing renders after it), and
-this one cannot.
+Hermes auth is provider-based (``hermes auth``, ``~/.hermes/auth.json``,
+``hermes model``, provider routing/fallback). There is no Claude-style login
+command. The detection signal is Hermes's structured ``AuthError``
+(``provider``, ``code``, ``relogin_required``), which surfaces in two places:
+
+* **turn-level** — a ``hermes -z``/``-q`` run that hits auth failure exits 1
+  with ``agent failed: AuthError(...)`` on stderr, OR records the failure on
+  the session's last assistant message (the #9 store surface);
+* **pre-flight** — ``hermes auth status <provider>`` returns
+  ``{"logged_in": bool, "error": ...}``, a single cheap subprocess that
+  replaces the "no cheap pre-flight" problem that forced Claude onto
+  transcript tailing.
+
+"Auth expired" splits into two provider-level classes that must NOT be
+conflated:
+
+1. **Hard auth failure (→ outage-gate + email).** ``relogin_required=True``,
+   or ``code`` in :data:`HARD_AUTH_CODES`. A human must act (``hermes auth
+   add <provider>`` / ``hermes model``, or top up a subscription) — the
+   exact analog of Claude's login command, and it inherits the whole
+   outage-gate / throttled-email pattern unchanged.
+2. **Transient limit (→ retry, do NOT gate).** ``code == "codex_rate_limited"``
+   / ``temporarily_unavailable`` / plain 429s. These resolve on their own;
+   gating dispatch on them is the false-alarm class this module exists to
+   refuse. That class belongs to the park/resume subsystem, not this gate.
 
 Recovery is a property of the same signal, not a separate mechanism: only the
-**last** assistant turn in a transcript decides, so a session that auth-failed
-and then took a real turn reads as healthy with nothing to reset.
+**last** turn decides, so a session that auth-failed and then took a real turn
+reads as healthy with nothing to reset.
 
-The machine-wide part matters as much as the detection. An expired login is
-not per-task — every subsequent dispatch hits it — so one detection records a
-single outage state, emails the owner ONCE (throttled, following the
-dead-letter and #905 no-parent escalation precedents rather than inventing a
-third channel), and later dispatches fail fast instead of each burning its own
-timeout. The state carries :data:`OUTAGE_TTL` so it cannot wedge the scheduler
-indefinitely: after it, one dispatch is let through as a probe, which now
-fails in seconds rather than hours.
-
-On a pre-flight credential check (#906 item 3): there is no cheap, reliable
-local signal to gate on. Claude Code keeps credentials in the macOS Keychain,
-where reading them needs ``security find-generic-password -w`` — an
-interactive authorization prompt, which unattended is a worse hang than the
-bug. Where a plaintext ``~/.claude/.credentials.json`` does exist, its
-``expiresAt`` is the *access* token's, which lapses routinely and is refreshed
-silently; gating dispatch on it would false-alarm constantly. The outage state
-below IS the cheap pre-flight — a single local file read, no network — it just
-costs one detection to arm.
+The machine-wide part matters as much as the detection. An expired credential
+is not per-task — every subsequent dispatch hits it — so one detection records
+a single outage state, emails the owner ONCE (throttled), and later dispatches
+fail fast instead of each burning its own timeout. The state carries
+:data:`OUTAGE_TTL` so it cannot wedge the scheduler indefinitely: after it, one
+dispatch is let through as a probe, which now fails in seconds rather than
+hours.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import socket
+import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-# The transcript's structured error value for an expired/refused login. Keyed
-# on exactly this — never widened to "any api error", because a rate-limit or
-# an overloaded upstream is transient and retryable, while this one provably
-# cannot succeed until a human runs `/login`.
-AUTH_ERROR = "authentication_failed"
+# Provider error codes that mean "a human must act" — keyed-on-auth, permanent
+# until re-auth / subscription top-up. Never widened to "any api error":
+# a rate-limit or an overloaded upstream is transient and retryable.
+HARD_AUTH_CODES = frozenset({
+    "subscription_expired",
+    "no_usable_credits",
+    "account_missing",
+    "insufficient_credits",
+    "subscription_required",
+})
 
-# What Claude Code renders for it. Used only to quote the operator a
-# recognizable line in the email/summary — never as a detection signal (see
-# the module docstring).
-RENDERED = "Login expired · Please run /login"
+# The transient class: resolves on its own, must NOT gate dispatch. Shared with
+# the park/resume subsystem (#8) — see usage_limit for the retry side.
+TRANSIENT_CODES = frozenset({"codex_rate_limited", "temporarily_unavailable"})
 
-# How far back into a transcript to read. A hung run's file is a few KB; a
-# long interactive one is megabytes, and only its tail can be the last turn.
-TAIL_BYTES = 256 * 1024
+# Human-readable per-provider fixup, quoted to the operator in email/summary.
+# Never used as a detection signal — only as recognizable copy.
+RENDERED = {
+    "nous": "Nous login expired — run `hermes auth add nous`",
+    "openrouter": "OpenRouter key rejected — run `hermes model`",
+    "anthropic": "Anthropic key rejected — run `hermes auth add anthropic`",
+    "openai": "OpenAI key rejected — run `hermes auth add openai`",
+    "zai": "Z.AI credential exhausted — run `hermes auth add zai`",
+}
+
+# Fallback for a provider we don't have tailored copy for.
+DEFAULT_RENDERED = "provider login expired — run `hermes auth` / `hermes model`"
 
 # How long a recorded outage keeps gating dispatch before one probe is allowed
 # through. Bounded on purpose: a stale flag that never cleared would halt every
@@ -85,11 +94,22 @@ TAIL_BYTES = 256 * 1024
 # costs at most one fast failure to notice.
 OUTAGE_TTL = timedelta(minutes=30)
 
-# Owner-escalation throttle. Follows prompt_router's no-parent escalation
-# (#905) and the dead-letter digest: an out-of-band email, sent on the first
-# sighting and then at most once an hour while the outage persists. Unthrottled
-# this would be one email per dispatch per outage.
+# Owner-escalation throttle: an out-of-band email, sent on the first sighting
+# and then at most once an hour while the outage persists.
 ESCALATE_TTL = timedelta(hours=1)
+
+# `AuthError(...)` on stderr. Keyed on the class name + the ``code`` /
+# ``relogin_required`` fields, never on a fixed rendered phrase (the rendered
+# text has already changed once in this codebase's history).
+_AUTH_ERROR_RE = re.compile(r"AuthError\((.*)\)", re.DOTALL)
+_KV_RE = re.compile(r"(\w+)\s*=\s*(?:'([^']*)'|\"([^\"]*)\"|([^,)\s]+))")
+
+
+def render_provider(provider: str | None) -> str:
+    """The human-readable fixup line for *provider* (or a generic one)."""
+    if provider and provider in RENDERED:
+        return RENDERED[provider]
+    return DEFAULT_RENDERED
 
 
 def _config_dir() -> Path:
@@ -97,9 +117,8 @@ def _config_dir() -> Path:
 
     ``from .core import CONFIG_DIR`` binds the value at import time, so a test
     (or anything else) that patches ``core.CONFIG_DIR`` is silently ignored and
-    the code writes to the real ``~/.agentwire``. That is the same trap
-    ``core.role_prompts_dir()`` exists to avoid, and here it would mean a test
-    suite scribbling a real outage gate onto the operator's machine.
+    the code writes to the real ``~/.agentwire``. Same trap ``core.role_prompts_dir()``
+    exists to avoid.
     """
     from . import core
 
@@ -131,151 +150,167 @@ def log_event(event: str, **fields) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Detection — the transcript
+# Detection — classification
 # ---------------------------------------------------------------------------
 
 
-def _tail_lines(path: Path, limit: int = TAIL_BYTES) -> list[str]:
-    """The last complete lines of *path*, bounded by *limit* bytes.
+def _field(err, name: str):
+    """Read a field off either a dict or an attribute-carrying object."""
+    if isinstance(err, dict):
+        return err.get(name)
+    return getattr(err, name, None)
 
-    The first line of a mid-file read is almost always a fragment, so it is
-    dropped rather than fed to ``json.loads`` — a partial row must read as
-    "nothing to see", never as a parse error that aborts the scan.
+
+def auth_error_is_hard(err) -> bool:
+    """Is *err* a hard auth failure (relogin required or a keyed-on code)?
+
+    Transient limits (``codex_rate_limited``, ``temporarily_unavailable``) and
+    plain overloads return False — gating on them would halt the whole
+    scheduler over a five-minute window. ``relogin_required`` alone is hard
+    even with an unrecognized code.
     """
-    try:
-        size = path.stat().st_size
-        with open(path, "rb") as f:
-            if size > limit:
-                f.seek(size - limit)
-                chunk = f.read()
-                chunk = chunk.split(b"\n", 1)[1] if b"\n" in chunk else b""
-            else:
-                chunk = f.read()
-    except OSError:
-        return []
-    return [ln for ln in chunk.decode("utf-8", "replace").split("\n") if ln.strip()]
-
-
-def last_assistant_turn(path: Path) -> dict | None:
-    """The last ``assistant`` row in *path*, or None.
-
-    "Last" is the whole point. A transcript that auth-failed at 08:00 and took
-    a real turn at 09:00 has recovered, and reporting it as expired would gate
-    the scheduler on a resolved outage. Reading only the final assistant row
-    makes recovery fall out of detection instead of needing a reset.
-    """
-    found = None
-    for line in _tail_lines(path):
-        try:
-            row = json.loads(line)
-        except (json.JSONDecodeError, ValueError):
-            continue
-        if isinstance(row, dict) and row.get("type") == "assistant":
-            found = row
-    return found
-
-
-def row_is_auth_failure(row: dict | None) -> bool:
-    """Does *row* carry the expired-login rejection?
-
-    Keyed on the structured ``error`` field, not on the rendered text, so a
-    reworded message keeps working and an assistant turn that merely *says*
-    the phrase (an agent reporting on this very incident) never matches.
-
-    Rewording is proven, not assumed: the two real outages on disk render
-    DIFFERENTLY — "Login expired · Please run /login" (2026-08-04, Claude Code
-    2.1.221) and "Not logged in · Please run /login" (2026-07-07, 2.1.201) —
-    and share this one field. Both are fixtured.
-
-    The residual risk is RESTRUCTURING, not rewording: if a future version
-    nests the error (say under ``message.error`` or an ``error.type``), this
-    returns False and the detector goes quiet rather than loud. Nothing here
-    can catch that on its own — the check to run when a Claude Code upgrade
-    lands is that ``error`` is still a top-level string on an api-error row.
-    """
-    if not isinstance(row, dict):
+    if err is None:
         return False
-    return row.get("error") == AUTH_ERROR
+    if _field(err, "relogin_required"):
+        return True
+    code = _field(err, "code")
+    return code in HARD_AUTH_CODES
 
 
-def transcript_auth_failure(path: Path) -> bool:
-    """True iff *path*'s most recent assistant turn was refused for auth."""
-    return row_is_auth_failure(last_assistant_turn(path))
+def parse_auth_error(text: str | None) -> dict | None:
+    """Extract an ``AuthError(...)`` from *text*, or None.
+
+    Hermes surfaces auth failure as ``hermes -z: agent failed: AuthError(...)``
+    on stderr (exit 1). Parse ``provider`` / ``code`` / ``relogin_required``.
+    Returns None when no AuthError is present — the caller then treats the
+    failure as non-auth. Does NOT classify hard vs transient; pair with
+    :func:`auth_error_is_hard`.
+    """
+    if not text:
+        return None
+    m = _AUTH_ERROR_RE.search(text)
+    if not m:
+        return None
+    err: dict = {}
+    for key, s1, s2, s3 in _KV_RE.findall(m.group(1)):
+        err[key] = s1 if s1 else (s2 if s2 else s3)
+    if not any(k in err for k in ("provider", "code", "relogin_required")):
+        return None
+    if err.get("relogin_required") in ("True", "true"):
+        err["relogin_required"] = True
+    else:
+        err.pop("relogin_required", None)
+    return err
+
+
+def _active_provider() -> str | None:
+    """The provider a session routes through (env override, else auth.json).
+
+    Callers that need a named provider for the pre-flight derive it here. Not
+    auto-invoked inside :func:`detect` because the polling path must not
+    subprocess (or even read auth.json) on every scheduler tick.
+    """
+    env = os.environ.get("AGENTWIRE_PROVIDER") or os.environ.get("HERMES_ACTIVE_PROVIDER")
+    if env:
+        return env
+    path = Path.home() / ".hermes" / "auth.json"
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    if isinstance(data, dict):
+        return data.get("active_provider")
+    return None
 
 
 # ---------------------------------------------------------------------------
-# Detection — locating the transcripts to read
+# Detection — surfaces
 # ---------------------------------------------------------------------------
 
 
-def recorded_transcripts(session: str) -> list[Path]:
-    """Transcripts named by the session's own launch record (#871).
+def probe_provider_auth(provider: str) -> dict | None:
+    """Pre-flight: ``hermes auth status <provider>`` → hard-auth outage or None.
 
-    The strong path: agentwire MINTS the conversation id and records it with
-    the launch cwd, so this addresses the exact file rather than guessing.
-    Returns [] when the record predates #871 (or the session was never
-    recorded) — the caller falls back to :func:`touched_transcripts`, which is
-    still evidence rather than a guess.
+    A single subprocess, no transcript. Returns
+    ``{"provider", "code", "relogin_required"}`` when the provider reports
+    ``logged_in: false`` with a hard auth error; None otherwise (healthy,
+    transient, or unparseable — the last reads as "nothing to see", never a
+    crash).
     """
-    from .core import load_session_metadata
-    from .history import PROJECTS_DIR, encode_project_path
-
+    if not provider:
+        return None
     try:
-        meta = load_session_metadata(session)
-    except Exception:
-        return []
-    cwd = meta.get("cwd_at_launch")
-    ids = meta.get("conversation_ids") or []
-    if not cwd or not ids:
-        return []
-    base = Path(PROJECTS_DIR) / encode_project_path(str(cwd))
-    return [p for p in (base / f"{cid}.jsonl" for cid in ids) if p.exists()]
+        result = subprocess.run(
+            ["hermes", "auth", "status", provider],
+            capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    try:
+        data = json.loads(result.stdout)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(data, dict) or data.get("logged_in"):
+        return None
+    err = data.get("error")
+    if isinstance(err, str):
+        err = parse_auth_error(err) or {"code": err}
+    if not isinstance(err, dict) or not auth_error_is_hard(err):
+        return None
+    return {
+        "provider": err.get("provider") or provider,
+        "code": err.get("code"),
+        "relogin_required": bool(err.get("relogin_required")),
+    }
 
 
-def touched_transcripts(project_path, since: float) -> list[Path]:
-    """Transcripts in *project_path*'s history dir written since *since*.
+def _session_last_auth_error(session: str) -> dict | None:
+    """Last assistant message's hard auth error, via the Hermes session store.
 
-    The fallback for a session whose launch record predates #871 — which is
-    exactly ``memory-manager``'s shape on 2026-08-04, so a detector that only
-    handled the recorded path could not have seen the incident it was written
-    for.
-
-    Deliberately NOT "the newest ``.jsonl`` in the directory", the guess
-    CLAUDE.md warns against: this is scoped to one project dir AND to files
-    written during the window the caller is asking about, so a hit is a
-    transcript this run actually produced.
+    Wired to ``SessionDB.get_messages`` in #9. Until then this returns None,
+    so the detector degrades gracefully to pre-flight + stderr — never a crash
+    and never a false negative that blocks a dispatch (the store is an
+    *additional* surface, not the only one).
     """
-    from .history import PROJECTS_DIR, encode_project_path
-
-    base = Path(PROJECTS_DIR) / encode_project_path(str(project_path))
-    try:
-        entries = list(base.glob("*.jsonl"))
-    except OSError:
-        return []
-    out = []
-    for p in entries:
-        try:
-            if p.stat().st_mtime >= since:
-                out.append(p)
-        except OSError:
-            continue
-    return sorted(out)
+    return None
 
 
-def detect(session: str, project_path=None, since: float | None = None) -> dict | None:
-    """Is *session*'s last turn an expired-login rejection?
+def detect(
+    session: str,
+    project_path=None,
+    since: float | None = None,
+    stderr: str | None = None,
+    provider: str | None = None,
+) -> dict | None:
+    """Is *session*'s last turn a hard Hermes auth failure?
 
     Returns a detail dict (never a bare bool — the caller has to be able to
-    say WHICH transcript proved it) or None. Recorded transcripts first; the
-    touched-since fallback only when the record can't name one.
+    say WHICH surface proved it) or None. Surfaces, most-specific first:
+
+    1. ``stderr`` — the ``hermes -z``/``-q`` output of the failed turn. Proof
+       that *this* turn failed, keyed on the ``AuthError`` class.
+    2. pre-flight — ``hermes auth status <provider>``, only when the caller
+       names the effective provider (the polling loop does not subprocess per
+       tick).
+    3. message store — the session's last assistant message (#9).
     """
-    for path in recorded_transcripts(session):
-        if transcript_auth_failure(path):
-            return {"session": session, "transcript": str(path), "source": "recorded"}
-    if project_path is not None and since is not None:
-        for path in touched_transcripts(project_path, since):
-            if transcript_auth_failure(path):
-                return {"session": session, "transcript": str(path), "source": "touched"}
+    if stderr:
+        err = parse_auth_error(stderr)
+        if err and auth_error_is_hard(err):
+            return {
+                "session": session,
+                "provider": err.get("provider"),
+                "code": err.get("code"),
+                "source": "stderr",
+                "evidence": stderr[:500],
+            }
+    if provider:
+        pre = probe_provider_auth(provider)
+        if pre:
+            return {"session": session, "source": "preflight", **pre}
+    msg = _session_last_auth_error(session)
+    if msg:
+        return {"session": session, "source": "message", **msg}
     return None
 
 
@@ -304,11 +339,9 @@ def clear_state() -> bool:
     """Drop the outage record. True iff one was there.
 
     Called from ``completion.wait_for_completion_signal``'s success path: a
-    written task summary is proof a turn ran, which is proof the login works.
-    That is what makes the operator-facing "reopens on the first successful
-    turn" a fact rather than a description of behavior nothing implements —
-    the mismatch #906 itself is about, at a smaller scale. ``OUTAGE_TTL``
-    remains the backstop for a fleet that isn't completing anything.
+    written task summary is proof a turn ran, which is proof the credentials
+    work. ``OUTAGE_TTL`` remains the backstop for a fleet that isn't
+    completing anything.
     """
     try:
         state_path().unlink()
@@ -323,9 +356,7 @@ def outage_active(now: datetime | None = None) -> dict | None:
 
     Freshness is the safety property: a recorded outage gates dispatch only
     while it has been seen within :data:`OUTAGE_TTL`. Past that the gate opens
-    and the next dispatch acts as the probe — which, with detection in place,
-    fails in seconds instead of hours. A flag that gated forever would take the
-    whole scheduler down on a stale file.
+    and the next dispatch acts as the probe.
     """
     state = read_state()
     if not state:
@@ -344,8 +375,7 @@ def record_outage(detail: dict, source: str = "ensure") -> dict:
 
     ``detected_at`` is carried forward across refreshes so the operator can see
     how long the outage has run; refreshing it each sighting would make a
-    four-hour outage read as seconds old — the same defect #905 fixed on
-    ``detected_at`` in the prompt sweep.
+    four-hour outage read as seconds old.
     """
     prior = read_state() or {}
     now = _now()
@@ -356,7 +386,9 @@ def record_outage(detail: dict, source: str = "ensure") -> dict:
         "detected_at": prior.get("detected_at") or now.isoformat(),
         "last_seen": now.isoformat(),
         "sessions": sessions,
-        "transcript": detail.get("transcript"),
+        "provider": detail.get("provider") or prior.get("provider"),
+        "code": detail.get("code") or prior.get("code"),
+        "evidence": detail.get("evidence"),
         "source": source,
         "host": socket.gethostname(),
         "escalated_at": prior.get("escalated_at"),
@@ -366,7 +398,8 @@ def record_outage(detail: dict, source: str = "ensure") -> dict:
     state["alerted_at"] = _alert_fleet(state, prior)
     write_state(state)
     log_event("outage_detected", session=detail.get("session"),
-              transcript=detail.get("transcript"), source=source)
+              provider=state.get("provider"), code=state.get("code"),
+              source=source)
     return state
 
 
@@ -376,15 +409,9 @@ def _escalate(state: dict, prior: dict) -> str | None:
     Best-effort in the strong sense: a missing key or a provider failure must
     never turn "we detected the outage and failed the task fast" into an
     exception that fails it slowly instead. The outage state is written either
-    way, so the gate works with or without the email.
-
-    Consequence worth naming: only a SUCCESSFUL send stamps ``escalated_at``,
-    so a persistently broken sender is retried once per detection rather than
-    once per :data:`ESCALATE_TTL`. That is the intended trade — a send that
-    silently counted as delivered would lose the escalation entirely, and
-    losing it is strictly worse than retrying it. The retry is cheap (the
-    email path is already best-effort and off the critical path) and it stops
-    the moment one send lands.
+    way, so the gate works with or without the email. Only a SUCCESSFUL send
+    stamps ``escalated_at``, so a persistently broken sender is retried once
+    per detection rather than once per TTL — the intended trade.
     """
     previous = prior.get("escalated_at")
     if previous:
@@ -397,21 +424,26 @@ def _escalate(state: dict, prior: dict) -> str | None:
         from .channels.email import send_email
 
         sessions = ", ".join(state.get("sessions") or []) or "(none recorded)"
+        provider = state.get("provider")
+        code = state.get("code")
+        rendered = render_provider(provider)
         body = "\n".join([
-            f"Claude Code on `{state.get('host')}` is refusing every turn with "
-            f"**{RENDERED}** (`error: {AUTH_ERROR}`).",
+            f"Hermes provider **{provider or '(unknown)'}** on "
+            f"`{state.get('host')}` is refusing every turn with "
+            f"**{rendered}** (code: `{code}`).",
             "",
             f"- **First seen:** {state.get('detected_at')}",
             f"- **Sessions affected so far:** {sessions}",
-            f"- **Evidence:** {state.get('transcript')}",
+            f"- **Evidence:** {state.get('evidence') or state.get('source')}",
             "",
             "Scheduled dispatches are being skipped rather than each burning its "
-            "own timeout. Run `/login` in any Claude Code session to clear it; "
-            "the gate re-probes automatically and reopens on the first "
+            "own timeout. Run `hermes auth add <provider>` or `hermes model` to "
+            "clear it; the gate re-probes automatically and reopens on the first "
             "successful turn.",
         ])
         result = send_email(
-            subject=f"[agentwire] Claude login expired on {state.get('host')} — dispatch gated",
+            subject=f"[agentwire] Hermes {provider} auth expired on "
+                    f"{state.get('host')} — dispatch gated",
             body=body,
         )
         if getattr(result, "success", False):
@@ -426,19 +458,12 @@ def _escalate(state: dict, prior: dict) -> str | None:
 def _alert_fleet(state: dict, prior: dict) -> "str | None":
     """Tell subscribed sessions, on the same clock the owner email rides (#982).
 
-    Escalation kind, and this is the clearest case for it in the fleet: the
-    outage is machine-wide, every subsequent turn is refused, and nothing but a
-    human running ``/login`` can clear it. It is bounded to once per
-    :data:`ESCALATE_TTL` per outage — machine-wide, not per session and not per
-    dispatch — which is what makes an interrupt affordable here.
-
+    The outage is machine-wide and nothing but a human re-auth can clear it.
     Stamped separately from ``escalated_at`` while sharing that field's state
-    record and its TTL. Not a parallel throttle store — the same file, the same
-    window — but a separate stamp, because the two channels fail differently:
-    the email deliberately retries per detection when the provider is down
-    (only a successful send stamps), and an alert inheriting that retry would
-    turn a broken Resend key into one interrupt per dispatch. Enqueueing is a
-    local write, so this stamp lands whenever the alert actually did.
+    record and its TTL: the email retries per detection when the provider is
+    down, and an alert inheriting that retry would turn a broken Resend key
+    into one interrupt per dispatch. Enqueueing is a local write, so this
+    stamp lands whenever the alert actually did.
     """
     previous = prior.get("alerted_at")
     if previous:
@@ -451,12 +476,15 @@ def _alert_fleet(state: dict, prior: dict) -> "str | None":
         from . import fleet_alerts
 
         sessions = ", ".join(state.get("sessions") or []) or "(none recorded)"
+        provider = state.get("provider")
+        rendered = render_provider(provider)
         reached = fleet_alerts.emit_for(
             "auth_expired",
-            f"Claude login expired on {state.get('host')} — every turn is being "
-            f"refused ({RENDERED}). Sessions hit so far: {sessions}. Scheduled "
-            f"dispatch is gated until someone runs /login; nothing recovers on "
-            f"its own. First seen {state.get('detected_at')}.",
+            f"Hermes provider {provider or '(unknown)'} login expired on "
+            f"{state.get('host')} — every turn is being refused ({rendered}). "
+            f"Sessions hit so far: {sessions}. Scheduled dispatch is gated "
+            f"until someone runs `hermes auth add <provider>` / `hermes model`; "
+            f"nothing recovers on its own. First seen {state.get('detected_at')}.",
         )
     except Exception as exc:  # alerting is best-effort; never break the gate
         log_event("alert_failed", error=str(exc))
@@ -468,15 +496,22 @@ def _alert_fleet(state: dict, prior: dict) -> "str | None":
 
 
 def check_and_flag(
-    session: str, project_path=None, since: float | None = None, source: str = "ensure"
+    session: str,
+    project_path=None,
+    since: float | None = None,
+    source: str = "ensure",
+    stderr: str | None = None,
+    provider: str | None = None,
 ) -> dict | None:
     """The fast-path probe for polling loops. Mirrors ``usage_limit.check_and_park``.
 
-    Cheap when nothing is wrong (one or two bounded tail reads), records the
-    machine-wide outage and escalates when it is. Returns the detail dict so
-    the caller can name the transcript in its own failure message.
+    Cheap when nothing is wrong, records the machine-wide outage and escalates
+    when it is. Returns the detail dict so the caller can name the provider in
+    its own failure message. ``stderr`` carries the failed ``hermes -z``/``-q``
+    output; ``provider`` enables the pre-flight subprocess.
     """
-    detail = detect(session, project_path=project_path, since=since)
+    detail = detect(session, project_path=project_path, since=since,
+                    stderr=stderr, provider=provider)
     if detail is None:
         return None
     record_outage(detail, source=source)
@@ -485,9 +520,13 @@ def check_and_flag(
 
 def summary_line(detail: dict | None = None) -> str:
     """The operator-facing reason string. Names the cause, not the symptom."""
-    where = f" (evidence: {detail['transcript']})" if detail and detail.get("transcript") else ""
+    detail = detail or {}
+    provider = detail.get("provider")
+    code = detail.get("code")
+    rendered = render_provider(provider)
+    code_part = f" (code: {code})" if code else ""
+    where = f" (detected via {detail['source']})" if detail.get("source") else ""
     return (
-        f"Claude login expired — the agent's turn was refused with "
-        f"'{RENDERED}' (error: {AUTH_ERROR}); no completion signal can arrive "
-        f"until `/login` is run{where}"
+        f"Hermes provider login expired — {rendered}{code_part}; no completion "
+        f"can run until re-auth{where}"
     )

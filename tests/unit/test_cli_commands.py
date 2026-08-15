@@ -1112,7 +1112,7 @@ class TestRecreateRoutesThroughResolveRoles:
         # topology, so the safety contract is present even though nothing
         # was saved.
         assert cap.role_names[0] == "worker-worktree"
-        assert "soul" in cap.role_names
+        assert "soul" not in cap.role_names  # soul is SOUL.md identity (#15)
 
     def test_worktree_recreate_stacks_saved_roles_under_etiquette(
         self, monkeypatch, tmp_path
@@ -1282,7 +1282,7 @@ class TestHistoryResumeRoutesThroughResolveRoles:
         # A resume with no saved roles now gets the orchestrator default,
         # not an empty list. Soul is auto-appended.
         assert cap.role_names[0] == "orchestrator"
-        assert "soul" in cap.role_names
+        assert "soul" not in cap.role_names  # soul is SOUL.md identity (#15)
 
     def test_saved_roles_replace_orchestrator_persona(self, monkeypatch, tmp_path):
         import agentwire.history_cli as mod

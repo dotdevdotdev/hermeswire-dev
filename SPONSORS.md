@@ -1,6 +1,6 @@
 # Sponsors
 
-AgentWire is made possible by these generous supporters.
+HermesWire is made possible by these generous supporters.
 [Become a sponsor](https://github.com/sponsors/dotdevdotdev) to support the open-source work.
 
 > Everything I build in the open is free forever — sponsoring is a thank-you, not a way to buy features or support. If your team needs hands-on training or integration, that's what **[dotdev](https://dotdev.dev)** does.

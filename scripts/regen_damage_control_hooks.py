@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Regenerate damage-control hook scripts by inlining ``agentwire/safety/_core.py``.
 
-The Claude Code hooks (bash/edit/write) must run as PEP 723 standalone scripts
+The Hermes Agent hooks (terminal/write_file/patch/read_file/search_files/mcp)
+must run as PEP 723 standalone scripts
 — they can't ``from agentwire.safety._core import ...`` because uv runs them
 in an isolated env with only ``pyyaml`` as a dep. So we inline ``_core.py``
 content into each hook between::

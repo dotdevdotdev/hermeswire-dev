@@ -7,9 +7,14 @@
 AgentWire Edit Tool Damage Control
 ==================================
 
-Claude Code PreToolUse hook for Edit tool calls. Blocks edits to protected
-files (zeroAccessPaths, readOnlyPaths) using the same shared rule set as the
-Bash hook.
+Hermes Agent ``pre_tool_call`` hook for the ``write_file`` and ``patch`` tools.
+Blocks edits to protected files (zeroAccessPaths, readOnlyPaths) using the same
+shared rule set as the Bash hook.
+
+Wire contract (Hermes): stdin is a ``pre_tool_call`` payload
+(``{"tool_name": "write_file" | "patch", "tool_input": {"path": "..."}, ...}``).
+A block is ``{"action": "block", "message": "<reason>"}`` on stdout; otherwise
+exit 0 (audit-logged).
 
 Implementation: the body of ``agentwire/safety/_core.py`` is inlined below
 between the BEGIN/END GENERATED markers. Edit ``_core.py``, then run
@@ -30,7 +35,7 @@ except ImportError:
 
 
 # === BEGIN AGENTWIRE HOOK STAMP (generated — do not edit) ===
-AGENTWIRE_HOOK_STAMP = {"core_sha256": "ed36d64d7cea91450987aa38dbe19729e6f8687b4d11b5ca4216d954a346c416", "generated_at": "2026-08-13T20:38:12Z"}
+AGENTWIRE_HOOK_STAMP = {"core_sha256": "e5ddd9c2aa39a7611ff7d725e42a901022daa9468181ec56c5f738e63926b206", "generated_at": "2026-08-14T05:25:43Z"}
 # === END AGENTWIRE HOOK STAMP ===
 # === BEGIN GENERATED FROM agentwire/safety/_core.py ===
 """
@@ -1814,14 +1819,16 @@ def load_safety_config(
 PROTECTED_CONTROL_PLANE_PATHS = [
     "~/.agentwire/damagecontrol.yml",   # global kill switch + rule knobs
     "*.damagecontrol.yml",              # project kill switch + rule knobs (any dir)
-    "~/.claude/settings.json",          # PreToolUse hook registration
+    "~/.hermes/config.yaml",            # Hermes hooks + approvals config
+    "~/.hermes/hooks/*",                # Hermes shell hooks
+    "~/.hermes/skills/*",               # Hermes skills (role instructions)
+    "~/.hermes/SOUL.md",                # identity slot (always injected)
     "~/.agentwire/hooks/damage-control/*.py",  # the hook scripts themselves
-    "~/.claude/hooks/*",                # agentwire-owned Claude Code hooks
     "~/.agentwire/damage-control/*.yaml",      # the damage-control rule files
     # Execution-plane configs: agentwire runs strings from these files through
     # its OWN ``subprocess.run(..., shell=True)`` calls (scheduler gate commands
     # in scheduler.py, service healthchecks in services.py) — those subprocesses
-    # do NOT traverse the Claude Code hook, so a policed agent that can write a
+    # do NOT traverse the Hermes hook, so a policed agent that can write a
     # gate/healthcheck gets unguarded code execution on the next tick (a
     # confused-deputy escape). Treat them as control plane (#466 lockdown).
     "~/.agentwire/scheduler.yaml",      # scheduler gate commands run via shell
@@ -3687,15 +3694,16 @@ def main() -> None:
         sys.exit(1)
 
     tool_name = input_data.get("tool_name", "")
-    tool_input = input_data.get("tool_input", {})
+    tool_input = input_data.get("tool_input", {}) or {}
 
-    # NotebookEdit writes files exactly like Edit does but arrives under its
-    # own tool name with a ``notebook_path`` argument — an operation refused
-    # via Edit must not be permitted via NotebookEdit (#923).
-    if tool_name not in ("Edit", "NotebookEdit"):
+    # Hermes has no separate ``Edit``/``NotebookEdit`` tool: both targeted and
+    # whole-file edits arrive as ``write_file`` or ``patch`` (#923's
+    # operation-refused-via-Edit parity now means "refused via one file-mutating
+    # tool is refused via the other").
+    if tool_name not in ("write_file", "patch"):
         sys.exit(0)
 
-    file_path = tool_input.get("file_path", "") or tool_input.get("notebook_path", "")
+    file_path = tool_input.get("path", "") or tool_input.get("file_path", "")
     if not file_path:
         sys.exit(0)
 
@@ -3704,8 +3712,8 @@ def main() -> None:
     blocked, reason = check_path(file_path, config)
     if blocked:
         log_blocked(tool_name, file_path, reason)
-        print(f"SECURITY: Blocked edit to {reason}: {file_path}", file=sys.stderr)
-        sys.exit(2)
+        print(json.dumps({"action": "block", "message": reason}))
+        sys.exit(0)
 
     if config["safety"].get("enabled", True) is False:
         log_disabled(tool_name, file_path)

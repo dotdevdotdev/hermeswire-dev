@@ -32,7 +32,6 @@ def remote_new(monkeypatch):
     monkeypatch.setattr(
         m, "build_agent_command",
         lambda *a, **k: SimpleNamespace(command="claude", env={}))
-    monkeypatch.setattr(m, "mirror_role_prompt_remote", lambda agent, mid, cmd: cmd)
     def fake_run_remote(machine_id, cmd, *a, **k):
         # `test -d <worktree>` → 0 (already there, nothing to create);
         # `tmux has-session` → 1 (no session by that name yet).

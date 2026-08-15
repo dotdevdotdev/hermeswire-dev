@@ -60,7 +60,6 @@ class TestRealHomeIsUntouched:
         agent = core.AgentCommand(
             command="claude", posture="bypass", roles=["orchestrator"],
             conversation_id="00000000-0000-4000-8000-000000000000",
-            role_prompt_path=None,
         )
         core.record_session_launch("resumed", agent, Path.cwd(), role="orchestrator")
 
@@ -286,12 +285,10 @@ class TestTheAuditHookCanActuallyFail:
     ("cohort ledger", "cohorts"),
     ("usage-limit park state", "usage-limit"),
     ("worktree registry", "worktrees.json"),
-    ("role prompts", "role-prompts"),
 ])
 def test_subsystem_stores_are_redirected(subsystem, relative):
     """~/.agentwire holds more than sessions/, and tests touch all of it."""
     import agentwire.cohort as cohort
-    import agentwire.core as core
     import agentwire.inbox as inbox
     import agentwire.usage_limit as usage_limit
 
@@ -300,65 +297,3 @@ def test_subsystem_stores_are_redirected(subsystem, relative):
     ):
         value = getattr(mod, attr)
         assert REAL_HOME not in Path(value).parents, f"{attr} escapes to the real home"
-
-    # The role-prompt store is resolved LAZILY (#902 made it a function rather
-    # than an import-time constant, to dodge the same frozen-binding trap).
-    # A function is invisible to a walk over Path attributes, so this is the
-    # check that the redirect still reaches it — via CONFIG_DIR, at call time.
-    assert REAL_HOME not in core.role_prompts_dir().parents
-    assert REAL_HOME != core.role_prompts_dir()
-
-
-class TestComposesWithTheRolePromptSweepStub:
-    """Both conftest guards must hold at once (#893 + #884/#902).
-
-    They cover different halves and neither subsumes the other: #902's stub
-    PREVENTS one specific destructive operation (the role-prompt sweep's
-    deletion pass) from ever addressing the real store, while this PR's guard
-    DETECTS any test that writes there at all. Keeping only one would silently
-    drop a protection — and the sweep's is the kind nobody notices is gone
-    until something has already been deleted.
-
-    They also reinforce each other. The eager package import means
-    ``role_prompts`` is loaded before any redirect, so its paths resolve
-    through a patched ``CONFIG_DIR``; and the stub holds even where a redirect
-    might not reach.
-    """
-
-    def test_tick_is_stubbed_and_deletes_nothing(self):
-        from agentwire import role_prompts
-
-        result = role_prompts.tick()
-        assert result["deleted"] == []
-        assert result.get("skipped") == "disabled-in-tests"
-
-    def test_the_sweep_stub_does_not_trip_the_write_guard(self):
-        """A no-op stub must not look like a write to the real store."""
-        from agentwire import role_prompts
-        from tests import home_guard
-
-        before = len(home_guard.WRITES)
-        role_prompts.tick()
-        assert len(home_guard.WRITES) == before
-
-    def test_no_sweep_stamp_is_written_to_the_real_store(self):
-        """#902's reviewer's check: the stub held.
-
-        ``tick`` writes ``role-prompt-sweep.json`` next to the store when it
-        actually runs, so the stamp's absence from the REAL config dir is the
-        observable proof that no test swept it.
-        """
-        from agentwire import role_prompts
-        from tests import home_guard
-
-        role_prompts.tick()
-        stamp = home_guard.REAL_AGENTWIRE_HOME / "role-prompt-sweep.json"
-        assert not any(
-            str(stamp) == path for _t, _e, path in home_guard.WRITES
-        ), "a test wrote the sweep stamp into the real store"
-
-    def test_role_prompt_paths_resolve_inside_the_redirect(self, _isolate_agentwire_home):
-        """Where the sweep WOULD look is inside this test's tmp home."""
-        from agentwire import core
-
-        assert core.role_prompts_dir() == _isolate_agentwire_home / "role-prompts"

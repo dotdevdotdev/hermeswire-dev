@@ -17,15 +17,13 @@ the recorded ``roles``/``posture``/``model``, and relaunch at the same cwd with
 **Regenerate, never re-evaluate.** The launch line is rebuilt through
 ``build_agent_command``. The tmux session env holds the previous one in
 ``AGENTWIRE_LAUNCH_CMD``, and re-``eval``ing that is the single most tempting
-wrong move here: it carries a SINGLE-USE ``--session-id``, and Claude treats a
-reused id as fatal ("Session ID <id> is already in use.") — it refuses to
-start, dropping the pane to the bare shell that ``_guarded_launch_command``
-exists to prevent. The recorded id is only ever passed to ``--resume``.
+wrong move here. The recorded Hermes session id is only ever passed to
+``--resume`` (which continues the SAME session — no new id is minted).
 
 **A recorded id does not guarantee a resumable conversation.** ``history.
-locate_conversation`` probes for the actual ``.jsonl`` before resuming, and
-this verb degrades deliberately when it isn't there — fresh conversation, role
-intact, and it SAYS SO. See :func:`resolve_resume_target`.
+locate_conversation`` probes ``~/.hermes/state.db`` for the id before
+resuming, and this verb degrades deliberately when it isn't there — fresh
+conversation, role intact, and it SAYS SO. See :func:`resolve_resume_target`.
 """
 
 from __future__ import annotations
@@ -60,20 +58,19 @@ def resolve_resume_target(
 ) -> tuple[str | None, ConversationLocation | None]:
     """Newest resumable conversation in the chain, plus what we found.
 
-    Walks the chain NEWEST FIRST and returns the first id whose history
-    actually exists under *cwd*'s key. Walking rather than taking the last
-    entry is what handles the launched-but-never-prompted session: the
-    ``.jsonl`` is created lazily on the first turn, so a session that was
-    relaunched and then never spoken to has no file for its newest id, while
-    the id it forked FROM still holds the whole conversation. Taking only the
+    Walks the chain NEWEST FIRST and returns the first id whose session is
+    actually present in ``~/.hermes/state.db``. Walking rather than taking the
+    last entry is what handles the launched-but-never-prompted session: Hermes
+    writes the session row lazily on the first turn, so a session that was
+    relaunched and then never spoken to has no row for its newest id, while
+    the id it resumed FROM still holds the whole conversation. Taking only the
     tail would throw that away and start blank.
 
     When nothing resolves, returns ``(None, <the location worth reporting>)``:
     the newest ORPHANED entry if the chain holds one, else the newest entry.
-    Orphaned outranks gone because it is the recoverable state — and a chain
-    whose newest id was never prompted (``gone``) can easily sit on top of an
-    orphaned conversation that migration would bring back, so reporting the
-    tail alone would hide the one finding anyone can act on.
+    (``orphaned`` cannot occur under Hermes — cwd is a data column, not part of
+    the key — but the branch is retained for the pre-Hermes records that may
+    still be on disk.)
     """
     newest: ConversationLocation | None = None
     orphaned: ConversationLocation | None = None
@@ -94,16 +91,17 @@ def _history_note(loc: ConversationLocation | None, cwd: str) -> str | None:
         return ("No conversation was ever recorded for this session — "
                 "starting fresh with the recorded role intact.")
     if loc.status == "orphaned":
+        # Cannot occur under Hermes (cwd is a data column, not part of the
+        # key); retained only for pre-Hermes records still on disk.
         return (
-            f"Conversation {loc.conversation_id[:8]} exists but is ORPHANED: its "
+            f"Conversation {loc.conversation_id} exists but is ORPHANED: its "
             f"history is under {loc.elsewhere[0].parent.name}, not the key for "
-            f"{cwd}. Claude keys history by cwd, so a moved directory strands it. "
-            "Starting fresh with the recorded role intact."
+            f"{cwd}. Starting fresh with the recorded role intact."
         )
     return (
-        f"No history found for conversation {loc.conversation_id[:8]} — it was "
-        "either never prompted (the transcript is written on the first turn) or "
-        "Claude has evicted it. Starting fresh with the recorded role intact."
+        f"No history found for session {loc.conversation_id} — it was "
+        "either never prompted (the session row is written on the first turn) "
+        "or Hermes has evicted it. Starting fresh with the recorded role intact."
     )
 
 
@@ -118,7 +116,7 @@ def cmd_restart(args) -> int:
     if "@" in session_arg:
         return _output_result(
             False, json_mode,
-            "restart is local-only: a resume has to probe ~/.claude/projects on the "
+            "restart is local-only: a resume has to probe ~/.hermes/state.db on the "
             "machine that holds the history. Run it on that machine, or use "
             "`agentwire recreate -s <session>@<machine>` (which discards the "
             "conversation and the worktree).",
@@ -238,8 +236,7 @@ def cmd_restart(args) -> int:
         verb = "Restarted" if was_live else "Relaunched (session was not running)"
         print(f"{verb} '{session_name}' in {cwd}")
         if resume_id:
-            print(f"  Resumed conversation {resume_id[:8]} → {agent.conversation_id[:8]} "
-                  "(--fork-session mints a new id per resume)")
+            print(f"  Resumed session {resume_id} (--resume continues the same id)")
         elif note:
             print(f"  [!!] {note}")
         print(f"  Posture: {posture}   Roles: {', '.join(role_names) or 'none'}"

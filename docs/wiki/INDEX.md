@@ -14,7 +14,7 @@ New to AgentWire? Start here:
 4. **[Glossary](glossary.md)** — definitions for session, pane, channel, gate, and the rest
 5. **[README](../../README.md)** — what AgentWire is, full install matrix, feature list
 6. **[CLAUDE.md](../../CLAUDE.md)** — agent-facing project guide
-7. **[Sessions: claude-code-auto-mode](sessions/claude-code-auto-mode.md)** — the safest default for autonomous work
+7. **[Sessions: hermes-safety-posture](sessions/hermes-safety-posture.md)** — Hermes safety posture for autonomous work (hooks + approvals + checkpoints + `--yolo`)
 
 ## Sessions
 
@@ -22,8 +22,8 @@ How AgentWire runs AI agents — postures, REPLs, and permission models.
 
 - **[Worktree sessions](sessions/worktree-sessions.md)** — `agentwire worktree <name>`: isolated branch + worktree + standalone session for one unit of work; repo-derived base branch, naming templates, monorepo support, local branch↔session registry (`--list`/`--remove`/`--prune`/`--dangling`); `--kind orchestrator` / `agentwire orchestrator` for a durable project window on the same topology (role⟂topology, #716)
 - **[Helper sessions](sessions/helper-sessions.md)** — `agentwire helper <name>`: a worker session with NO isolation, sharing the caller's checkout (no worktree, no branch, no registry entry, zero git work at creation). Reproduces a worker pane's one real advantage on a real session — msg inbox, voice, prompt routing, portal visibility all included; the `shared-checkout` role holds the line at "files yours, git state theirs" (#838)
-- **[Conversation identity](sessions/conversation-identity.md)** — every session records WHICH Claude conversation it is: agentwire mints the UUID and passes `claude --session-id`, so `~/.agentwire/sessions/<name>/metadata.json` carries an authoritative `conversation_ids` chain plus cwd/repo/branch/roles/posture — enough to regenerate the system prompt, not merely reference it. Also why the role prompt moved out of `/var/folders` (macOS GC'd it and the role silently vanished), and how `agentwire restart` relaunches a session in place on that record — degrading to a fresh conversation, out loud, when the history is orphaned or gone
-- **[claude-code-auto-mode](sessions/claude-code-auto-mode.md)** — Auto mode posture with classifier safety net
+- **[Conversation identity](sessions/conversation-identity.md)** — every session records WHICH Hermes conversation it is: the Hermes session id is minted by Hermes itself (resumed via `--resume`), so `~/.agentwire/sessions/<name>/metadata.json` carries an authoritative `conversation_ids` chain plus cwd/repo/branch/roles/posture — enough to regenerate the system prompt, not merely reference it. Also why the role prompt moved out of `/var/folders` (macOS GC'd it and the role silently vanished), and how `agentwire restart` relaunches a session in place on that record — degrading to a fresh conversation, out loud, when the history is orphaned or gone
+- **[hermes-safety-posture](sessions/hermes-safety-posture.md)** — Hermes safety posture: damage-control hooks + approval gate + checkpoints + `--yolo` (no classifier)
 - **[Window sizing](sessions/window-sizing.md)** — how tmux `window-size` policies interact with the portal (v1.33+ behavior change, healing stuck windows, policy picker)
 - **[Custom services](services.md)** — registered long-running sessions: autostart on portal launch, watchdog health checks + restart with backoff, `agentwire services` CLI
 - **[Council](council.md)** — multi-soul orchestrator sitting: fan a prompt out to lens sessions (brain, conscience, gut, critic, …), collect via file inbox, synthesize with attribution
@@ -47,7 +47,7 @@ How sessions talk to humans and external platforms.
 Headless and scheduled execution.
 
 - **[Scheduled workloads](scheduling/scheduled-workloads.md)** — `agentwire ensure`, `.agentwire.tasks.yml` task schema
-- **[Usage-limit recovery](usage-limit-recovery.md)** — deterministic detect → park → email → auto-resume for the Claude Code usage-limit dialog; launchd watchdog, zero LLM involvement
+- **[Usage-limit recovery](usage-limit-recovery.md)** — deterministic detect → park → email → auto-resume for the usage-limit dialog; launchd watchdog, zero LLM involvement
 - **[Expired-login detection](auth-expired.md)** — a refused turn (`authentication_failed`) read from the transcript, not the pane; machine-wide outage state gates dispatch and emails the owner once
 
 ## Security
@@ -104,7 +104,7 @@ Implementation reference for contributors and advanced users.
 
 ## Skills
 
-Agent-facing reference lives in `.claude/skills/` and loads automatically inside Claude Code:
+Agent-facing reference lives in `.hermes/skills/` and loads automatically inside Hermes Agent:
 
 | Skill | Topic |
 |---|---|

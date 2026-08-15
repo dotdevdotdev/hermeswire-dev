@@ -31,9 +31,9 @@ pytestmark = pytest.mark.real_agentwire_home
 CONTROL_PLANE_FILES = [
     os.path.expanduser("~/.agentwire/damagecontrol.yml"),
     "/some/repo/.damagecontrol.yml",
-    os.path.expanduser("~/.claude/settings.json"),
+    os.path.expanduser("~/.hermes/config.yaml"),
     os.path.expanduser("~/.agentwire/hooks/damage-control/bash-tool-damage-control.py"),
-    os.path.expanduser("~/.claude/hooks/idle-handler.sh"),
+    os.path.expanduser("~/.hermes/hooks/idle-handler.sh"),
     os.path.expanduser("~/.agentwire/damage-control/core.yaml"),
     # Execution-plane configs whose strings agentwire runs via shell=True
     # (scheduler gate commands, service healthchecks, per-project task commands)
@@ -234,7 +234,7 @@ def test_edit_write_blocked_even_when_kill_switch_off(path):
 
 
 def test_unregistering_hook_via_settings_blocked(cfg):
-    blocked, _ = check_path(os.path.expanduser("~/.claude/settings.json"), cfg)
+    blocked, _ = check_path(os.path.expanduser("~/.hermes/config.yaml"), cfg)
     assert blocked is True
 
 
@@ -244,7 +244,7 @@ def test_unregistering_hook_via_settings_blocked(cfg):
 
 BASH_WRITES = [
     "echo 'enabled: false' > ~/.agentwire/damagecontrol.yml",
-    "echo '{}' > ~/.claude/settings.json",
+    "echo '{}' > ~/.hermes/config.yaml",
     "rm ~/.agentwire/damage-control/core.yaml",
     "sed -i 's/x/y/' ~/.agentwire/hooks/damage-control/bash-tool-damage-control.py",
     "echo 'enabled: false' > .damagecontrol.yml",

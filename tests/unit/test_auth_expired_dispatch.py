@@ -1,30 +1,32 @@
-"""The expired-login detector fires through the REAL dispatch paths (#906).
+"""The Hermes auth-failure detector fires through the REAL dispatch paths (#13).
 
-`tests/unit/test_auth_expired.py` proves the detector recognises the real
-2026-08-04 transcript. That is necessary and not sufficient: #867's cost came
-from `wait_for_completion_signal` polling forever and the scheduler dispatching
-into the outage again, so what has to be proven here is that those two
-functions — the actual ones, not stand-ins — change behaviour.
+`tests/unit/test_auth_expired.py` proves the detector recognises the Hermes
+``AuthError`` shape. That is necessary and not sufficient: the original
+incident's cost came from `wait_for_completion_signal` polling forever and the
+scheduler dispatching into the outage again, so what has to be proven here is
+that those two functions — the actual ones, not stand-ins — change behaviour.
 
 Every test below drives the shipped code path:
 
-* ``wait_for_completion_signal`` with a real transcript on disk, asserting it
-  RETURNS ``auth_expired`` instead of looping until the session dies. A test
-  that patched the detector and asserted on a return value would pass against
-  a `completion.py` that never called it.
+* ``wait_for_completion_signal`` with a hard ``AuthError`` on the failed run's
+  stderr (and with an exited headless ``hermes -z`` process), asserting it
+  RETURNS ``auth_expired`` instead of looping until the session dies.
 * ``_dispatch_ensure_task`` with an outage recorded, asserting `ensure` is
   never invoked and ``last_run`` is not consumed.
+* ``_session_has_agent`` distinguishing a Hermes agent-python from a
+  daemon-python, so a live session reads alive and a daemon doesn't.
 """
 
 import time
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
-from test_auth_expired import HUNG_RUN, write_transcript
+from test_auth_expired import AUTH_ERROR_STDERR
 
-from agentwire import auth_expired
-from agentwire.completion import status_to_exit_code, wait_for_completion_signal
+from agentwire import auth_expired, completion
+from agentwire.completion import CompletionTimeout, status_to_exit_code, wait_for_completion_signal
 from agentwire.ensure_cli import ENSURE_EXIT_AUTH_EXPIRED
 from agentwire.scheduler.models import _EXIT_TO_STATUS, SchedulerTask, TaskState
 
@@ -32,129 +34,118 @@ from agentwire.scheduler.models import _EXIT_TO_STATUS, SchedulerTask, TaskState
 @pytest.fixture
 def env(tmp_path, monkeypatch):
     monkeypatch.setattr("agentwire.core.CONFIG_DIR", tmp_path / "agentwire")
-    monkeypatch.setattr("agentwire.history.PROJECTS_DIR", tmp_path / "projects")
-    ok = type("R", (), {"success": True, "error": None})()
-    with patch("agentwire.channels.email.send_email", return_value=ok):
-        yield tmp_path
+    monkeypatch.setattr("agentwire.completion.TASKS_DIR", tmp_path / "tasks")
+    return tmp_path
+
+
+def _parked_off(monkeypatch):
+    monkeypatch.setattr("agentwire.usage_limit.check_and_park", lambda *a, **k: False)
+
+
+def _agent_alive(monkeypatch):
+    monkeypatch.setattr("agentwire.completion._session_has_agent", lambda s: True)
+
+
+class TestSessionHasAgentHermes:
+    """A Hermes agent is a python process; the liveness check must not confuse
+    it with a daemon-python (or a bare shell)."""
+
+    def test_bare_shell_is_not_agent(self):
+        assert completion._command_is_agent("zsh") is False
+        assert completion._command_is_agent("bash") is False
+
+    def test_hermes_binary_is_agent(self):
+        assert completion._command_is_agent("hermes") is True
+
+    def test_python_requires_hermes_cmdline(self, monkeypatch):
+        monkeypatch.setattr("agentwire.completion._pid_is_hermes_agent", lambda pid: True)
+        assert completion._command_is_agent("python3.13", "4242") is True
+        monkeypatch.setattr("agentwire.completion._pid_is_hermes_agent", lambda pid: False)
+        assert completion._command_is_agent("python3.13", "4242") is False
+
+    def test_pid_inspection_separates_agent_from_daemon(self):
+        agent = SimpleNamespace(returncode=0,
+                                stdout="/Users/dotdev/.local/share/uv/tools/hermes-agent/bin/python hermes chat --cli\n",
+                                stderr="")
+        daemon = SimpleNamespace(returncode=0, stdout="agentwire scheduler\n", stderr="")
+        with patch("agentwire.completion.subprocess.run", return_value=agent):
+            assert completion._pid_is_hermes_agent("1") is True
+        with patch("agentwire.completion.subprocess.run", return_value=daemon):
+            assert completion._pid_is_hermes_agent("1") is False
+
+    def test_session_has_agent_resolves_a_python_pane(self, monkeypatch):
+        panes = SimpleNamespace(returncode=0, stdout="python3.13\t4242\n", stderr="")
+        monkeypatch.setattr("agentwire.completion.subprocess.run", lambda *a, **k: panes)
+        monkeypatch.setattr("agentwire.completion._pid_is_hermes_agent", lambda pid: True)
+        assert completion._session_has_agent("s") is True
+
+    def test_missing_session_is_dead(self, monkeypatch):
+        monkeypatch.setattr(
+            "agentwire.completion.subprocess.run",
+            lambda *a, **k: SimpleNamespace(returncode=1, stdout="", stderr=""))
+        assert completion._session_has_agent("s") is False
 
 
 class TestCompletionWaitReturnsInsteadOfHanging:
-    def test_real_wait_loop_reports_the_cause(self, env, monkeypatch):
-        """The load-bearing integration assertion for #867.
+    def test_wait_reports_auth_failure_from_stderr(self, env, monkeypatch):
+        """The shipped wait returns a named cause in one tick, not a hang.
 
-        Drives the SHIPPED `wait_for_completion_signal` against the shape of
-        the run that hung: session alive, agent process running, no usage-limit
-        dialog, no summary file — every check that existed before #906 passes
-        forever. It must now return a named cause in one tick.
+        Drives the real `wait_for_completion_signal` against the shape of the
+        run that hung: session alive, no usage-limit dialog, no summary file —
+        but the failed turn's stderr carries the hard AuthError.
         """
-        from agentwire.history import encode_project_path
+        _agent_alive(monkeypatch)
+        _parked_off(monkeypatch)
 
-        project = env / "proj"
-        project.mkdir()
-        write_transcript(
-            env / "projects" / encode_project_path(str(project)) / "conv.jsonl",
-            HUNG_RUN,
-        )
-        # Everything the old loop looked at says "healthy, keep waiting".
-        monkeypatch.setattr("agentwire.completion._session_has_agent", lambda s: True)
-        monkeypatch.setattr("agentwire.usage_limit.check_and_park",
-                            lambda *a, **k: False)
-
+        summary = env / "task-summary-s-x-2026-08-04T08-00-00.md"
         started = time.time()
         result = wait_for_completion_signal(
-            "memory-manager",
-            poll_interval=0.01,
-            summary_path=project / "task-summary-memory-manager-x-2026-08-04T08-00-00.md",
-            # The real anchor: the attempt began before the prompt was sent,
-            # so the refusal recorded 15ms later is inside the window.
-            transcript_since=started - 60,
-            # Bounds the un-detected case so a regression FAILS instead of
-            # hanging: without the detector this loop has no other exit (the
-            # session is alive, no dialog, no summary) — which is precisely
-            # #867, and a test that reproduces it by hanging CI reports
-            # nothing. Measured: mutating the detector out turned this from a
-            # 1s pass into a 600s timeout until this bound was added.
-            max_duration=2,
+            "s", poll_interval=0.01, summary_path=summary,
+            stderr=AUTH_ERROR_STDERR, max_duration=2,
         )
         assert time.time() - started < 5, "must not poll on a turn that was refused"
         assert result["status"] == "auth_expired"
-        assert "Login expired" in result["summary"]
-        assert "authentication_failed" in result["summary"]
-        assert "conv.jsonl" in result["summary"], "names the evidence"
+        assert "nous" in result["summary"]
+        assert "subscription_expired" in result["summary"]
 
     def test_the_outage_is_recorded_so_the_fleet_can_be_gated(self, env, monkeypatch):
-        """Detection is machine-wide, not per-task — that is the #906 ask."""
-        from agentwire.history import encode_project_path
+        _agent_alive(monkeypatch)
+        _parked_off(monkeypatch)
 
-        project = env / "proj"
-        project.mkdir()
-        write_transcript(
-            env / "projects" / encode_project_path(str(project)) / "conv.jsonl", HUNG_RUN)
-        monkeypatch.setattr("agentwire.completion._session_has_agent", lambda s: True)
-        monkeypatch.setattr("agentwire.usage_limit.check_and_park", lambda *a, **k: False)
-
+        summary = env / "task-summary-s-x-2026-08-04T08-00-00.md"
         assert auth_expired.outage_active() is None
         wait_for_completion_signal(
-            "memory-manager", poll_interval=0.01,
-            summary_path=project / "task-summary-a-b-2026-08-04T08-00-00.md",
-            transcript_since=time.time() - 60, max_duration=2)
+            "s", poll_interval=0.01, summary_path=summary,
+            stderr=AUTH_ERROR_STDERR, max_duration=2)
         outage = auth_expired.outage_active()
         assert outage is not None
-        assert "memory-manager" in outage["sessions"]
+        assert "s" in outage["sessions"]
+        assert outage["provider"] == "nous"
 
-    def test_the_window_starts_at_the_attempt_not_at_the_wait(self, env, monkeypatch):
-        """Regression for the window bug this integration test caught.
+    def test_a_transient_rate_limit_does_not_gate(self, env, monkeypatch):
+        """A `codex_rate_limited` failure must NOT record an outage."""
+        _agent_alive(monkeypatch)
+        _parked_off(monkeypatch)
+        from test_auth_expired import TRANSIENT_STDERR
 
-        The refusal is written ~15ms after the prompt submits; `send_verified`
-        then spends seconds confirming submission before the wait is entered.
-        Anchoring the transcript window at the wait's own start therefore puts
-        the evidence just BEFORE the window — the detector would have been
-        blind to the exact run it was built for. `ensure` passes the attempt's
-        start instead; this proves the two anchors actually differ.
-        """
-        from agentwire.history import encode_project_path
-
-        project = env / "proj"
-        project.mkdir()
-        write_transcript(
-            env / "projects" / encode_project_path(str(project)) / "conv.jsonl", HUNG_RUN)
-        monkeypatch.setattr("agentwire.completion._session_has_agent", lambda s: False)
-        monkeypatch.setattr("agentwire.usage_limit.check_and_park", lambda *a, **k: False)
-        summary = project / "task-summary-a-b-2026-08-04T08-00-00.md"
-
-        # Wait-anchored (the default): transcript predates the floor, missed.
-        from agentwire.completion import CompletionTimeout
-
+        summary = env / "task-summary-s-x-2026-08-04T08-00-00.md"
+        # The wait keeps polling (session alive, no summary, no hard failure),
+        # so bound it with max_duration; the assert is that no outage appears.
         with pytest.raises(CompletionTimeout):
-            wait_for_completion_signal("s", poll_interval=0.01, summary_path=summary)
+            wait_for_completion_signal(
+                "s", poll_interval=0.01, summary_path=summary,
+                stderr=TRANSIENT_STDERR, max_duration=1)
         assert auth_expired.outage_active() is None
 
-        # Attempt-anchored (what ensure passes): seen.
-        result = wait_for_completion_signal(
-            "s", poll_interval=0.01, summary_path=summary,
-            transcript_since=time.time() - 60, max_duration=2)
-        assert result["status"] == "auth_expired"
-
     def test_a_successful_turn_reopens_the_gate(self, env, monkeypatch):
-        """The hook behind "reopens on the first successful turn".
-
-        `doctor` and the escalation email both make that promise to an
-        operator. Before this hook existed the gate stayed shut until
-        `last_seen + OUTAGE_TTL` no matter what, so the text described
-        behavior nothing implemented — which is #906's own defect one scale
-        down, and would misdirect the next reader exactly the way
-        "incomplete — Timeout waiting for task completion" misdirected a day
-        of investigation.
-        """
-        auth_expired.record_outage({"session": "memory-manager", "transcript": "/t"})
+        auth_expired.record_outage({"session": "s", "provider": "nous",
+                                    "code": "subscription_expired"})
         assert auth_expired.outage_active() is not None
 
-        project = env / "proj"
-        project.mkdir()
-        summary = project / "task-summary-a-b-2026-08-05T04-00-00.md"
+        _agent_alive(monkeypatch)
+        _parked_off(monkeypatch)
+        summary = env / "task-summary-s-x-2026-08-05T04-00-00.md"
         summary.write_text("---\nstatus: complete\nsummary: did the thing\n---\n")
-        monkeypatch.setattr("agentwire.completion._session_has_agent", lambda s: True)
-        monkeypatch.setattr("agentwire.usage_limit.check_and_park", lambda *a, **k: False)
 
         result = wait_for_completion_signal("s", poll_interval=0.01, summary_path=summary)
         assert result["status"] == "complete"
@@ -162,34 +153,56 @@ class TestCompletionWaitReturnsInsteadOfHanging:
         assert auth_expired.read_state() is None, "the record itself is gone"
 
     def test_clearing_a_gate_that_was_never_set_is_harmless(self, env, monkeypatch):
-        """The hook runs on EVERY successful completion, outage or not."""
-        project = env / "proj"
-        project.mkdir()
-        summary = project / "task-summary-a-b-2026-08-05T04-00-00.md"
+        _agent_alive(monkeypatch)
+        _parked_off(monkeypatch)
+        summary = env / "task-summary-s-x-2026-08-05T04-00-00.md"
         summary.write_text("---\nstatus: complete\nsummary: fine\n---\n")
-        monkeypatch.setattr("agentwire.completion._session_has_agent", lambda s: True)
-        monkeypatch.setattr("agentwire.usage_limit.check_and_park", lambda *a, **k: False)
 
         assert auth_expired.read_state() is None
         assert wait_for_completion_signal(
             "s", poll_interval=0.01, summary_path=summary)["status"] == "complete"
 
     def test_a_healthy_session_is_untouched(self, env, monkeypatch):
-        """No transcript failure → the loop behaves exactly as before.
-
-        Guards the direction that matters most: this check runs on every tick
-        of every task, and a false positive ends a healthy run.
-        """
-        project = env / "proj"
-        project.mkdir()
-        summary = project / "task-summary-a-b-2026-08-04T08-00-00.md"
+        _agent_alive(monkeypatch)
+        _parked_off(monkeypatch)
+        summary = env / "task-summary-s-x-2026-08-04T08-00-00.md"
         summary.write_text("## Status: complete\n\nDid the thing.\n")
-        monkeypatch.setattr("agentwire.completion._session_has_agent", lambda s: True)
-        monkeypatch.setattr("agentwire.usage_limit.check_and_park", lambda *a, **k: False)
 
         result = wait_for_completion_signal("s", poll_interval=0.01, summary_path=summary)
         assert result["status"] != "auth_expired"
         assert auth_expired.outage_active() is None
+
+
+class TestHeadlessCompletion:
+    """Headless `hermes -z`/`-q`: completion is the process exit, not a pane."""
+
+    def test_process_exit_with_auth_failure_reports_the_cause(self, env, monkeypatch):
+        _parked_off(monkeypatch)
+        proc = SimpleNamespace(poll=lambda: 1, returncode=1, stderr=AUTH_ERROR_STDERR)
+        result = wait_for_completion_signal(
+            "s", poll_interval=0.01,
+            summary_path=env / "task-summary-s-x-2026-08-04T08-00-00.md",
+            process=proc, max_duration=2)
+        assert result["status"] == "auth_expired"
+        assert auth_expired.outage_active() is not None
+
+    def test_process_exit_zero_with_summary_returns_complete(self, env, monkeypatch):
+        _parked_off(monkeypatch)
+        summary = env / "task-summary-s-x-2026-08-05T04-00-00.md"
+        summary.write_text("---\nstatus: complete\nsummary: done\n---\n")
+        proc = SimpleNamespace(poll=lambda: 0, returncode=0, stderr="")
+        result = wait_for_completion_signal(
+            "s", poll_interval=0.01, summary_path=summary, process=proc)
+        assert result["status"] == "complete"
+
+    def test_process_exit_one_without_summary_is_a_timeout(self, env, monkeypatch):
+        _parked_off(monkeypatch)
+        proc = SimpleNamespace(poll=lambda: 0, returncode=1, stderr="some non-auth error")
+        with pytest.raises(CompletionTimeout):
+            wait_for_completion_signal(
+                "s", poll_interval=0.01,
+                summary_path=env / "task-summary-s-x-2026-08-04T08-00-00.md",
+                process=proc, max_duration=2)
 
 
 class TestEnsureWiresTheAnchorAndStopsRetrying:
@@ -197,8 +210,6 @@ class TestEnsureWiresTheAnchorAndStopsRetrying:
     invisible to a test that only exercises `wait_for_completion_signal`."""
 
     def _run(self, tmp_path, signal, task_overrides=None):
-        from types import SimpleNamespace
-
         from agentwire import ensure_cli
         from agentwire.tasks import parse_task_config
         from agentwire.templating import TemplateContext
@@ -223,26 +234,23 @@ class TestEnsureWiresTheAnchorAndStopsRetrying:
         return rc, send, wait
 
     def test_the_attempt_anchor_is_passed_down(self, env, tmp_path):
-        """Not the wait's own start — see the window regression above."""
         before = time.time()
         _, _, wait = self._run(tmp_path, {"status": "complete", "summary": "ok"})
         since = wait.call_args.kwargs["transcript_since"]
         assert since is not None, "ensure must anchor the window at the attempt"
         assert before <= since <= time.time()
 
-    def test_auth_expired_is_not_retried(self, env, tmp_path, capsys):
+    def test_auth_expired_is_not_retried(self, env, tmp_path):
         """Every retry refuses identically — spending them is pure waste."""
         rc, send, _ = self._run(
             tmp_path,
-            {"status": "auth_expired", "summary": "Claude login expired — …"},
+            {"status": "auth_expired", "summary": "Hermes provider auth expired — …"},
             task_overrides={"retries": 3},
         )
         assert send.call_count == 1, "no re-launch, no re-prompt into a dead login"
         assert rc == ENSURE_EXIT_AUTH_EXPIRED
-        assert "Login expired" in capsys.readouterr().out
 
     def test_an_ordinary_failure_still_retries(self, env, tmp_path):
-        """Guard the blast radius: only auth_expired short-circuits."""
         rc, send, _ = self._run(
             tmp_path, {"status": "failed", "summary": "nope"},
             task_overrides={"retries": 1})
@@ -255,8 +263,8 @@ class TestSchedulerGatesTheRestOfTheFleet:
                              session="ai-briefing", task="briefing")
 
     def test_dispatch_is_skipped_while_the_outage_is_fresh(self, env):
-        """On 08-04 the second task discovered the outage by burning 14400s."""
-        auth_expired.record_outage({"session": "memory-manager", "transcript": "/t"})
+        auth_expired.record_outage({"session": "memory-manager", "provider": "nous",
+                                    "code": "subscription_expired"})
         prior = TaskState(last_run=datetime(2026, 8, 4, tzinfo=timezone.utc), run_count=7)
 
         from agentwire.scheduler.dispatch import _dispatch_ensure_task
@@ -268,12 +276,10 @@ class TestSchedulerGatesTheRestOfTheFleet:
         wt.assert_not_called()
         ip.assert_not_called(), "no session launch, no prompt, no ceiling to burn"
         assert state.last_status == "auth_expired"
-        assert state.last_run == prior.last_run, "stays eligible the moment /login runs"
+        assert state.last_run == prior.last_run, "stays eligible the moment re-auth runs"
         assert state.run_count == prior.run_count
-        assert "login expired" in state.last_summary.lower()
 
     def test_dispatch_resumes_once_the_outage_goes_stale(self, env):
-        """The gate must never be able to wedge the board permanently."""
         auth_expired.record_outage({"session": "memory-manager"})
         state = auth_expired.read_state()
         state["last_seen"] = (
@@ -300,11 +306,9 @@ class TestSchedulerGatesTheRestOfTheFleet:
 
 class TestExitCodeIsDistinct:
     def test_auth_expired_is_not_a_timeout(self, env):
-        """`incomplete` sent three investigations at the wrong subsystem."""
         assert status_to_exit_code("auth_expired") == ENSURE_EXIT_AUTH_EXPIRED == 8
         assert status_to_exit_code("incomplete") == 2
         assert status_to_exit_code("usage_limit") == 7
 
     def test_the_scheduler_maps_the_code_back(self, env):
-        """A code ensure emits that the scheduler cannot read is a silent drop."""
         assert _EXIT_TO_STATUS[ENSURE_EXIT_AUTH_EXPIRED] == "auth_expired"

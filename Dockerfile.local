@@ -1,6 +1,10 @@
 # Local Self-Hosted TTS - Chatterbox with Voice Cloning + Whisper
 # Run on any machine with NVIDIA GPU + Docker
 #
+# NOTE: this image is AGENT-AGNOSTIC — it hosts self-hosted TTS/STT only
+# (Chatterbox + faster-whisper) and installs NO coding-agent runtime.
+# The Hermes Agent runtime image lives in Dockerfile.agent.
+#
 # Build:
 #   docker build -f Dockerfile.local -t agentwire-tts-local --build-arg HF_TOKEN=$HF_TOKEN .
 #

@@ -1,0 +1,44 @@
+# Hermes Agent runtime image — the coding agent that AgentWire drives in tmux.
+#
+# This is the agent-runtime image — a self-contained coding-agent environment
+# (Hermes + tmux + git). Dockerfile.local (TTS/STT) is agent-agnostic and
+# installs NO agent runtime; this image provides one for headless/remote
+# AgentWire workers.
+#
+# Build:
+#   docker build -f Dockerfile.agent -t agentwire-hermes .
+#
+# Run (mount the host Hermes config/state so it shares the same API keys,
+# sessions, and hooks as a local install):
+#   docker run --rm -it -v ~/.hermes:/root/.hermes agentwire-hermes
+
+FROM python:3.12-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# tmux (AgentWire drives the agent in a tmux pane), git, curl (for the
+# installer alternative below), and ca-certificates for HTTPS.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tmux \
+    git \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv, then Hermes Agent via uv tool (pinned to the version this repo
+# was converted against).
+RUN pip install --no-cache-dir uv \
+    && uv tool install hermes-agent==0.19.0
+
+# uv symlinks tool entrypoints into ~/.local/bin.
+ENV PATH="/root/.local/bin:${PATH}"
+
+# Alternative install path (official installer, curl + bash):
+#   RUN curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
+
+# Smoke-check the install.
+RUN hermes --version
+
+WORKDIR /work
+
+CMD ["hermes", "chat", "--cli"]

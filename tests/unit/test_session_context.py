@@ -1,142 +1,131 @@
-"""Tests for session context-bar parsing (issue #442, Phase 0 — observe only).
+"""Tests for session-context headroom + auto-management (issue #8 Hermes rewrite).
 
-Locks in the verified semantic: the Claude Code footer bar percentage is
-context REMAINING (headroom before auto-compact), not usage — so a LOW number
-means a bloated session. Parsing is pure string work on captured pane text;
-these tests cover the real bar shapes seen on live sessions plus the daemon /
-no-bar skip paths.
+The Claude Code footer-bar scraper (``parse_context_bar`` / ``parse_model``) is
+gone — Hermes has no ``[███░░] NN%`` footer. Headroom is now computed from the
+Hermes session store (``sessions`` table token columns + the model's context
+window), read via ``session_context``. These tests cover the store-driven
+headroom math, the no-store-row fail-safe, the two-tick low-headroom
+persistence, and the policy/``/clear``-vs-``/compress`` routing.
 """
 
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
 from agentwire import session_context as sc
 from agentwire.config import CustomServiceConfig
 
-# Real captures from live sessions (2026-06-22): the bar width tracks terminal
-# width, so the same 92% renders with different glyph counts.
-WIDE_BAR = "  [████████████████████████████████████████████████████████████████████████████████░░░░░░░░] 92%"
-NARROW_BAR = "  [████████████████████████████████████████████████████████████████░░░░░░] 92%"
-LOW_BAR = "  [█████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 12%"
-META_LINE = "  ~/projects/agentwire-dev  main                       opus  $1805.19  7988m"
+
+@pytest.fixture(autouse=True)
+def isolated_low_markers(tmp_path, monkeypatch):
+    """Point low-headroom markers + events into tmp; never write into $HOME."""
+    monkeypatch.setattr(sc, "_LOW_MARKER_DIR", tmp_path / "session-context-low")
+    monkeypatch.setattr(sc, "EVENTS_FILE", tmp_path / "session-context-events.jsonl")
 
 
-def test_parse_bar_wide_and_narrow_same_pct():
-    assert sc.parse_context_bar(WIDE_BAR) == 92
-    assert sc.parse_context_bar(NARROW_BAR) == 92
+def _row(model: str | None = "gpt-5", input_tokens=0, output_tokens=0):
+    return {
+        "id": "abc123",
+        "model": model,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+    }
 
 
-def test_parse_bar_low():
-    assert sc.parse_context_bar(LOW_BAR) == 12
+# ── Headroom math (store → %) ────────────────────────────────────────────────
 
 
-def test_parse_bar_with_ansi():
-    noisy = "\x1b[2m" + WIDE_BAR + "\x1b[0m"
-    assert sc.parse_context_bar(noisy) == 92
+def test_headroom_pct_basic():
+    with patch.object(sc, "_context_length", return_value=100_000):
+        assert sc._headroom_pct(_row(input_tokens=20_000)) == 80
+        assert sc._headroom_pct(_row(input_tokens=80_000, output_tokens=20_000)) == 0
+        assert sc._headroom_pct(_row(input_tokens=0, output_tokens=0)) == 100
 
 
-def test_no_bar_returns_none():
-    assert sc.parse_context_bar("INFO: 127.0.0.1 - GET /health 200 OK") is None
-    assert sc.parse_context_bar("[2026-06-22 07:43:41] Nothing due. Sleeping 0s...") is None
-    assert sc.parse_context_bar("") is None
+def test_headroom_pct_clamped_and_unknown():
+    with patch.object(sc, "_context_length", return_value=100_000):
+        # Over the window clamps to 0%, never negative.
+        assert sc._headroom_pct(_row(input_tokens=150_000)) == 0
+        # No model → unknown, never "0%".
+        assert sc._headroom_pct(_row(model=None)) is None
+    with patch.object(sc, "_context_length", return_value=None):
+        assert sc._headroom_pct(_row()) is None
 
 
-def test_out_of_range_rejected():
-    assert sc.parse_context_bar("[██░░] 150%") is None
+def test_agent_command_regex():
+    # Hermes REPL panes: hermes / uv / python3*
+    assert sc._is_agent_command("hermes")
+    assert sc._is_agent_command("uv")
+    assert sc._is_agent_command("python3")
+    assert sc._is_agent_command("python3.13")
+    # Legacy Claude + shells are NOT agents anymore (#7).
+    assert not sc._is_agent_command("node")
+    assert not sc._is_agent_command("claude")
+    assert not sc._is_agent_command("2.1.185")
+    assert not sc._is_agent_command("zsh")
+    assert not sc._is_agent_command("")
 
 
-def test_parse_model():
-    assert sc.parse_model(META_LINE) == "opus"
-    assert sc.parse_model("  main  sonnet  $1.00") == "sonnet"
-    assert sc.parse_model("no model here") is None
+# ── session_context (store-driven) ───────────────────────────────────────────
 
 
-def _ctx(command: str, pane_text: str):
-    """Build a SessionContext with pane command + capture mocked."""
+def _sc(command="hermes", row=None, ctx_len=100_000, threshold=20):
     with patch.object(sc, "_pane_command", return_value=command), patch.object(
-        sc, "_capture", return_value=pane_text
-    ):
-        return sc.session_context("s", warn_threshold=20)
-
-
-def test_agent_session_healthy():
-    c = _ctx("node", "\n".join([META_LINE, WIDE_BAR]))
-    assert c.is_agent is True
-    assert c.remaining_pct == 92
-    assert c.model == "opus"
-    assert c.flagged is False
-
-
-def test_agent_session_flagged_when_low():
-    c = _ctx("2.1.185", "\n".join([META_LINE, LOW_BAR]))
-    assert c.is_agent is True
-    assert c.remaining_pct == 12
-    assert c.flagged is True  # 12 <= 20 warn threshold
-    assert "LOW" in c.note
+        sc, "_session_row", return_value=row
+    ), patch.object(sc, "_context_length", return_value=ctx_len):
+        return sc.session_context("s", warn_threshold=threshold)
 
 
 def test_daemon_skipped_gracefully():
-    c = _ctx("python3.13", "INFO: GET /health 200 OK")
+    c = _sc(command="zsh")
     assert c.is_agent is False
     assert c.remaining_pct is None
+    assert c.model is None
     assert c.flagged is False
     assert "daemon" in c.note
 
 
-def test_agent_pane_no_bar_visible():
-    c = _ctx("node", "...busy render, no footer yet...")
+def test_agent_no_store_row_is_unknown_not_zero():
+    # A launched-but-never-prompted pane has no store row → unknown/skip, never 0%.
+    c = _sc(command="hermes", row=None)
     assert c.is_agent is True
     assert c.remaining_pct is None
     assert c.flagged is False
-    assert "no bar" in c.note
+    assert "no store row" in c.note
+
+
+def test_agent_healthy_from_store():
+    c = _sc(command="uv", row=_row(input_tokens=20_000))
+    assert c.is_agent is True
+    assert c.remaining_pct == 80
+    assert c.model == "gpt-5"
+    assert c.flagged is False
+
+
+def test_agent_flagged_when_low():
+    c = _sc(command="python3.13", row=_row(input_tokens=80_000))
+    assert c.is_agent is True
+    assert c.remaining_pct == 20
+    assert c.flagged is True  # 20 <= 20 warn threshold
+    assert "LOW" in c.note
+
+
+def test_agent_no_model_is_unknown_headroom():
+    c = _sc(command="hermes", row=_row(model=None))
+    assert c.remaining_pct is None
+    assert c.flagged is False
+    assert "unknown headroom" in c.note
 
 
 def test_threshold_boundary_inclusive():
-    at = _ctx("node", "\n".join([META_LINE, "[██░░] 20%"]))
-    assert at.flagged is True  # remaining == threshold is flagged
-    above = _ctx("node", "\n".join([META_LINE, "[██░░] 21%"]))
+    at = _sc(row=_row(input_tokens=80_000))  # 20% remaining
+    assert at.flagged is True
+    above = _sc(row=_row(input_tokens=79_000))  # 21% remaining
     assert above.flagged is False
 
 
-# ── Regex hardening (Phase 1, issue #442) ────────────────────────────────────
-# Once auto-/clear keys off the parsed value, a stray bracketed bar must not be
-# able to trigger an action. The bar must be the trailing token of its line, and
-# when several bars are on screen the widest one (the real footer) wins.
-
-
-def test_bar_must_be_trailing_token():
-    # A bar followed by more text on the same line is NOT the Claude footer.
-    assert sc.parse_context_bar("[█████░░░░░] 50% remaining, downloading...") is None
-    assert sc.parse_context_bar("CPU [███░░] 50% load  user 3%") is None
-
-
-def test_trailing_bar_with_label_still_parses():
-    # Trailing IS allowed even with a preceding label — the trailing-token rule
-    # can't distinguish a lone fake bar; the idle/empty-prompt gate is the
-    # belt-and-suspenders for that (documented residual).
-    assert sc.parse_context_bar("model  $1.00  [████████░░] 80%") == 80
-
-
-def test_longest_glyph_run_wins():
-    # A worker's short progress bar + the wide real footer on separate lines:
-    # the wide one (the actual context bar) must win, not the leftmost match.
-    screen = "\n".join([
-        "[██░] 5%",  # short, would falsely read 5% if leftmost won
-        META_LINE,
-        WIDE_BAR,    # the real footer, 92%
-    ])
-    assert sc.parse_context_bar(screen) == 92
-
-
-def test_all_spaces_bracket_rejected():
-    assert sc.parse_context_bar("[     ] 80%") is None
-
-
-def test_trailing_whitespace_tolerated():
-    assert sc.parse_context_bar("[████░░] 30%   ") == 30
-
-
-# ── Policy resolution (Phase 1) ──────────────────────────────────────────────
+# ── Policy resolution ─────────────────────────────────────────────────────────
 
 
 def _cfg(policies=None):
@@ -187,7 +176,7 @@ def test_resolve_policy_invalid_service_value_is_none():
         assert sc.resolve_policy("svc", cfg) == "none"
 
 
-# ── act_on_session (Phase 1) ─────────────────────────────────────────────────
+# ── act_on_session ────────────────────────────────────────────────────────────
 
 
 def _ctx_obj(remaining, is_agent=True, flagged=None):
@@ -195,8 +184,14 @@ def _ctx_obj(remaining, is_agent=True, flagged=None):
         flagged = remaining is not None and remaining <= 20
     return sc.SessionContext(
         session="s", pane=0, is_agent=is_agent, remaining_pct=remaining,
-        model="opus", flagged=flagged, note="",
+        model="gpt-5", flagged=flagged, note="",
     )
+
+
+def test_act_skips_when_no_policy():
+    r = sc.act_on_session("s", "none", threshold=20)
+    assert r["acted"] is False
+    assert r["skipped"] == "no_policy"
 
 
 def test_act_skips_when_above_threshold():
@@ -206,73 +201,70 @@ def test_act_skips_when_above_threshold():
     assert r["skipped"] == "above_threshold"
 
 
-def test_act_skips_when_no_bar():
+def test_act_skips_when_unknown():
+    # Agent but no store row → unknown, never auto-/clear.
     with patch.object(sc, "session_context", return_value=_ctx_obj(None, is_agent=True)):
         r = sc.act_on_session("s", "clear", threshold=20)
     assert r["acted"] is False
-    assert r["skipped"] == "no_bar"
+    assert r["skipped"] == "unknown"
 
 
-def test_act_skips_when_no_policy():
-    r = sc.act_on_session("s", "none", threshold=20)
-    assert r["acted"] is False
-    assert r["skipped"] == "no_policy"
-
-
-def test_act_defers_when_box_not_empty():
-    # Collision guard: a non-empty / unparseable box defers before any paste.
-    with patch.object(sc, "session_context", return_value=_ctx_obj(10)), patch(
-        "agentwire.prompt_router.prompt_is_empty", return_value=False
-    ), patch("agentwire.prompt_router.safe_deliver") as deliver, patch.object(
-        sc, "_log_event"
-    ):
+def test_act_first_low_sighting_defers_and_marks():
+    # Low headroom on a single read only records — no action until it persists.
+    with patch.object(sc, "session_context", return_value=_ctx_obj(10)):
         r = sc.act_on_session("s", "clear", threshold=20)
     assert r["acted"] is False
-    assert r["deferred"] == "box_not_empty"
-    deliver.assert_not_called()  # never even attempt the paste
+    assert r["deferred"] == "first_low_sighting"
+    assert sc._low_seen("s") is True
+
+
+def test_act_acts_after_two_low_ticks():
+    # First tick marks; second tick (marker present) actually /clears.
+    with patch.object(sc, "session_context", return_value=_ctx_obj(10)):
+        assert sc.act_on_session("s", "clear", threshold=20)["deferred"] == "first_low_sighting"
+    with patch.object(sc, "session_context", return_value=_ctx_obj(10)), patch(
+        "agentwire.prompt_router.safe_deliver", return_value=(True, "delivered")
+    ) as deliver:
+        r = sc.act_on_session("s", "clear", threshold=20)
+    assert r["acted"] is True
+    assert r["command"] == "/clear"
+    deliver.assert_called_once_with("s", 0, "/clear")
+    assert sc._low_seen("s") is False  # marker cleared after a successful clear
+
+
+def test_act_compact_routes_compress():
+    sc._mark_low("s")
+    with patch.object(sc, "session_context", return_value=_ctx_obj(5)), patch(
+        "agentwire.prompt_router.safe_deliver", return_value=(True, "delivered")
+    ) as deliver:
+        r = sc.act_on_session("s", "compact", threshold=20)
+    assert r["acted"] is True
+    assert r["command"] == "/compress"
+    deliver.assert_called_once_with("s", 0, "/compress")
 
 
 def test_act_defers_when_safe_deliver_refuses():
-    # An empty box but safe_deliver refuses (parked / live-menu) or the paste
-    # can't be verified — logged honestly as NOT acted, retried next tick.
+    sc._mark_low("s")
     with patch.object(sc, "session_context", return_value=_ctx_obj(10)), patch(
-        "agentwire.prompt_router.prompt_is_empty", return_value=True
-    ), patch(
         "agentwire.prompt_router.safe_deliver",
         return_value=(False, "delivery_unverified"),
-    ), patch.object(sc, "_log_event"):
+    ):
         r = sc.act_on_session("s", "clear", threshold=20)
     assert r["acted"] is False
     assert r["deferred"] == "delivery_unverified"
 
 
-def test_act_sends_command_when_flagged_and_verified():
-    # Happy path: empty box + verified safe_deliver => acted, via safe_deliver
-    # (NOT a raw paste) so the audit log is honest.
+def test_act_defers_when_send_raises():
+    sc._mark_low("s")
     with patch.object(sc, "session_context", return_value=_ctx_obj(10)), patch(
-        "agentwire.prompt_router.prompt_is_empty", return_value=True
-    ), patch(
-        "agentwire.prompt_router.safe_deliver", return_value=(True, "delivered")
-    ) as deliver, patch.object(sc, "_log_event"):
+        "agentwire.prompt_router.safe_deliver", side_effect=RuntimeError("boom")
+    ):
         r = sc.act_on_session("s", "clear", threshold=20)
-    assert r["acted"] is True
-    assert r["command"] == "/clear"
-    deliver.assert_called_once_with("s", 0, "/clear")
+    assert r["acted"] is False
+    assert r["deferred"] == "send_failed"
 
 
-def test_act_compact_routes_compact_through_safe_deliver():
-    with patch.object(sc, "session_context", return_value=_ctx_obj(5)), patch(
-        "agentwire.prompt_router.prompt_is_empty", return_value=True
-    ), patch(
-        "agentwire.prompt_router.safe_deliver", return_value=(True, "delivered")
-    ) as deliver, patch.object(sc, "_log_event"):
-        r = sc.act_on_session("s", "compact", threshold=20)
-    assert r["acted"] is True
-    assert r["command"] == "/compact"
-    deliver.assert_called_once_with("s", 0, "/compact")
-
-
-# ── tick (Phase 1) ───────────────────────────────────────────────────────────
+# ── tick ──────────────────────────────────────────────────────────────────────
 
 
 def test_tick_skips_when_auto_disabled():

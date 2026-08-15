@@ -119,7 +119,7 @@ class TestLoadConfig:
 
     def test_default_agent_command(self, tmp_path):
         config = load_config(tmp_path / "nonexistent.yaml")
-        assert "claude" in config.agent.command
+        assert "hermes" in config.agent.command
 
     def test_session_defaults(self, tmp_path):
         config = load_config(tmp_path / "nonexistent.yaml")

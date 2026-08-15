@@ -1,10 +1,12 @@
-"""Usage-limit dialog recovery — deterministic, zero-LLM.
+"""Provider-limit recovery — deterministic, zero-LLM.
 
-When a Claude Code session hits its usage limit it parks on an interactive
-dialog (``/rate-limit-options``) and blocks forever waiting for a human.
-This module detects that dialog from pane text, selects "Stop and wait for
-limit to reset", parses the reset time from the message, emails the owner,
-and nudges the session back to work after the limit resets.
+Claude Code parked on an interactive usage-limit dialog (``/rate-limit-options``)
+that blocked forever. Hermes has **no such dialog**: provider rate-limit /
+quota / credit failures surface as a structured ``AuthError`` (provider, code,
+``relogin_required``) on the failed turn's stderr or the session's last
+message (see #13). This module detects that error, records a per-session park
+state, emails the owner, and nudges the session back to work after the limit
+window passes.
 
 Every step is plain code: at the moment this fires, usage is exhausted by
 definition — no agent can run to orchestrate the recovery, and a recovery
@@ -13,10 +15,19 @@ mechanism must be more reliable than the thing it recovers.
 Detection runs in two places:
 
 - ``agentwire limits tick`` — a stateless launchd watchdog (every 60s)
-  sweeping all tmux panes. Also the resume timer: a tick that finds a parked
-  session past its reset time sends the resume nudge.
+  sweeping local tmux sessions for provider-limit errors. Also the resume
+  timer: a tick that finds a parked session past its reset time sends the
+  resume nudge.
 - ensure's completion poll (``completion.wait_for_completion_signal``) —
   fast path (≤10s) for scheduler-dispatched tasks.
+
+A limit-parked Hermes session needs **no keystroke** — there is no menu to
+answer. Parking is just: write the park state, notify the owner, and arm the
+resume nudge. The transient class (``codex_rate_limited`` /
+``temporarily_unavailable``) clears on its own and gets a short resume window;
+the hard/credit class (``insufficient_credits``, ``no_usable_credits``,
+``subscription_expired``, ``account_missing``) is #13's outage gate, but is
+still parked here so the session is not re-dispatched into the same refusal.
 
 State: one JSON file per parked session under ``~/.agentwire/usage-limit/``
 (worktree session names contain ``/`` and nest one directory down, same as
@@ -29,10 +40,8 @@ archived to ``usage-limit/done/`` on resume.
 from __future__ import annotations
 
 import fcntl
-import hashlib
 import json
 import os
-import re
 import socket
 import subprocess
 import tempfile
@@ -53,31 +62,14 @@ RESUME_NUDGE = (
     "Continue your task from where you stopped and complete it fully."
 )
 
-# The distinctive option line — anchor for "this is the usage-limit dialog".
-PARK_OPTION = "Stop and wait for limit to reset"
-# Present whenever a Claude Code select-menu is live on screen.
-MENU_FOOTER = "Enter to confirm"
-MENU_QUESTION = "What do you want to do?"
-
-# Limits reset every 5h from window start, so now+5h is a guaranteed upper
-# bound when the reset time can't be parsed from the dialog.
-FALLBACK_RESET = timedelta(hours=5)
-# A parsed reset further out than one window (+ slack) means the stated
-# clock time already passed and rolled to tomorrow — i.e. reset is done.
-MAX_WINDOW = timedelta(hours=5, minutes=15)
+# A provider limit error has no parseable reset time (unlike Claude's dialog).
+# Transient rate limits (codex_rate_limited / plain 429s) clear on their own
+# within a short window; use that as the resume nudge target.
+TRANSIENT_RESET_WINDOW = timedelta(minutes=5)
 # Nudge this long after the stated reset so we're safely past it.
-RESUME_BUFFER = timedelta(minutes=2)
+RESUME_GRACE = timedelta(minutes=1)
 # Give up nudging after this many failed attempts and archive as failed.
 MAX_RESUME_ATTEMPTS = 5
-
-# Shells that indicate no agent is running in a pane (mirror completion.py).
-_BARE_SHELLS = {"zsh", "bash", "sh", "fish", "tcsh", "csh"}
-
-# e.g. "You've hit your session limit · resets 11:40pm (America/Toronto)"
-_RESET_RE = re.compile(
-    r"resets?\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)(?:\s*\(([^)]+)\))?",
-    re.IGNORECASE,
-)
 
 
 # =============================================================================
@@ -146,8 +138,15 @@ def _session_exists(session: str) -> bool:
         return False
 
 
-def _send_key(target: str, key: str) -> None:
-    _tmux(["send-keys", "-t", target, key])
+def _list_sessions() -> list[str]:
+    """All local tmux session names (empty on any error)."""
+    try:
+        result = _tmux(["list-sessions", "-F", "#{session_name}"])
+    except (subprocess.TimeoutExpired, OSError):
+        return []
+    if result.returncode != 0:
+        return []
+    return [s for s in result.stdout.strip().splitlines() if s]
 
 
 # =============================================================================
@@ -160,7 +159,7 @@ def state_path(session: str) -> Path:
 
 
 def is_parked(session: str) -> bool:
-    """True iff this session is currently parked on a usage limit."""
+    """True iff this session is currently parked on a provider limit."""
     return state_path(session).exists()
 
 
@@ -210,21 +209,78 @@ def archive_state(state: dict, status: str) -> None:
 # =============================================================================
 
 
-def detect_dialog(visible: str) -> bool:
-    """True iff the usage-limit dialog is live on this (visible) screen.
+def detect_limit(
+    session: str, pane_index: int = 0, stderr: str | None = None,
+    provider: str | None = None,
+) -> dict | None:
+    """Detect a provider limit/credit error for *session* (transient or hard).
 
-    Requires the distinctive park option AND the menu footer, and nothing
-    rendered after the menu — a pane merely *displaying* a captured dialog
-    (an orchestrator reviewing another session's output) has its own prompt
-    box below the quoted text and must not be parked.
+    Returns a detail dict (never a bare bool — the caller must be able to say
+    WHICH surface proved it) or None. Surfaces, most-specific first:
+
+    1. ``stderr`` — the failed ``hermes -z``/``-q`` output of the turn. Proof
+       that *this* turn hit the limit, keyed on the ``AuthError`` class.
+       Detects BOTH the transient class (``codex_rate_limited`` /
+       ``temporarily_unavailable`` — self-resolving, this subsystem's job) and
+       the hard/credit class (``insufficient_credits``, ``no_usable_credits``,
+       ``subscription_expired``, ``account_missing`` — #13's gate, but still
+       parked here so the session isn't re-dispatched into the refusal).
+    2. session store — the session's last assistant message (stub until the #9
+       store-message surface is wired; mirrors auth_expired).
+    3. ``hermes auth status <provider>`` — pre-flight, hard auth only, and only
+       when the caller names the provider (the polling loop does not subprocess
+       per tick).
+
+    A session that merely *reports* another session's quota error (an
+    orchestrator reviewing output) is never parked: only this session's own
+    structured ``AuthError`` counts — exactly #13's transcript-vs-pane rule.
     """
-    norm = _normalize(visible)
-    if PARK_OPTION not in norm or MENU_FOOTER not in norm:
-        return False
-    tail = norm.rsplit(MENU_FOOTER, 1)[1]
-    # A live menu ends the screen: "Enter to confirm · Esc to cancel".
-    tail = tail.replace("·", " ").replace("Esc to cancel", " ")
-    return not tail.strip()
+    from . import auth_expired
+
+    if stderr:
+        err = auth_expired.parse_auth_error(stderr)
+        if err:
+            code = err.get("code")
+            transient = bool(code in auth_expired.TRANSIENT_CODES)
+            hard = auth_expired.auth_error_is_hard(err)
+            if transient or hard:
+                return {
+                    "session": session,
+                    "provider": err.get("provider"),
+                    "code": code,
+                    "transient": transient,
+                    "hard": hard,
+                    "source": "stderr",
+                    "evidence": stderr[:500],
+                }
+
+    msg = _session_last_limit_error(session)
+    if msg:
+        return {"session": session, "source": "message", **msg}
+
+    if provider:
+        pre = auth_expired.probe_provider_auth(provider)
+        if pre:
+            return {
+                "session": session,
+                "provider": pre.get("provider") or provider,
+                "code": pre.get("code"),
+                "transient": False,
+                "hard": True,
+                "source": "preflight",
+                "evidence": "",
+            }
+    return None
+
+
+def _session_last_limit_error(session: str) -> dict | None:
+    """Last assistant message's provider limit error, via the Hermes store.
+
+    Mirrors ``auth_expired._session_last_auth_error``: the #9 store-message
+    surface is not wired yet, so this returns None and the detector degrades
+    gracefully to stderr + pre-flight — never a crash, never a false park.
+    """
+    return None
 
 
 def _recovery_config() -> tuple[bool, set[str]]:
@@ -243,75 +299,22 @@ def _recovery_config() -> tuple[bool, set[str]]:
 
 
 def check_and_park(session: str, pane_index: int = 0, source: str = "ensure") -> bool:
-    """True iff the session is (or just became) parked on a usage limit.
+    """True iff the session is (or just became) parked on a provider limit.
 
     The fast-path probe for polling loops (ensure's completion wait): cheap
-    when nothing is wrong, parks deterministically when the dialog is up,
-    and honors a park the watchdog already performed.
+    when nothing is wrong, parks deterministically when a provider limit error
+    is detected, and honors a park the watchdog already performed.
     """
     if is_parked(session):
         return True
     enabled, excluded = _recovery_config()
     if not enabled or session in excluded:
         return False
-    if detect_dialog(_capture(f"{session}.{pane_index}")):
-        park(session, pane_index, source=source)
+    limit = detect_limit(session, pane_index)
+    if limit:
+        park(session, pane_index, source=source, limit=limit)
         return is_parked(session)
     return False
-
-
-def detect_dialog_like(visible: str) -> bool:
-    """A live select-menu that is NOT the known usage-limit dialog.
-
-    Used to log dialog-text drift across Claude Code versions — never acted
-    on, only surfaced via ``unmatched_dialog`` events.
-    """
-    norm = _normalize(visible)
-    if MENU_QUESTION not in norm or MENU_FOOTER not in norm:
-        return False
-    return not detect_dialog(visible)
-
-
-def parse_reset_time(text: str, now: datetime | None = None) -> datetime | None:
-    """Parse the limit reset time from dialog/scrollback text.
-
-    Matches e.g. "resets 11:40pm (America/Toronto)" — last occurrence wins
-    (the freshest message is lowest in the scrollback). Returns an aware UTC
-    datetime, ``now`` if the stated time already passed (reset is done), or
-    None if nothing parseable is found.
-    """
-    now = now or _now()
-    matches = list(_RESET_RE.finditer(_normalize(text)))
-    if not matches:
-        return None
-    hour_s, minute_s, meridiem, tz_name = matches[-1].groups()
-
-    hour = int(hour_s) % 12
-    if meridiem.lower() == "pm":
-        hour += 12
-    minute = int(minute_s) if minute_s else 0
-    if hour > 23 or minute > 59:
-        return None
-
-    tzinfo = None
-    if tz_name:
-        try:
-            from zoneinfo import ZoneInfo
-
-            tzinfo = ZoneInfo(tz_name.strip())
-        except Exception:
-            tzinfo = None
-    if tzinfo is None:
-        tzinfo = datetime.now().astimezone().tzinfo
-
-    local_now = now.astimezone(tzinfo)
-    candidate = local_now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    if candidate <= local_now:
-        candidate += timedelta(days=1)
-    if candidate - local_now > MAX_WINDOW:
-        # Stated clock time already passed today — the reset has happened.
-        return now
-    return candidate.astimezone(timezone.utc)
 
 
 # =============================================================================
@@ -338,43 +341,22 @@ def _task_info(session: str) -> dict:
     return info
 
 
-def park(session: str, pane_index: int = 0, source: str = "watchdog") -> dict | None:
-    """Park a session sitting on the usage-limit dialog.
+def park(
+    session: str, pane_index: int = 0, source: str = "watchdog",
+    limit: dict | None = None,
+) -> dict | None:
+    """Park a session that hit a provider limit error.
 
-    Selects option 1 ("Stop and wait for limit to reset"), parses the reset
-    time, writes the park state file, and sends the owner notification.
-    Idempotent: an already-parked session is a no-op. Returns the park state,
-    or None if the session wasn't actually on the dialog.
+    A limit-parked Hermes session needs no keystroke — there is no menu to
+    answer. Just write the park state, notify the owner, and arm the resume
+    nudge. Idempotent: an already-parked session is a no-op.
     """
     if is_parked(session):
         return None
 
-    target = f"{session}.{pane_index}"
-    visible = _capture(target)
-    if not detect_dialog(visible):
-        return None
-
     now = _now()
-    scrollback = _capture(target, scrollback=300)
-    reset_at = parse_reset_time(scrollback or visible, now)
-    parse_failed = reset_at is None
-    if parse_failed:
-        reset_at = now + FALLBACK_RESET
-        log_event(
-            "reset_parse_failed", session=session, pane=pane_index,
-            excerpt=_normalize(visible)[-500:],
-        )
-
-    # Select option 1 and confirm; verify the menu actually dismissed.
-    for attempt in range(2):
-        _send_key(target, "1")
-        time.sleep(0.3)
-        _send_key(target, "Enter")
-        time.sleep(1.0)
-        if not detect_dialog(_capture(target)):
-            break
-        if attempt == 1:
-            log_event("park_confirm_failed", session=session, pane=pane_index)
+    limit = limit or {}
+    reset_at = now + TRANSIENT_RESET_WINDOW
 
     state = {
         "session": session,
@@ -382,18 +364,21 @@ def park(session: str, pane_index: int = 0, source: str = "watchdog") -> dict | 
         "status": "parked",
         "source": source,
         "detected_at": now.isoformat(),
-        "parked_at": _now().isoformat(),
+        "parked_at": now.isoformat(),
         "reset_at": reset_at.isoformat(),
-        "resume_at": (reset_at + RESUME_BUFFER).isoformat(),
-        "reset_parse_failed": parse_failed,
+        "resume_at": (reset_at + RESUME_GRACE).isoformat(),
+        "provider": limit.get("provider"),
+        "code": limit.get("code"),
+        "transient": bool(limit.get("transient")),
         "notified": False,
         "resume_attempts": 0,
-        "excerpt": _normalize(visible)[-500:],
+        "excerpt": limit.get("evidence") or "",
         **_task_info(session),
     }
     write_park_state(state)
     log_event(
         "session_parked", session=session, pane=pane_index, source=source,
+        code=state["code"], provider=state["provider"],
         reset_at=state["reset_at"], resume_at=state["resume_at"],
         task=state.get("task"),
     )
@@ -420,27 +405,29 @@ def _notify_parked(state: dict) -> bool:
     added here must carry its own idempotence rather than assuming one call.
     """
     session = state["session"]
+    code = state.get("code")
+    provider = state.get("provider")
     lines = [
-        f"Session **{session}** on `{socket.gethostname()}` hit a usage limit "
-        "and was parked (option 1: stop and wait for limit to reset).",
+        f"Session **{session}** on `{socket.gethostname()}` hit a provider "
+        f"limit (code `{code}`) and was parked.",
         "",
         f"- **Task:** {state.get('task') or '(none — not a tracked task)'}",
         f"- **Project:** {state.get('project_path') or 'unknown'}",
+        f"- **Provider:** {provider or '(unknown)'}",
         f"- **Detected:** {_fmt_local(state['detected_at'])}",
-        f"- **Limit resets:** {_fmt_local(state['reset_at'])}"
-        + (" (unparsed — assumed +5h window)" if state.get("reset_parse_failed") else ""),
+        f"- **Limit clears (est.):** {_fmt_local(state['reset_at'])}",
         f"- **Auto-resume:** {_fmt_local(state['resume_at'])}",
         "",
-        "The session will be nudged automatically after reset — no action needed.",
+        "The session will be nudged automatically after the limit window — "
+        "no action needed.",
         "",
-        "```",
-        state.get("excerpt", ""),
-        "```",
     ]
+    if state.get("excerpt"):
+        lines += ["```", state["excerpt"], "```"]
     _alert_fleet(state)
     return _send_notification(
         state,
-        subject=f"[agentwire] usage limit: {session} parked until {_fmt_local(state['reset_at'])}",
+        subject=f"[agentwire] provider limit: {session} parked until {_fmt_local(state['reset_at'])}",
         body="\n".join(lines),
         mark_notified=True,
     )
@@ -449,24 +436,16 @@ def _notify_parked(state: dict) -> bool:
 def _alert_fleet(state: dict) -> None:
     """Tell subscribed sessions a session parked (#982). A NOTE, deliberately.
 
-    A park is self-healing: the reset time is parsed, the resume nudge is armed,
-    and the owner's own email ends "no action needed". There is nothing for
-    anyone to do with it in the next thirty seconds, so it does not earn the
-    kind that may be acted on out of turn — it is exactly the fleet news that
-    a gap. Demoting it is what keeps `escalation` worth acting on.
+    A park is self-healing: the resume nudge is armed, and the owner's own
+    email ends "no action needed". There is nothing for anyone to do with it
+    in the next thirty seconds, so it does not earn the kind that may be acted
+    on out of turn — it is exactly the fleet news that a gap. Demoting it is
+    what keeps `escalation` worth acting on.
 
-    **Its own stamp, on the park record.** This originally claimed to inherit
-    ``park``'s once-per-park ``is_parked`` guard on the strength of
-    :func:`_notify_parked` having one caller. It has TWO: ``park`` and
-    :func:`resume_due`, which re-calls it on every watchdog tick for as long as
-    ``notified`` is False — and ``notified`` is only set on a SUCCESSFUL send,
-    so on a machine without ``RESEND_API_KEY`` (``send_email`` raises rather
-    than returning a failure) it is False for the entire park. Measured: 1 park
-    + 10 ticks produced 11 notes.
-
-    ``fleet_alerted`` is stamped on successful ENQUEUE — a local write, which
-    cannot fail the way the email does — and lives on the park state, so it
-    clears with the park: a session that parks again genuinely is new news.
+    **Its own stamp, on the park record.** ``fleet_alerted`` is stamped on
+    successful ENQUEUE — a local write, which cannot fail the way the email
+    does — and lives on the park state, so it clears with the park: a session
+    that parks again genuinely is new news.
     """
     if state.get("fleet_alerted"):
         return
@@ -475,10 +454,10 @@ def _alert_fleet(state: dict) -> None:
 
         reached = fleet_alerts.emit_for(
             "usage_limit_park",
-            f"Session {state['session']} hit a usage limit and was parked"
+            f"Session {state['session']} hit a provider limit and was parked"
             f"{' on task ' + state['task'] if state.get('task') else ''}. "
-            f"Limit resets {_fmt_local(state['reset_at'])}; it will be nudged to "
-            f"continue at {_fmt_local(state['resume_at'])}. No action needed.",
+            f"Limit clears ~{_fmt_local(state['reset_at'])}; it will be nudged "
+            f"to continue at {_fmt_local(state['resume_at'])}. No action needed.",
         )
         if reached:
             state["fleet_alerted"] = True
@@ -492,10 +471,10 @@ def _notify_resumed(state: dict) -> None:
     session = state["session"]
     _send_notification(
         state,
-        subject=f"[agentwire] usage limit reset: {session} resumed",
+        subject=f"[agentwire] provider limit reset: {session} resumed",
         body=(
             f"Session **{session}** on `{socket.gethostname()}` was nudged to "
-            f"continue after its usage limit reset.\n\n"
+            f"continue after its provider limit cleared.\n\n"
             f"- **Task:** {state.get('task') or '(none)'}\n"
             f"- **Parked:** {_fmt_local(state['parked_at'])}\n"
             f"- **Resumed:** {_fmt_local(_now().isoformat())}"
@@ -523,12 +502,12 @@ def _send_notification(state: dict, subject: str, body: str, mark_notified: bool
 
 
 # =============================================================================
-# Sweep (detection backstop across every tmux pane)
+# Sweep (detection backstop across every local tmux session)
 # =============================================================================
 
 
 def sweep() -> list[dict]:
-    """Scan all tmux panes for the usage-limit dialog; park what's found.
+    """Scan local tmux sessions for provider limit errors; park what's found.
 
     Respects the ``usage_limit:`` config knobs: ``enabled: false`` disables
     new parks entirely; ``exclude_sessions`` names are never auto-parked.
@@ -536,63 +515,18 @@ def sweep() -> list[dict]:
     enabled, excluded = _recovery_config()
     if not enabled:
         return []
-    try:
-        result = _tmux(
-            ["list-panes", "-a", "-F",
-             "#{session_name}\t#{pane_index}\t#{pane_current_command}"]
-        )
-    except (subprocess.TimeoutExpired, OSError):
-        return []
-    if result.returncode != 0:
-        return []
-
     parked = []
-    for line in result.stdout.strip().splitlines():
-        parts = line.split("\t")
-        if len(parts) != 3:
-            continue
-        session, pane_s, command = parts
-        if command.strip().lower() in _BARE_SHELLS:
-            continue
+    for session in _list_sessions():
         if session in excluded:
             continue
         if is_parked(session):
             continue
-        try:
-            pane_index = int(pane_s)
-        except ValueError:
-            continue
-
-        visible = _capture(f"{session}.{pane_index}")
-        if detect_dialog(visible):
-            state = park(session, pane_index, source="watchdog")
+        limit = detect_limit(session, 0)
+        if limit:
+            state = park(session, 0, source="watchdog", limit=limit)
             if state:
                 parked.append(state)
-        elif detect_dialog_like(visible):
-            _log_unmatched(session, pane_index, visible)
     return parked
-
-
-def _log_unmatched(session: str, pane_index: int, visible: str) -> None:
-    """Log a dialog-like screen we don't recognize — once per distinct screen."""
-    excerpt = _normalize(visible)[-500:]
-    marker_file = STATE_DIR / ".unmatched.json"
-    try:
-        seen = json.loads(marker_file.read_text())
-    except (OSError, json.JSONDecodeError):
-        seen = {}
-    if not isinstance(seen, dict):
-        seen = {}
-    key = f"{session}.{pane_index}"
-    # sha256, NOT hash(): str hashing is randomized per process, and every
-    # launchd tick is a fresh process — hash() never matched, so the dedupe
-    # was a no-op and unmatched dialogs re-logged every 60s.
-    digest = hashlib.sha256(excerpt.encode()).hexdigest()[:16]
-    if seen.get(key) == digest:
-        return
-    seen[key] = digest
-    _atomic_write(marker_file, seen)
-    log_event("unmatched_dialog", session=session, pane=pane_index, excerpt=excerpt)
 
 
 # =============================================================================
@@ -641,7 +575,7 @@ def resume_session(state: dict, force: bool = False) -> bool:
         log_event("resume_failed", session=session, attempts=state["resume_attempts"])
         _send_notification(
             state,
-            subject=f"[agentwire] usage limit: FAILED to resume {session}",
+            subject=f"[agentwire] provider limit: FAILED to resume {session}",
             body=(
                 f"Session **{session}** could not be nudged after "
                 f"{state['resume_attempts']} attempts — it needs a human look."
@@ -655,7 +589,7 @@ def resume_session(state: dict, force: bool = False) -> bool:
 
 
 def resume_due(now: datetime | None = None) -> list[str]:
-    """Resume every parked session whose reset (+ buffer) has passed."""
+    """Resume every parked session whose reset (+ grace) has passed."""
     now = now or _now()
     resumed = []
     for state in list_parked():
@@ -681,7 +615,7 @@ def resume_due(now: datetime | None = None) -> list[str]:
 
 
 def tick() -> dict:
-    """One watchdog pass: sweep for dialogs, resume what's due.
+    """One watchdog pass: sweep for provider limits, resume what's due.
 
     Stateless and self-contained — safe to run from launchd every minute.
     A non-blocking lock skips overlapping ticks.

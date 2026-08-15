@@ -7,7 +7,7 @@ description: "Manage the agentwire LLM Wiki knowledge base. Authoring is in-cont
 
 LLM-maintained knowledge base at `~/.agentwire/wiki/`. Read `~/.agentwire/wiki/CLAUDE.md` for the full schema and conventions.
 
-**How the loop actually works:** authoring is **in-context** — the session that learns something writes the page itself (`Write`/`Edit` into `wiki/<category>/<name>.md`), with full context, for free. That's the working path; there is **no scheduled batch ingester**. The *mechanical* parts — searching, health-checking, scaffolding, archiving sources — are deterministic and run through the `agentwire wiki` CLI (and the `wiki_query` / `wiki_lint` / `wiki_status` MCP tools), exactly like `/handoff` splits "LLM distills in-context, CLI renders deterministically."
+**How the loop actually works:** authoring is **in-context** — the session that learns something writes the page itself (`Write`/`Edit` into `wiki/<category>/<name>.md`), with full context, for free. That's the working path; there is **no scheduled batch ingester**. The *mechanical* parts — searching, health-checking, scaffolding, archiving sources — are deterministic and run through the `agentwire wiki` CLI (and the `wiki_query` / `wiki_lint` / `wiki_status` MCP tools), exactly like `/handoff-bundle` splits "LLM distills in-context, CLI renders deterministically."
 
 | Mechanical op | Command |
 |---|---|

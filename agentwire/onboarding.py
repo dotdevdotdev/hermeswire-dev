@@ -1,6 +1,6 @@
 """Minimal onboarding wizard for AgentWire setup.
 
-Asks 3 questions, writes minimal config, then spawns Claude for interactive setup.
+Asks 3 questions, writes minimal config, then spawns Hermes for interactive setup.
 """
 
 import shutil
@@ -122,11 +122,11 @@ def check_ffmpeg() -> tuple[bool, str]:
     return False, "not found"
 
 
-def check_claude() -> tuple[bool, str]:
-    """Check if Claude Code CLI is installed."""
-    claude_path = shutil.which("claude")
-    if claude_path:
-        return True, claude_path
+def check_hermes() -> tuple[bool, str]:
+    """Check if Hermes Agent CLI is installed."""
+    hermes_path = shutil.which("hermes")
+    if hermes_path:
+        return True, hermes_path
     return False, "not found"
 
 
@@ -210,16 +210,16 @@ def run_onboarding(skip_session: bool = True, force: bool = False) -> int:
 
     Asks 3 questions:
     1. Projects directory
-    2. Agent (Claude Code)
+    2. Agent (Hermes Agent)
     3. Topology (Standalone / Multi-machine)
 
     Then writes minimal config and ends on the concrete portal-URL next
-    steps (the default), or spawns Claude for interactive setup (--assisted).
+    steps (the default), or spawns Hermes for interactive setup (--assisted).
 
     Args:
         skip_session: If True (the default), end the wizard on the portal-URL
             next-steps block. If False (--assisted), spawn the interactive
-            Claude setup session at the end.
+            Hermes setup session at the end.
         force: If True, skip the existing-config confirmation (a timestamped
             .bak is still written before overwriting).
     """
@@ -230,7 +230,7 @@ def run_onboarding(skip_session: bool = True, force: bool = False) -> int:
     print()
     print(f"{BOLD}Welcome to AgentWire Setup!{RESET}")
     print()
-    print("I'll ask you 3 quick questions, then Claude will help with the rest.")
+    print("I'll ask you 3 quick questions, then Hermes will help with the rest.")
     print()
 
     # ─────────────────────────────────────────────────────────────
@@ -265,13 +265,13 @@ def run_onboarding(skip_session: bool = True, force: bool = False) -> int:
         print_success(f"ffmpeg: {ffmpeg_path}")
 
     # Check agents
-    claude_ok, claude_path = check_claude()
+    hermes_ok, hermes_path = check_hermes()
 
-    if claude_ok:
-        print_success(f"claude: {claude_path}")
+    if hermes_ok:
+        print_success(f"hermes: {hermes_path}")
     else:
-        print_warning("Claude Code not found")
-        print_info("Install Claude Code: https://github.com/anthropics/claude-code")
+        print_warning("Hermes Agent not found")
+        print_info("Install Hermes Agent: curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash")
 
     # ─────────────────────────────────────────────────────────────
     # Question 1: Projects Directory
@@ -297,9 +297,9 @@ def run_onboarding(skip_session: bool = True, force: bool = False) -> int:
 
     # --dangerously-skip-permissions is safe here because damage-control hooks
     # enforce all safety constraints at the hook level (see SECURITY.md)
-    agent_command = "claude --dangerously-skip-permissions"
+    agent_command = "hermes --yolo"
     print_success(f"Agent: {agent_command}")
-    print_info("  (--dangerously-skip-permissions is safe here; AgentWire's hooks enforce safety instead)")
+    print_info("  (--yolo is safe here; AgentWire's hooks enforce safety instead)")
 
     # ─────────────────────────────────────────────────────────────
     # Question 3: Topology
@@ -446,7 +446,7 @@ services:
                 print_success(f"Created {key_path}")
             except (subprocess.CalledProcessError, FileNotFoundError):
                 print_warning("Could not generate SSL certificates")
-                print_info("Run 'agentwire generate-certs' later, or Claude will help")
+                print_info("Run 'agentwire generate-certs' later, or Hermes will help")
     else:
         print()
         print_info("Standalone instant mode: http://127.0.0.1:8765 — no certs, no token needed.")
@@ -466,7 +466,7 @@ services:
         print()
         tmux_choice = prompt_choice(
             "AgentWire includes a recommended tmux config with mouse scroll,\n"
-            "50k line history, vi copy mode, focus events for Claude Code,\n"
+            "50k line history, vi copy mode, focus events for Hermes Agent,\n"
             "and a status bar with git/CPU/RAM.",
             [
                 ("skip", "Keep my existing config (no changes)"),
@@ -480,7 +480,7 @@ services:
         print(f"  {CYAN}•{RESET} Mouse scroll through agent output")
         print(f"  {CYAN}•{RESET} 50k line scrollback buffer")
         print(f"  {CYAN}•{RESET} Vi copy mode (v to select, y to yank)")
-        print(f"  {CYAN}•{RESET} Focus events (silences Claude Code's per-session setup tip)")
+        print(f"  {CYAN}•{RESET} Focus events (silences the agent's per-session setup tip)")
         print(f"  {CYAN}•{RESET} Status bar with git branch, CPU/RAM, working dir")
         print(f"  {CYAN}•{RESET} Click/drag disabled (prevents accidental agent interaction)")
         print()
@@ -526,7 +526,7 @@ services:
     print()
 
     # ─────────────────────────────────────────────────────────────
-    # Spawn Claude for Interactive Setup
+    # Spawn Hermes for Interactive Setup
     # ─────────────────────────────────────────────────────────────
     if skip_session:
         portal_open_url = "https://localhost:8765" if is_multi_machine else "http://127.0.0.1:8765"
@@ -540,19 +540,19 @@ services:
             print(f"  3. {CYAN}agentwire new -s <name> -p <project-path>{RESET} — start your first agent session")
             print(f"     {DIM}(optional: clone the agentwire-dev repo to unlock the `agentwire dev` helper session){RESET}")
         print()
-        print_info("Run 'agentwire init --assisted' to configure TTS/STT with Claude's help.")
+        print_info("Run 'agentwire init --assisted' to configure TTS/STT with Hermes' help.")
         return 0
 
     print()
-    print_info("Now Claude will help you configure TTS, STT, and other services.")
-    print_info("This is interactive - Claude will ask questions and test services.")
+    print_info("Now Hermes will help you configure TTS, STT, and other services.")
+    print_info("This is interactive - Hermes will ask questions and test services.")
     print()
 
-    input(f"Press {BOLD}Enter{RESET} to continue with Claude setup...")
+    input(f"Press {BOLD}Enter{RESET} to continue with Hermes setup...")
 
-    # Spawn Claude session with init role
+    # Spawn Hermes session with init role
     print()
-    print("Starting Claude setup assistant...")
+    print("Starting Hermes setup assistant...")
 
     try:
         # Create a temporary session for setup
@@ -571,7 +571,7 @@ services:
         return 0
 
     except subprocess.CalledProcessError as e:
-        print_error(f"Failed to start Claude session: {e}")
+        print_error(f"Failed to start Hermes session: {e}")
         print()
         print(f"{BOLD}Manual next steps:{RESET}")
         print(f"  1. {CYAN}agentwire portal start{RESET}")

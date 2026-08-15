@@ -34,7 +34,6 @@ from .core import (
     _set_session_name_env,
     build_agent_command,
     load_config,
-    mirror_role_prompt_remote,
     notify_portal_session_created,
     parse_env_args,
     record_session_launch,
@@ -286,9 +285,6 @@ def cmd_new(args) -> int:
         agent.env.update(parse_env_args(getattr(args, 'env', None)))
 
         agent_cmd = agent.command
-
-        # Mirror the role prompt to the remote's own durable location.
-        agent_cmd = mirror_role_prompt_remote(agent, machine_id, agent_cmd)
 
         # Create session - Agent starts immediately if not bare (env is
         # injected at creation time; see _launch_tmux_session).
@@ -834,7 +830,7 @@ def cmd_recreate(args) -> int:
         # Build agent command using the standard function
         agent = build_agent_command(posture, roles)
         agent.env.update(parse_env_args(getattr(args, 'env', None)))
-        agent_cmd = mirror_role_prompt_remote(agent, machine_id, agent.command)
+        agent_cmd = agent.command
 
         result = _launch_tmux_session(session_name, session_path, agent.env, agent_cmd, machine_id)
         if result.returncode != 0:
@@ -2237,7 +2233,7 @@ def cmd_fork(args) -> int:
         agent = build_agent_command(posture, roles)
         agent.env.update(parse_env_args(getattr(args, 'env', None)))
 
-        agent_cmd = mirror_role_prompt_remote(agent, machine_id, agent.command)
+        agent_cmd = agent.command
 
         result = _launch_tmux_session(target_session, target_path, agent.env, agent_cmd, machine_id)
         if result.returncode != 0:

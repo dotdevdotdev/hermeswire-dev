@@ -25,27 +25,27 @@ uv tool install agentwire-dev
 
 ffmpeg is **optional**: browser voice input works without it (WebM/Opus uploads are decoded in-process via PyAV). Install it only if you want host-mic push-to-talk capture (`agentwire listen`) — `brew install ffmpeg` / `sudo apt install ffmpeg`.
 
-You'll also want **Claude Code** installed (`claude --version`) since the default posture runs through it.
+You'll also want **Hermes Agent** installed (`hermes --version`) since the default posture runs through it.
 
-Then install the agentwire hooks Claude Code needs to talk back to AgentWire:
+Then install the agentwire hooks Hermes Agent needs to talk back to AgentWire:
 
 ```bash
 agentwire hooks install
-agentwire doctor      # one-shot diagnostic — confirms tmux, ffmpeg, hooks, claude
+agentwire doctor      # one-shot diagnostic — confirms tmux, ffmpeg, hooks, hermes
 ```
 
 `agentwire doctor` reports anything missing with a fix suggestion. Re-run until it's all green.
 
 ### Recommended tmux config
 
-AgentWire's whole UX is "tmux as the agent canvas" — but tmux's defaults fight it: no mouse scroll, a 2,000-line scrollback that loses agent transcripts, broken text selection, and a Claude Code setup tip on every session start (`focus-events off`).
+AgentWire's whole UX is "tmux as the agent canvas" — but tmux's defaults fight it: no mouse scroll, a 2,000-line scrollback that loses agent transcripts, broken text selection, and a Hermes Agent setup tip on every session start (`focus-events off`).
 
 The fastest fix: **`agentwire init`** offers to install the full recommended config (backing up any existing `~/.tmux.conf` first; it never clobbers without asking). The bundled template lives at `agentwire/templates/tmux.conf` and also adds a status bar, pane-split bindings, and click/drag protection so stray clicks can't poke an agent.
 
 Already have a `~/.tmux.conf` you'd rather merge into? These are the settings that matter:
 
 ```tmux
-set -g focus-events on        # Claude Code uses these; silences its per-session tip
+set -g focus-events on        # Hermes Agent uses these; silences its per-session tip
 set -g mouse on               # scroll through agent output
 set -g history-limit 50000    # default 2000 is too small for agent transcripts
 set -s escape-time 0          # no delay after Esc
@@ -70,22 +70,9 @@ set -g window-size largest
 
 `agentwire doctor` warns if the running tmux server has `focus-events` or `mouse` off.
 
-### Recommended Claude Code status line
+### Hermes Agent status bar
 
-The bundled `agentwire/templates/statusline.sh` renders a two-line status line inside every agent pane: **model, directory, branch** on line 1, a full-width context battery on line 2. Same field order as the tmux status bar above, so a session and its workers read the same left-to-right.
-
-Copy it out of the installed package (or your checkout) and make it executable:
-
-```bash
-cp "$(python3 -c 'import agentwire, pathlib; print(pathlib.Path(agentwire.__file__).parent)')/templates/statusline.sh" ~/.claude/statusline.sh
-chmod +x ~/.claude/statusline.sh
-```
-
-Then point Claude Code at it in `~/.claude/settings.json`:
-
-```json
-"statusLine": { "type": "command", "command": "~/.claude/statusline.sh", "padding": 0 }
-```
+Hermes Agent ships a built-in status bar (`⚕ {model} │ {used}/{total} │ …` plus a context battery), toggled with `/statusbar`. The old Claude Code status-line template is gone — Hermes renders model, directory, and context in its own bar, so there is nothing extra to install.
 
 ---
 
@@ -110,7 +97,7 @@ agentwire new -s hello -p ~/projects/hello
 
 That creates:
 - a tmux session named `hello`
-- a Claude Code agent in pane 0 (the *orchestrator*)
+- a Hermes Agent agent in pane 0 (the *orchestrator*)
 
 If `~/projects/hello/.agentwire.yml` exists, its posture / roles / voice are picked up automatically. Want one written for you? Add `--persist` (e.g. `--roles agentwire,voice --persist` or `--posture bypass --persist`) and AgentWire saves the config — and, in a git repo, adds `.agentwire.yml` to `.gitignore`. Without `--persist`, flags are session-level overrides only. **Keep it gitignored**: it's personal config (voices, schedules, notification addresses), and a tracked copy makes worktree-dispatched runs silently use the stale committed version instead of your live edits.
 
@@ -241,6 +228,6 @@ Pick the next thing based on what you want to do:
 
 - **Multi-agent work** — orchestrator/worker pattern, `pane_spawn`, role files. → [Concepts — orchestrator/worker](concepts.md#the-orchestratorworker-pattern), [CLAUDE.md](../../CLAUDE.md).
 - **Run agents on a remote box** — register a machine, address sessions as `name@machine`. → [Remote machines](deployment/remote-machines.md).
-- **Lock down dangerous ops** — damage-control rules, per-project allowlists, classifier-mode auto sessions. → [Damage control](internals/damage-control.md), [auto](sessions/claude-code-auto-mode.md).
+- **Lock down dangerous ops** — damage-control rules, per-project allowlists, the Hermes safety posture. → [Damage control](internals/damage-control.md), [safety posture](sessions/hermes-safety-posture.md).
 - **Expose the portal to the public internet** — Cloudflare Tunnel + Zero Trust auth. → [Remote access](deployment/remote-access.md).
 - **Just look up a term** — [Glossary](glossary.md).

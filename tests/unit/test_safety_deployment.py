@@ -690,7 +690,7 @@ def _run_installed_hook(machine_home: Path, command: str):
     env["AGENTWIRE_DIR"] = str(machine_home / ".agentwire")
     env.pop("AGENTWIRE_UNATTENDED", None)
     payload = json.dumps({
-        "tool_name": "Bash",
+        "tool_name": "terminal",
         "tool_input": {"command": command},
         "cwd": str(machine_home),
     })
@@ -751,7 +751,7 @@ class TestInstalledPathBehaviour:
 
         before = _run_installed_hook(machine, NETLIFY_CMD)
         assert before.returncode == 0, before.stderr
-        assert "SECURITY: Blocked" not in before.stderr
+        assert before.stdout.strip() == ""
 
         # (3)
         summary = safety_commands.heal_damage_control(quiet=True)
@@ -759,8 +759,8 @@ class TestInstalledPathBehaviour:
 
         # (4) Same executable path, now protected.
         after = _run_installed_hook(machine, NETLIFY_CMD)
-        assert after.returncode == 2, (after.returncode, after.stdout, after.stderr)
-        assert "SECURITY: Blocked" in after.stderr
+        assert after.returncode == 0, (after.returncode, after.stdout, after.stderr)
+        assert json.loads(after.stdout)["action"] == "block"
         assert NETLIFY_RULE_ID in _audit_rule_ids(machine)
 
     def test_installed_hook_bytes_match_the_package(self, machine):
@@ -806,7 +806,8 @@ class TestInstalledPathBehaviour:
         assert HOOK in summary["hooks_updated"]
 
         after = _run_installed_hook(machine, NETLIFY_CMD)
-        assert after.returncode == 2, (after.returncode, after.stderr)
+        assert after.returncode == 0, (after.returncode, after.stderr)
+        assert json.loads(after.stdout)["action"] == "block"
         assert NETLIFY_RULE_ID in _audit_rule_ids(machine)
 
     def test_newer_hook_is_not_downgraded_and_keeps_behaving(self, machine):
@@ -832,7 +833,8 @@ class TestInstalledPathBehaviour:
             assert HOOK in summary["hooks_downgrade_refused"]
 
             after = _run_installed_hook(machine, NETLIFY_CMD)
-            assert after.returncode == 2, "the deployed guard was silently downgraded"
+            assert after.returncode == 0, "the deployed guard was silently downgraded"
+            assert json.loads(after.stdout)["action"] == "block"
 
             # Mutation: --force accepts the downgrade, and protection IS lost.
             safety_commands.heal_damage_control(quiet=True, force=True)

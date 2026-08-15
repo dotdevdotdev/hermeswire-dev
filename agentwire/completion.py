@@ -1,10 +1,10 @@
 """Completion detection for scheduled tasks.
 
 Handles:
-- Task context files (coordinate with idle hook)
-- System summary prompt (ask agent to write summary)
+- Task context files (coordinate between dispatch and any completion hook)
+- Launch-prompt summary instruction (agent writes the summary as its final action)
 - Summary file parsing (extract status from YAML front matter)
-- Completion signal files (hook signals ensure)
+- Completion signals (headless process exit and/or summary file)
 """
 
 import json
@@ -31,21 +31,76 @@ class CompletionTimeout(CompletionError):  # noqa: N818  # public API name, rena
 # Directory for task coordination files
 TASKS_DIR = Path.home() / ".agentwire" / "tasks"
 
-# Shells that indicate agent died and fell back to bare shell
+# Shells that indicate agent died and fell back to a bare shell. A Hermes
+# agent is a python process (running `hermes chat`), NOT one of these — see
+# `_session_has_agent` for why python is handled separately.
 _BARE_SHELLS = {"zsh", "bash", "sh", "fish", "tcsh", "csh"}
+
+# python interpreters whose cmdline must be inspected to tell an agent-python
+# (running `hermes`) from a daemon-python (running `agentwire`).
+_PYTHON_INTERPRETERS = {"python", "python3"}
+
+
+def _pid_is_hermes_agent(pid: str) -> bool:
+    """Is the process *pid* a Hermes agent (not the agentwire daemon)?
+
+    A Hermes agent runs `hermes chat ...` under a python interpreter; the
+    scheduler/portal daemon runs `agentwire ...`. Inspecting the cmdline is
+    what keeps a daemon-python pane from reading as "agent alive" and hanging
+    the wait forever.
+    """
+    if not pid:
+        return False
+    try:
+        result = subprocess.run(
+            ["ps", "-p", pid, "-o", "args="],
+            capture_output=True, text=True, timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    cmdline = result.stdout.strip()
+    if not cmdline:
+        return False
+    return "hermes" in cmdline and "agentwire" not in cmdline
+
+
+def _command_is_agent(command: str, pid: str | None = None) -> bool:
+    """Is this pane's process an agent (not a bare shell, not a daemon)?
+
+    Non-shell commands read as "agent alive" (existing behavior); a python
+    interpreter additionally requires the cmdline to reference `hermes`, so a
+    daemon-python or a stray python process does not masquerade as the agent.
+    """
+    cmd = (command or "").strip().lower()
+    if cmd in _BARE_SHELLS:
+        return False
+    if cmd in _PYTHON_INTERPRETERS or cmd.startswith("python3"):
+        return _pid_is_hermes_agent(pid or "")
+    return True
 
 
 def _session_has_agent(session: str) -> bool:
-    """Check if session exists and has an agent running in any pane."""
+    """Check if session exists and has an agent running in any pane.
+
+    A Hermes agent runs as a python process; the pane command alone can't tell
+    it from a daemon-python, so python panes are resolved via the process
+    cmdline (``_pid_is_hermes_agent``).
+    """
     result = subprocess.run(
-        ["tmux", "list-panes", "-t", f"={session}", "-F", "#{pane_current_command}"],
+        ["tmux", "list-panes", "-t", f"={session}",
+         "-F", "#{pane_current_command}\t#{pane_pid}"],
         capture_output=True, text=True,
     )
     if result.returncode != 0:
         return False  # Session doesn't exist
 
     for line in result.stdout.strip().split("\n"):
-        if line.strip().lower() not in _BARE_SHELLS:
+        if not line.strip():
+            continue
+        parts = line.split("\t", 1)
+        command = parts[0]
+        pid = parts[1] if len(parts) > 1 else ""
+        if _command_is_agent(command, pid):
             return True
 
     return False
@@ -61,8 +116,15 @@ class SummaryResult(NamedTuple):
     raw_content: str  # Full file content
 
 
-# System prompt sent after task completion to get structured summary
-SYSTEM_SUMMARY_PROMPT = """Write a task summary to {summary_file} in YAML front matter format:
+# The "write a summary" instruction is part of the LAUNCH prompt now — an
+# appended "## When done" section — rather than a second pass injected after
+# the agent goes idle. The agent writes the summary as its final action;
+# headless `hermes -z` then exits and the wrapper reads the file back. There is
+# no idle timer to hang a second prompt off, so the two-pass SYSTEM_SUMMARY_PROMPT
+# dance is gone.
+SUMMARY_SECTION = """## When done, write a summary to {summary_file}
+
+As your final action, write a task summary to `{summary_file}` in YAML front matter format:
 
 ```markdown
 ---
@@ -93,7 +155,7 @@ def generate_summary_filename(session: str, task_name: str) -> str:
     don't collide on summary files or trigger false TASK-ORPHAN detection.
 
     Args:
-        session: tmux session name
+        session: Session name
         task_name: Task name (for context)
 
     Returns:
@@ -104,7 +166,7 @@ def generate_summary_filename(session: str, task_name: str) -> str:
 
 
 # =============================================================================
-# Task Context (coordinate between ensure and idle hook)
+# Task Context (coordinate between dispatch and any completion hook)
 # =============================================================================
 
 
@@ -121,16 +183,16 @@ def write_task_context(
     loop_delay: int = 0,
     original_prompt: str = "",
 ) -> Path:
-    """Write task context file for hook coordination.
+    """Write task context file for completion coordination.
 
-    The idle hook reads this to know:
+    The context records:
     - A scheduled task is running
     - What summary file to request
     - Whether to exit the session after completion
     - Loop mode configuration (mode, iteration count, review flag, delay)
 
     Args:
-        session: tmux session name
+        session: Session name
         task_name: Task being executed
         summary_file: Relative path for summary file
         attempt: Current attempt number
@@ -174,7 +236,7 @@ def clear_task_context(session: str) -> None:
     """Remove task context and completion signal files.
 
     Args:
-        session: tmux session name
+        session: Session name
     """
     context_file = TASKS_DIR / f"{session}.json"
     try:
@@ -183,153 +245,211 @@ def clear_task_context(session: str) -> None:
         pass
 
 
+# =============================================================================
+# Summary-file discovery and parsing helpers
+# =============================================================================
+
+
+def _find_summary(
+    summary_path: Path | None,
+    summary_glob: str | None,
+    context_file: Path,
+) -> Path | None:
+    """Locate the written summary file, exact path first, then glob.
+
+    Agents sometimes invent their own timestamp instead of using the provided
+    filename, so a fuzzy glob catches nearby matches. A glob match is only
+    accepted if written after the context file (i.e. by this run).
+    """
+    if summary_path and summary_path.exists() and summary_path.stat().st_size > 0:
+        return summary_path
+    if summary_path and summary_glob:
+        parent = summary_path.parent
+        candidates = sorted(
+            parent.glob(summary_glob),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if candidates:
+            newest = candidates[0]
+            if context_file.exists():
+                ctx_mtime = context_file.stat().st_mtime
+                if newest.stat().st_mtime > ctx_mtime and newest.stat().st_size > 0:
+                    return newest
+    return None
+
+
+def _finalize_summary(found_summary: Path) -> dict | None:
+    """Parse a found summary file into the wait's result, clearing any outage.
+
+    Returns None when the file is only partially written (caller should
+    retry), else the completion dict. A written summary is proof a turn
+    actually ran, which is proof the credentials work — so any recorded
+    outage is cleared here, the hook behind "reopens on the first successful
+    turn".
+    """
+    time.sleep(0.5)
+    try:
+        result = parse_summary_file(found_summary)
+    except CompletionError:
+        return None  # File may be partially written, retry
+    from .auth_expired import clear_state
+
+    clear_state()
+    return {
+        "status": result.status,
+        "summary": result.summary,
+        "summary_file": str(found_summary),
+    }
+
+
+def _read_process_stderr(process) -> str:
+    """Best-effort read of a finished subprocess's stderr (or a passed string)."""
+    stderr = getattr(process, "stderr", None)
+    if stderr is None:
+        return ""
+    if isinstance(stderr, bytes):
+        return stderr.decode("utf-8", "replace")
+    if isinstance(stderr, str):
+        return stderr
+    try:
+        return stderr.read() or ""
+    except (OSError, ValueError):
+        return ""
+
+
 def wait_for_completion_signal(
     session: str,
     poll_interval: float = 10.0,
     summary_path: Path | None = None,
     max_duration: int = 0,
     transcript_since: float | None = None,
+    process=None,
+    provider: str | None = None,
+    stderr: str | None = None,
 ) -> dict:
-    """Wait for task completion by polling the summary file directly.
+    """Wait for task completion.
 
-    Exits when:
+    Two dispatch models are supported:
+
+    * **Headless** (``process`` given) — completion is the ``hermes -z``/``-q``
+      process exit (0/1). The agent writes the summary file as its final step
+      (instructed via the summary prompt), so the wait returns the parsed
+      summary once the process has exited. No idle polling, no ``/exit``.
+    * **REPL** (``process`` is None) — the summary file (plus context-file
+      cleanup) is the signal, with the usage-limit, auth-failure and
+      agent-death guards below.
+
+    Exits:
     1. Summary file appears (task completed normally)
-    2. Session dies (agent crashed, tmux killed)
-    3. ``max_duration`` elapses, when the task sets one
-    4. The session is parked on a usage limit (``status=usage_limit``)
-    5. Claude refuses the turn for an expired login (``status=auth_expired``,
-       #906) — the one exit that is provably terminal rather than slow, since
-       no completion signal can arrive until a human runs ``/login``
+    2. Headless process exits (0/1) and the summary is read; a hard auth
+       failure in its stderr is reported as ``status=auth_expired``
+    3. Session dies (agent crashed, tmux killed)
+    4. ``max_duration`` elapses, when the task sets one
+    5. The session is parked on a usage limit (``status=usage_limit``)
+    6. Hermes refuses the turn for an expired provider auth
+       (``status=auth_expired``) — terminal until a human re-auths
 
-    Completion is otherwise agent-driven: the idle hook fires, the agent writes
-    a summary, and this returns. An agent that never goes idle never produces
-    either exit — wedged on an unrecognized dialog, or blocked inside a tool
-    call — and before ``max_duration`` existed the wait was unbounded, so that
-    read as a silent multi-hour hang whose only visible end was the scheduler's
-    4h process-group watchdog (#867).
-
-    ``max_duration`` is a per-attempt wall clock, not an idle timer: it can't
-    tell a wedged agent from a slow one, so a task that legitimately runs long
-    should set it high or leave it at 0 rather than get killed mid-work.
+    ``max_duration`` is a per-attempt wall clock, not an idle timer.
 
     Args:
-        session: tmux session name
+        session: Session name
         poll_interval: Seconds between checks
         summary_path: Path to the summary .md file the agent will write
         max_duration: Seconds before giving up (0 = unbounded)
-        transcript_since: Epoch floor for "was this transcript written by the
-            current attempt?" (#906). Callers pass the moment the ATTEMPT
-            began — before the session launch and the prompt send — because
-            the refusal is recorded ~15ms after the prompt submits, which is
-            still seconds before this wait is entered. Defaults to the wait's
-            own start, which is correct only for callers that had no earlier
-            anchor and is deliberately the conservative direction: too-late a
-            floor misses a detection, it never invents one.
+        transcript_since: Epoch floor for "was this turn produced by the
+            current attempt?" — the attempt's start. In headless mode it is
+            not needed (the process exit is the anchor); kept for the REPL
+            message-scan floor and callers that still pass it.
+        process: A ``subprocess.Popen`` handle for headless ``hermes -z``/``-q``
+            dispatch. When given, the wait blocks on this process rather than
+            polling a tmux pane.
+        provider: The effective provider for the headless run, enabling the
+            ``hermes auth status`` pre-flight on failure.
+        stderr: Captured stderr of a finished headless run (used when
+            ``process`` is not a live handle but its output is already known).
 
     Returns:
         Dict with 'status', 'summary', 'summary_file' keys
 
     Raises:
-        CompletionTimeout: If the session dies, or max_duration elapses, before
-            the task completed. The message names which.
+        CompletionTimeout: If the session dies, the headless run fails without
+            a summary, or max_duration elapses, before the task completed.
     """
     # Build glob pattern for fuzzy summary detection (agents sometimes
     # invent their own timestamp instead of using the provided filename).
     summary_glob = None
     if summary_path:
-        # e.g. task-summary-scheduler-daily-book-report-daily-report-*.md
         stem = summary_path.stem  # without .md
-        # Strip the timestamp suffix (last 19 chars: YYYY-MM-DDTHH-MM-SS)
         prefix = stem[:-19] if len(stem) > 19 else stem
         summary_glob = f"{prefix}*.md"
 
     started = time.time()
 
     while True:
-        # Primary: check if the agent has written the summary file AND
-        # the hook has deleted the context file (signals cleanup complete).
-        # This prevents ensure from proceeding before the hook finishes
-        # its second-idle cleanup (send /exit, kill session).
         context_file = TASKS_DIR / f"{session}.json"
+        found_summary = _find_summary(summary_path, summary_glob, context_file)
 
-        # Check exact path first, then glob for nearby matches
-        found_summary = None
-        if summary_path and summary_path.exists() and summary_path.stat().st_size > 0:
-            found_summary = summary_path
-        elif summary_path and summary_glob:
-            # Agent may have written a different timestamp — find newest match
-            parent = summary_path.parent
-            candidates = sorted(
-                parent.glob(summary_glob),
-                key=lambda p: p.stat().st_mtime,
-                reverse=True,
-            )
-            if candidates:
-                newest = candidates[0]
-                # Only accept if created after ensure started (context file mtime)
-                if context_file.exists():
-                    ctx_mtime = context_file.stat().st_mtime
-                    if newest.stat().st_mtime > ctx_mtime and newest.stat().st_size > 0:
-                        found_summary = newest
+        if process is not None:
+            # ---- headless: completion = process exit ----
+            if process.poll() is None:
+                # Still running; accept a summary+cleanup if a hook already ran.
+                if found_summary is not None and not context_file.exists():
+                    result = _finalize_summary(found_summary)
+                    if result is not None:
+                        return result
+            else:
+                rc = process.returncode
+                err = stderr if stderr is not None else _read_process_stderr(process)
+                detail = _check_auth(session, summary_path, started, transcript_since,
+                                     stderr=err, provider=provider)
+                if detail is not None:
+                    return {"status": "auth_expired",
+                            "summary": _auth_summary(detail)}
+                # The summary file is the status; the agent writes it as its
+                # final step. Read it now that the process has exited.
+                if found_summary is not None:
+                    result = _finalize_summary(found_summary)
+                    if result is not None:
+                        return result
+                if rc in (0, 1):
+                    raise CompletionTimeout(
+                        f"hermes run for '{session}' exited {rc} but wrote no "
+                        f"summary file before completing"
+                    )
+                raise CompletionTimeout(
+                    f"hermes run for '{session}' failed (exit {rc}) before "
+                    f"writing a summary"
+                )
+        else:
+            # ---- REPL: summary file + context cleanup ----
+            if found_summary is not None and not context_file.exists():
+                result = _finalize_summary(found_summary)
+                if result is not None:
+                    return result
 
-        if found_summary and not context_file.exists():
-            # Give a moment for the file to be fully written
-            time.sleep(0.5)
-            try:
-                result = parse_summary_file(found_summary)
-                # A written summary is proof a turn actually ran, which is
-                # proof the login works — so clear any recorded outage here
-                # rather than making the fleet wait out OUTAGE_TTL (#906).
-                # This is the hook that makes "reopens on the first successful
-                # turn" true; without it that promise was operator-facing text
-                # describing behavior the code did not have, which is the very
-                # defect #906 exists to fix, one scale down.
-                from .auth_expired import clear_state
+            # Usage-limit park (zero-LLM, deterministic).
+            from .usage_limit import check_and_park
 
-                clear_state()
+            if check_and_park(session, source="ensure"):
                 return {
-                    "status": result.status,
-                    "summary": result.summary,
-                    "summary_file": str(found_summary),
+                    "status": "usage_limit",
+                    "summary": "Session parked on usage limit; auto-resumes after reset",
                 }
-            except CompletionError:
-                pass  # File may be partially written, retry
 
-        # Usage-limit dialog: park deterministically (zero-LLM) and report a
-        # distinct status — the watchdog resumes the session after reset.
-        # Also honors a park the watchdog performed first.
-        from .usage_limit import check_and_park
+            # Expired provider auth: the turn was REFUSED, so no completion
+            # signal can ever arrive. Checked BEFORE `_session_has_agent` so
+            # the run reports the cause rather than the eventual symptom.
+            detail = _check_auth(session, summary_path, started, transcript_since,
+                                 stderr=stderr, provider=provider)
+            if detail is not None:
+                return {"status": "auth_expired", "summary": _auth_summary(detail)}
 
-        if check_and_park(session, source="ensure"):
-            return {
-                "status": "usage_limit",
-                "summary": "Session parked on usage limit; auto-resumes after reset",
-            }
-
-        # Expired Claude login: the turn was REFUSED, so no completion signal
-        # can ever arrive (#906). This is the state that made #867 cost two
-        # hours — the pane is alive, the agent process is running, and the
-        # usage-limit check above sees no dialog, so every liveness test below
-        # passes forever. Detected from the transcript, which records the
-        # refusal as a structured `error: authentication_failed`. Checked
-        # BEFORE `_session_has_agent` so the run reports the cause rather than
-        # the eventual symptom.
-        from .auth_expired import check_and_flag, summary_line
-
-        detail = check_and_flag(
-            session,
-            project_path=summary_path.parent if summary_path else None,
-            since=started if transcript_since is None else transcript_since,
-            source="ensure",
-        )
-        if detail is not None:
-            return {"status": "auth_expired", "summary": summary_line(detail)}
-
-        # Session gone or agent crashed (fell back to bare shell)
-        if not _session_has_agent(session):
-            raise CompletionTimeout(
-                f"Session '{session}' died or agent exited before task completed"
-            )
+            # Session gone or agent crashed (fell back to bare shell).
+            if not _session_has_agent(session):
+                raise CompletionTimeout(
+                    f"Session '{session}' died or agent exited before task completed"
+                )
 
         if max_duration > 0:
             elapsed = time.time() - started
@@ -342,16 +462,56 @@ def wait_for_completion_signal(
         time.sleep(poll_interval)
 
 
+def _check_auth(session, summary_path, started, transcript_since, *, stderr, provider):
+    """Run the auth-failure probe and return the detail dict (or None)."""
+    from .auth_expired import check_and_flag
+
+    return check_and_flag(
+        session,
+        project_path=summary_path.parent if summary_path else None,
+        since=started if transcript_since is None else transcript_since,
+        source="ensure",
+        stderr=stderr,
+        provider=provider,
+    )
+
+
+def _auth_summary(detail: dict) -> str:
+    from .auth_expired import summary_line
+
+    return summary_line(detail)
+
+
 def get_summary_prompt(summary_file: str) -> str:
-    """Get the system summary prompt with the filename filled in.
+    """Get the launch-prompt summary instruction with the filename filled in.
+
+    This is the "## When done" section appended to the task prompt (not a
+    second-pass prompt injected after idle).
 
     Args:
         summary_file: Path to the summary file to create
 
     Returns:
-        Complete prompt string
+        Complete prompt section string
     """
-    return SYSTEM_SUMMARY_PROMPT.format(summary_file=summary_file)
+    return SUMMARY_SECTION.format(summary_file=summary_file)
+
+
+def append_summary_instruction(prompt: str, summary_file: str) -> str:
+    """Append the "## When done" summary instruction to a task prompt.
+
+    The agent writes the summary as its final action; the headless wrapper
+    (process exit) or the session-end observer (context cleanup) then signals
+    completion.
+
+    Args:
+        prompt: The expanded task prompt.
+        summary_file: Path (relative or absolute) to the summary file.
+
+    Returns:
+        The prompt with the summary instruction appended.
+    """
+    return f"{prompt.rstrip()}\n\n{SUMMARY_SECTION.format(summary_file=summary_file)}"
 
 
 def parse_summary_file(path: Path) -> SummaryResult:
@@ -359,7 +519,7 @@ def parse_summary_file(path: Path) -> SummaryResult:
 
     Supports two formats:
 
-    1. YAML front matter (from Python SYSTEM_SUMMARY_PROMPT):
+    1. YAML front matter (from the SUMMARY_SECTION launch-prompt instruction):
         ---
         status: complete
         summary: Did the thing
@@ -481,7 +641,7 @@ def status_to_exit_code(status: str) -> int:
         return 7
     elif status == "auth_expired":
         # Distinct from incomplete so the scheduler can gate the rest of the
-        # fleet instead of letting each task discover the outage itself (#906).
+        # fleet instead of letting each task discover the outage itself.
         return 8
     else:
         return 2

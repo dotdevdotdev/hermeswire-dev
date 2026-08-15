@@ -203,7 +203,6 @@ def cmd_limits_tick(args) -> int:
         cohort,
         inbox,
         prompt_router,
-        role_prompts,
         safety_notify,
         session_context,
     )
@@ -224,13 +223,11 @@ def cmd_limits_tick(args) -> int:
         "cohort", cohort.tick, {"reaped": [], "swept": []})
     blocks = _run_stage(
         "safety_notify", safety_notify.tick, {"emailed": False, "pending": 0})
-    prompt_gc = _run_stage(
-        "role_prompts", role_prompts.tick, {"deleted": [], "skipped": "error"})
     if getattr(args, "json", False):
         print(json.dumps({
             **result, "prompts": prompts, "messages": messages,
             "context": context, "zombies": zombies, "cohorts": cohorts,
-            "safety_notify": blocks, "role_prompts": prompt_gc,
+            "safety_notify": blocks,
         }))
         return 0
     if result.get("skipped"):
@@ -283,10 +280,6 @@ def cmd_limits_tick(args) -> int:
             f"{e['child']}(of {e['parent']})" for e in orphans))
     if blocks.get("emailed"):
         print("unattended-block digest emailed")
-    swept_prompts = prompt_gc.get("deleted") or []
-    if swept_prompts:
-        print(f"role prompts aged out: {len(swept_prompts)} "
-              f"({prompt_gc.get('bytes_freed', 0)} bytes)")
     return 0
 
 

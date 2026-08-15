@@ -6,7 +6,7 @@
 > regression tests in `tests/unit/test_damage_control_bypass.py`.
 
 An internal adversarial review of the damage-control matcher (the
-`PreToolUse`/permission layer that classifies agent actions as allow / ask /
+`pre_tool_call`/permission layer that classifies agent actions as allow / ask /
 block) surfaced five classes of weakness. All five were fixed in one change.
 Public over-block issue [#492](https://github.com/dotdevdotdev/agentwire-dev/issues/492)
 was closed as part of the same work; the remaining four were held until the fix
@@ -19,8 +19,8 @@ landed and are summarized here afterward. Credit: internal security review.
    configs whose strings agentwire runs through its **own**
    `subprocess.run(..., shell=True)` calls — `~/.agentwire/scheduler.yaml`
    (gate commands), `~/.agentwire/config.yaml` (service healthchecks), and
-   per-project task commands. Those subprocesses never traverse the Claude
-   Code hook, so write-access to them was a confused-deputy path to unguarded
+   per-project task commands. Those subprocesses never traverse the Hermes
+   Agent hook, so write-access to them was a confused-deputy path to unguarded
    execution. Tradeoff: under worktree dispatch, task config is now authored
    host-side.
    > **Update (#720, 2026-07):** per-project task commands were split out of
@@ -49,8 +49,8 @@ landed and are summarized here afterward. Credit: internal security review.
    verified fail closed (see below). A missing YAML parser now fails closed
    (block) rather than open (no rules).
 
-5. **Read-surface policing.** Native content-reading tools (`Read`, `Grep`,
-   `Glob`) are now routed through the zero-access checks via a dedicated hook,
+5. **Read-surface policing.** Native content-reading tools (`read_file`,
+   `search_files`) are now routed through the zero-access checks via a dedicated hook,
    so a secret can't be read directly without traversing damage control. The
    `zeroAccessPaths` guarantee now accurately spans shell, file edits/writes,
    **and** reads.

@@ -1,10 +1,10 @@
-# Contributing to AgentWire
+# Contributing to HermesWire
 
-Thank you for your interest in contributing to AgentWire!
+Thank you for your interest in contributing to HermesWire!
 
 ## Developer Certificate of Origin
 
-AgentWire is licensed under the [Apache License 2.0](LICENSE), and we use the [Developer Certificate of Origin](https://developercertificate.org/) (DCO) instead of a CLA — there is nothing to sign. You simply add a `Signed-off-by` line to each commit, certifying you wrote the patch (or otherwise have the right to submit it under Apache-2.0):
+HermesWire is licensed under the [Apache License 2.0](LICENSE), and we use the [Developer Certificate of Origin](https://developercertificate.org/) (DCO) instead of a CLA — there is nothing to sign. You simply add a `Signed-off-by` line to each commit, certifying you wrote the patch (or otherwise have the right to submit it under Apache-2.0):
 
     Signed-off-by: Jane Developer <jane@example.com>
 
@@ -163,7 +163,7 @@ agentwire/
 ├── agents/          # Agent implementations
 ├── tts/             # Text-to-speech backends
 ├── stt/             # Speech-to-text backends
-├── hooks/           # Claude Code hooks
+├── hooks/           # Hermes Agent hooks
 └── roles/           # Role instruction files
 ```
 

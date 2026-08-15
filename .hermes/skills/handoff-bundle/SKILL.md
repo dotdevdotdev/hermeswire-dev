@@ -1,8 +1,9 @@
 ---
+name: handoff-bundle
 description: Distill this conversation into a shareable handoff bundle (ai-handoff.md + show-the-story.html)
 ---
 
-# /handoff
+# /handoff-bundle
 
 You are about to compile this conversation into a **shareable handoff bundle**. The output is two artifacts:
 

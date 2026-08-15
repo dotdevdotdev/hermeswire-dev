@@ -18,7 +18,9 @@
 readOnlyPaths:
   - "~/.agentwire/damagecontrol.yml"
   - "*.damagecontrol.yml"
-  - "~/.claude/settings.json"
+  - "~/.hermes/config.yaml"
+  - "~/.hermes/hooks/*"
+  - "~/.hermes/skills/*"
+  - "~/.hermes/SOUL.md"
   - "~/.agentwire/hooks/damage-control/*.py"
-  - "~/.claude/hooks/*"
   - "~/.agentwire/damage-control/*.yaml"

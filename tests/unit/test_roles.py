@@ -148,48 +148,61 @@ class TestDiscoverRole:
 # --- inject_soul ---
 
 class TestInjectSoul:
-    def test_appended_last(self):
-        assert inject_soul(["agentwire"]) == ["agentwire", "soul"]
+    def _soul_md(self):
+        from pathlib import Path
+        return Path.home() / ".hermes" / "SOUL.md"
+
+    def test_returns_unchanged_and_writes_soul(self):
+        # soul is SOUL.md identity now, not a role (#15)
+        assert inject_soul(["agentwire"]) == ["agentwire"]
+        assert self._soul_md().exists()
 
     def test_injected_with_explicit_roles(self):
-        assert inject_soul(["agentwire", "voice"]) == ["agentwire", "voice", "soul"]
+        assert inject_soul(["agentwire", "voice"]) == ["agentwire", "voice"]
+        assert self._soul_md().exists()
 
-    def test_empty_list_gets_soul(self):
-        assert inject_soul([]) == ["soul"]
+    def test_empty_list_still_writes_soul(self):
+        assert inject_soul([]) == []
+        assert self._soul_md().exists()
 
     def test_headless_roles_excluded(self):
         for headless in ["worker", "reviewer", "task-runner", "notifications"]:
             assert inject_soul([headless]) == [headless]
+        assert not self._soul_md().exists()
 
     def test_headless_mixed_excluded(self):
         assert inject_soul(["agentwire", "worker"]) == ["agentwire", "worker"]
+        assert not self._soul_md().exists()
 
     def test_no_double_add(self):
         assert inject_soul(["soul"]) == ["soul"]
         assert inject_soul(["agentwire", "soul"]) == ["agentwire", "soul"]
+        assert not self._soul_md().exists()
 
     def test_soul_lens_variant_excluded(self):
-        # soul-* variants self-exclude the standard soul
         assert inject_soul(["soul-brain"]) == ["soul-brain"]
+        assert not self._soul_md().exists()
 
     def test_council_roles_excluded(self):
-        # Council sessions (#213) carry their own lens/synthesis voice
         assert inject_soul(["council-member", "council-brain"]) == [
-            "council-member",
-            "council-brain",
-        ]
+            "council-member", "council-brain"]
         assert inject_soul(["council-orchestrator"]) == ["council-orchestrator"]
+        assert not self._soul_md().exists()
 
     def test_no_soul_flag(self):
         assert inject_soul(["agentwire"], no_soul=True) == ["agentwire"]
+        assert not self._soul_md().exists()
 
     def test_global_opt_out(self):
         config = {"session": {"inject_soul": False}}
         assert inject_soul(["agentwire"], config) == ["agentwire"]
+        assert not self._soul_md().exists()
 
     def test_global_default_enabled(self):
-        assert inject_soul(["agentwire"], {}) == ["agentwire", "soul"]
-        assert inject_soul(["agentwire"], None) == ["agentwire", "soul"]
+        # soul is SOUL.md identity, never appended regardless of config default
+        assert inject_soul(["agentwire"], {}) == ["agentwire"]
+        assert inject_soul(["agentwire"], None) == ["agentwire"]
+        assert self._soul_md().exists()
 
     def test_input_not_mutated(self):
         names = ["agentwire"]
@@ -261,10 +274,10 @@ class TestResolveRolesPersona:
     def test_unknown_kind_no_default(self):
         assert resolve_roles("nope") == []
 
-    def test_soul_appends_separately(self):
-        # Resolve, then auto-append: two distinct phases.
+    def test_soul_is_identity_not_a_role(self):
+        # soul is now SOUL.md identity, not appended to the role list (#15).
         names = inject_soul(resolve_roles("orchestrator"))
-        assert names == ["orchestrator", "soul"]
+        assert names == ["orchestrator"]
 
 
 class TestResolveRolesSafetyRail:
@@ -307,7 +320,8 @@ class TestResolveRolesSafetyRail:
         # role files exist precisely because this behavior genuinely differs
         # by topology (see also AskUserQuestion, which worker.md disallows
         # and worker-worktree.md does not — routed to the parent instead).
-        assert inject_soul(resolve_roles("worker", worktree_topology=True)) == ["worker-worktree", "soul"]
+        # soul is SOUL.md identity, not a role (#15)
+        assert inject_soul(resolve_roles("worker", worktree_topology=True)) == ["worker-worktree"]
 
 
 class TestResolveRolesSafetyRailReviewer:
@@ -334,7 +348,8 @@ class TestResolveRolesSafetyRailReviewer:
         assert inject_soul(resolve_roles("reviewer", cli_roles=["x"])) == ["reviewer", "x"]
 
     def test_reviewer_worktree_etiquette_keeps_voice(self):
-        assert inject_soul(resolve_roles("reviewer", worktree_topology=True)) == ["reviewer-worktree", "soul"]
+        # soul is SOUL.md identity, not a role (#15)
+        assert inject_soul(resolve_roles("reviewer", worktree_topology=True)) == ["reviewer-worktree"]
 
     def test_custom_roles_can_never_erase_the_never_merge_contract(self):
         # The whole point of a dedicated kind over a --roles bundle (#827):

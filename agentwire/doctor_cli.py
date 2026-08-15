@@ -7,7 +7,7 @@ optionally auto-fixes the local ones. ``network status`` is the read-only
 network-health glance.
 
 The hook/skill drift helpers (``get_hooks_source``, ``_managed_hook_files``,
-``_managed_file_state``, ``skill_drift``, ``CLAUDE_SKILLS_DIR``) are owned by
+``_managed_file_state``, ``skill_drift``, ``HERMES_SKILLS_DIR``) are owned by
 the hooks domain and live in ``hooks_cli``; doctor reads them via a
 function-local deferred import to stay single-source-of-truth.
 """
@@ -243,11 +243,11 @@ def _render_skill_section() -> int:
     (running from a checkout, where skills only live in the built wheel) is NOT a
     drift problem — there's nothing to install from — so it never bumps the count.
     """
-    from .hooks_cli import CLAUDE_SKILLS_DIR, skill_drift
+    from .hooks_cli import HERMES_SKILLS_DIR, skill_drift
 
     issues = 0
     for name, state in sorted(skill_drift().items()):
-        target = CLAUDE_SKILLS_DIR / name
+        target = HERMES_SKILLS_DIR / name
         if state == "ok":
             print(f"  [ok] /{name} skill: {target}")
         elif state == "source-unavailable":
@@ -1031,62 +1031,6 @@ def _render_scheduler_staleness_section() -> int:
     return 1
 
 
-def _render_role_prompt_store_section(
-    *, auto_confirm: bool = False, dry_run: bool = False,
-) -> tuple[int, int]:
-    """Doctor section: the role-prompt store's size and its aged-out tail (#884).
-
-    ``~/.agentwire/role-prompts/`` grows one file per agent launch, forever —
-    and ``spawn`` (the highest-frequency launch path) writes files nothing will
-    ever reference again, since a pane has no session-scoped record to name its
-    conversation in. See :mod:`agentwire.role_prompts` for why the rule is
-    "reachable is forever, unreachable ages out" and not "delete on exit".
-
-    Only the aged-out tail counts as an ISSUE. Unreachable-but-young files are
-    the normal steady state (every live pane has one). A tail that has survived
-    the TTL means the once-a-day watchdog sweep isn't running, which is the
-    thing actually worth reporting — the disk usage is a symptom.
-
-    Returns ``(issues_found, issues_fixed)``.
-    """
-    from . import core, role_prompts
-
-    store = core.role_prompts_dir()
-    sessions_dir = core.sessions_dir()
-    s = role_prompts.status(store, sessions_dir)
-
-    if not s["exists"]:
-        print("  [ok] Role-prompt store not created yet (no agent launched here)")
-        return 0, 0
-
-    print(f"  [ok] Role-prompt store: {s['total']} file(s), {s['bytes'] / 1024:.0f} KB "
-          f"({s['reachable']} reachable, {s['unreachable']} unreferenced)")
-    if s["unrecognized"]:
-        print(f"  [..] {len(s['unrecognized'])} unrecognized entr(ies) in the store — "
-              "never swept, never deleted: " + ", ".join(s["unrecognized"][:5]))
-
-    if not s["expired"]:
-        return 0, 0
-
-    print(f"  [!!] {s['expired']} role prompt(s) unreferenced and older than "
-          f"{s['max_age_days']:g}d ({s['expired_bytes'] / 1024:.0f} KB) — the daily "
-          "sweep does not appear to be running")
-    print("       Fix: agentwire limits install   (the watchdog owns this sweep)")
-    if dry_run:
-        print("       -> Would sweep them now (dry-run)")
-        return 1, 0
-    if not (auto_confirm or _confirm("     Sweep them now?")):
-        return 1, 0
-    result = role_prompts.sweep(store, sessions_dir)
-    print(f"       -> swept {len(result['deleted'])} file(s), "
-          f"{result['bytes_freed'] / 1024:.0f} KB freed")
-    if result["failed"]:
-        print(f"       -> {len(result['failed'])} could not be removed: "
-              + "; ".join(result["failed"][:3]))
-        return 1, 0
-    return 1, 1
-
-
 def _render_blocked_prompt_section() -> int:
     """Doctor section: agent alive, but the pane sits on an unanswered menu (#905).
 
@@ -1378,7 +1322,12 @@ def _render_beta_section() -> int:
 
 def cmd_doctor(args) -> int:
     """Auto-diagnose and fix common issues."""
-    from .hooks_cli import _managed_file_state, _managed_hook_files, get_hooks_source
+    from .hooks_cli import (
+        _managed_file_state,
+        _managed_hook_files,
+        get_hooks_source,
+        is_hook_registered,
+    )
     from .network import NetworkContext
     from .tunnels import TunnelManager, test_service_health, test_ssh_connectivity
     from .validation import validate_config
@@ -1437,7 +1386,7 @@ def cmd_doctor(args) -> int:
         # config is user preference, not a broken install). Only checkable
         # when a tmux server is running.
         for opt, why in (
-            ("focus-events", "Claude Code shows a setup tip on every session start"),
+            ("focus-events", "the agent shows a setup tip on every session start"),
             ("mouse", "no mouse scroll or text selection in agent panes"),
         ):
             val = _tmux_global_option(opt)
@@ -1464,13 +1413,13 @@ def cmd_doctor(args) -> int:
         print("     macOS: brew install ffmpeg")
         print("     Ubuntu: sudo apt install ffmpeg")
 
-    # Check Claude Code (optional)
-    claude_path = shutil.which("claude")
-    if claude_path:
-        print(f"  [ok] claude: {claude_path}")
+    # Check Hermes Agent (optional)
+    hermes_path = shutil.which("hermes")
+    if hermes_path:
+        print(f"  [ok] hermes: {hermes_path}")
     else:
-        print("  [..] claude: not found (optional, use --bare sessions)")
-        print("     Install: https://github.com/anthropics/claude-code")
+        print("  [..] hermes: not found (optional, use --bare sessions)")
+        print("     Install: curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash")
 
     # 3. Check AgentWire scripts
     print("\nChecking AgentWire scripts...")
@@ -1497,7 +1446,7 @@ def cmd_doctor(args) -> int:
     except FileNotFoundError:
         hooks_source = None
 
-    for hook_name, target_dir, _event in _managed_hook_files():
+    for hook_name, target_dir, event in _managed_hook_files():
         label, required, why = hook_meta[hook_name]
         target = target_dir / hook_name
         source = hooks_source / hook_name if hooks_source else None
@@ -1517,6 +1466,15 @@ def cmd_doctor(args) -> int:
         else:
             print(f"  [..] {label}: not found ({why})")
             print("     Run: agentwire hooks install")
+
+        # The config.yaml ``hooks:`` block is the new "settings" drift surface:
+        # a hook file can be present and current while its registration was
+        # hand-edited away, which silently disables it (Hermes only fires what's
+        # in the block).
+        if event and not is_hook_registered(event, hook_name):
+            print(f"  [!!] {label}: not registered (hooks.{event} in ~/.hermes/config.yaml)")
+            print("     Run: agentwire hooks install")
+            issues_found += 1
 
     # 4a-bis. Global skills (currently just /wiki). Hand-placed at wiki-setup and
     # never resynced, so a stale or missing copy was invisible until #475. Flag
@@ -1920,18 +1878,6 @@ def cmd_doctor(args) -> int:
         issues_found += _render_task_migration_section()
     except Exception as e:
         print(f"  [..] Could not check project task migration: {e}")
-
-    # 12b. Role-prompt store retention (#884) — one file per agent launch,
-    # forever, with panes writing guaranteed orphans. Reports size and flags
-    # only the aged-out tail (which means the watchdog sweep isn't running).
-    print("\nChecking role-prompt store retention (#884)...")
-    try:
-        _rp_found, _rp_fixed = _render_role_prompt_store_section(
-            auto_confirm=auto_confirm, dry_run=dry_run)
-        issues_found += _rp_found
-        issues_fixed += _rp_fixed
-    except Exception as e:
-        print(f"  [..] Could not check the role-prompt store: {e}")
 
     # 12c. Sessions blocked on an unanswered dialog (#905). The one state every
     # other check calls healthy: the agent process is running, so liveness

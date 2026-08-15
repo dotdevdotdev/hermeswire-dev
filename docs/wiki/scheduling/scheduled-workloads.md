@@ -10,7 +10,7 @@ Reliable headless task execution for unattended and automated agent workflows.
 
 Two paths for running scheduled work, picked per task:
 
-1. **`agentwire ensure` tasks** — Reliable session management + task execution with lifecycle hooks. A full Claude Code session runs a single prompt from `.agentwire.tasks.yml`. Best for multi-step agent work that needs its own branch / PR / MCP tools.
+1. **`agentwire ensure` tasks** — Reliable session management + task execution with lifecycle hooks. A full Hermes Agent session runs a single prompt from `.agentwire.tasks.yml`. Best for multi-step agent work that needs its own branch / PR / MCP tools.
 2. **Tasks in `.agentwire.tasks.yml`** — Named tasks with pre/prompt/post phases and branch management — the substrate for path #1.
 
 Both are orchestrated by `~/.agentwire/scheduler.yaml` and the AgentWire scheduler daemon.
@@ -56,7 +56,7 @@ tasks:
                              # dir (default: derived — see below)
 
     # Context inheritance
-    starting_session: ctx-loaded  # Fork Claude context from this session before running
+    starting_session: ctx-loaded  # Fork Hermes context from this session before running
 
     # Data gathering (produces variables for use in prompt)
     pre:
@@ -145,17 +145,17 @@ same-name session.
 
 ## Context Inheritance
 
-`starting_session` forks a session's Claude conversation history into the task session before running, giving the agent pre-loaded context instead of a cold start:
+`starting_session` forks a session's Hermes conversation history into the task session before running, giving the agent pre-loaded context instead of a cold start:
 
 ```yaml
 tasks:
   continue-payments-refactor:
     prompt: "Continue the payments refactor from where we left off"
-    starting_session: payments-loaded   # Fork Claude context from here
+    starting_session: payments-loaded   # Fork Hermes context from here
     starting_ref: feature/payments      # Also start from this branch
 ```
 
-When the task runs, `payments-loaded`'s Claude conversation JSONL is copied into the new session. The agent starts with full prior context.
+When the task runs, `payments-loaded`'s Hermes conversation history is copied into the new session. The agent starts with full prior context.
 
 **Fallback:** If `starting_session` doesn't exist, a warning is logged and the task runs with a fresh session — not a hard failure.
 
@@ -238,7 +238,7 @@ agentwire ensure -s session --task name --dry-run               # Preview withou
 2. Session exists? If not, create it
 3. Session healthy? If not, recreate it
 4. Session idle? If not, wait
-5. If `starting_session` set: fork Claude conversation context
+5. If `starting_session` set: fork Hermes conversation context
 6. If `starting_ref` set: checkout branch, create work branch
 7. Run pre-commands, validate outputs
 8. Send templated prompt
@@ -344,13 +344,11 @@ For unattended work, use `auto` instead of `bypass`:
 posture: auto
 ```
 
-`auto` uses Claude Code's auto mode: a background Sonnet 4.6 classifier reviews each tool call before execution. Safe actions (file reads, edits, git ops) run immediately with no overhead. Dangerous actions (force push to main, mass deletion, credential exfiltration) are blocked.
+Both `auto` and `bypass` map to `--yolo` on Hermes — there is no Auto Mode classifier. Safety comes from the damage-control `pre_tool_call` hooks (300+ rules), Hermes's HARDLINE blocklist, and the `--checkpoints` rollback flag layered on top. Dangerous actions (force push to main, mass deletion, credential exfiltration) are blocked by the hooks; HARDLINE patterns fire even under `--yolo`.
 
-`bypass` has no safety checks. `auto` does everything `bypass` does for normal unattended work but prevents catastrophic failures at 3am when nobody's watching.
+`bypass` has no *additional* safety checks. `auto` and `bypass` currently enforce the identical hook-and-blocklist layer; keep the distinction in `.agentwire.yml` for clarity and future fidelity.
 
-**Requires:** Team or Enterprise Claude plan. Pro/Max individual plans not supported.
-
-See `../sessions/claude-code-auto-mode.md` for full setup, allow rule configuration, and constraints.
+See `../sessions/hermes-safety-posture.md` for the full posture, approval configuration, and constraints.
 
 ---
 

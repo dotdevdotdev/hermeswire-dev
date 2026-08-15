@@ -13,7 +13,7 @@ from .base import AgentBackend
 logger = logging.getLogger(__name__)
 
 # Base command without permission flags - flags added based on bypass_permissions option
-DEFAULT_AGENT_COMMAND = "claude"
+DEFAULT_AGENT_COMMAND = "hermes"
 
 
 def _tmux_path() -> str:
@@ -42,7 +42,7 @@ class TmuxAgent(AgentBackend):
 
         Args:
             config: Configuration dict with optional keys:
-                - agent.command: Command to start agent (default: claude --dangerously-skip-permissions)
+                - agent.command: Command to start agent (default: hermes --yolo)
                 - agent.model: Model to use (for {model} placeholder)
                 - machines.file: Path to machines.json
         """

@@ -1084,7 +1084,7 @@ class TestRemainingPayloadMechanisms:
     # now released. Destructive companions asserted below.
     LADDER_READS = [
         'grep -rn "rm -rf" ~/.agentwire/',
-        'rg "rm -rf" ~/.claude/hooks/',
+        'rg "rm -rf" ~/.hermes/hooks/',
         # `.git/` is a RELATIVE noDeletePath — no $HOME and no tmp prefix, so
         # this row holds regardless of how the suite redirects HOME.
         'grep -rn "rm -rf" .git/',
@@ -1164,18 +1164,18 @@ class TestRemainingPayloadMechanisms:
         still refuse.
         """
         blocked, _ = bash_hook.check_protected_command(
-            'rg "rm -rf" ~/.claude/hooks/', []
+            'rg "rm -rf" ~/.hermes/hooks/', []
         )
         assert not blocked, (
             "a read of the control plane is still refused for what its search "
             "string says — mechanism 2 (#922) regressed at step 0"
         )
         for command in (
-            "rm ~/.claude/hooks/idle-handler.sh",
-            "r''m ~/.claude/hooks/idle-handler.sh",
-            "echo x > ~/.claude/settings.json",
-            "sed -i s/x/y/ ~/.claude/hooks/idle-handler.sh",
-            'shred "~/.claude/hooks/idle handler.sh"',
+            "rm ~/.hermes/hooks/idle-handler.sh",
+            "r''m ~/.hermes/hooks/idle-handler.sh",
+            "echo x > ~/.hermes/config.yaml",
+            "sed -i s/x/y/ ~/.hermes/hooks/idle-handler.sh",
+            'shred "~/.hermes/hooks/idle handler.sh"',
             "python3 -c 'open(p, \"w\").write(x)' ~/.agentwire/damagecontrol.yml",
         ):
             blocked, reason = bash_hook.check_protected_command(command, [])
