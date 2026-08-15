@@ -101,6 +101,8 @@ Implementation reference for contributors and advanced users.
 - **[Large parallel refactors](internals/parallel-refactor.md)** — splitting a huge file across parallel worktrees: positional-interleaving conflicts, regenerate-against-fresh-base + sequential merges, foundation-first, verification discipline
 - **[Window collage](internals/window-collage.md)** — Mission Control overlay: preview-tile architecture + why mutating real WinBox windows can never work
 - **[Shell escaping](internals/shell-escaping.md)** — how complex strings cross tmux boundaries (incl. the 1024-byte cap on anything typed into a fresh pane)
+- **[Hermes integration strategy](internals/hermes-integration.md)** — the Claude → Hermes flag mapping, agent-vs-daemon detection, conversation-identity ownership, and the final post-conversion state
+- **[Removed Claude features](internals/hermes-removals.md)** — the dropped features (per-tool allow/deny, Auto Mode classifier, restricted/readonly postures, slash commands, `--fork-session`, `[Pasted text]` chip) and their Hermes replacements
 - **[Damage control](internals/damage-control.md)** — safety hooks: rules, patterns, audit log
 - **[Troubleshooting](internals/troubleshooting.md)** — common issues and fixes
 
