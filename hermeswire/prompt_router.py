@@ -146,6 +146,9 @@ _AGENT_COMMAND_RE = re.compile(
 # Commands that unambiguously name an agent binary (legacy Claude or the hermes
 # console script) — no cmdline disambiguation needed.
 _UNAMBIGUOUS_AGENT_RE = re.compile(r"^(node|claude|hermes|\d+\.\d+\.\d+\S*)$")
+# The ``hermes`` binary as a distinct word (excludes ``hermeswire`` — a daemon
+# binary, and the agent's own ``-s hermeswire-<role>`` skill flags).
+_HERMES_BINARY_RE = re.compile(r"\bhermes\b")
 
 
 def _read_creator(session: str) -> "str | None":
@@ -215,8 +218,11 @@ def _pane_runs_hermes(session: str, pane_index: int) -> bool:
     ``pane_current_command`` for a Hermes REPL is ``python3*``/``uv`` — the same
     as HermesWire's own daemons (portal/tts/scheduler), so the command name alone
     cannot tell them apart. The process argv is the only reliable discriminator:
-    a Hermes REPL's argv mentions ``hermes`` (console script or ``python -m
-    hermes``), while a daemon's mentions ``hermeswire``.
+    a Hermes REPL invokes the ``hermes`` binary (a distinct word — ``.../hermes
+    chat ...``), while a daemon invokes ``hermeswire``. A plain substring test
+    is NOT enough: the agent's own ``-s hermeswire-<role>`` skill flags contain
+    the substring ``hermeswire``, so "mentions hermeswire" would wrongly reject a
+    live agent. A word-boundary match on ``hermes`` is what separates the two.
 
     The launch line is ``eval "${HERMESWIRE_LAUNCH_CMD}"`` typed into the pane's
     shell, so the pane's foreground PID is the SHELL and hermes runs as a direct
@@ -227,7 +233,7 @@ def _pane_runs_hermes(session: str, pane_index: int) -> bool:
         return False
     for candidate in [pid, *_pane_child_pids(pid)]:
         cmd = _cmdline_of(candidate).lower()
-        if "hermes" in cmd and "hermeswire" not in cmd:
+        if _HERMES_BINARY_RE.search(cmd):
             return True
     return False
 
