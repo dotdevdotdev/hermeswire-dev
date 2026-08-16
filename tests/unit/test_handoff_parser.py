@@ -12,10 +12,10 @@ def _minimal_valid() -> str:
 <metadata>
 - cwd: /tmp/foo
 - branch: main
-- model: claude-opus-4-7
+- model: hermes-default
 </metadata>
 <instructions>
-<file path="~/.claude/CLAUDE.md" kind="claude_md">
+<file path="~/.hermes/SOUL.md" kind="soul_md">
 hello
 </file>
 </instructions>
@@ -44,9 +44,9 @@ class TestParseValid:
         assert bundle.title == "Test Session"
         assert bundle.metadata.cwd == "/tmp/foo"
         assert bundle.metadata.branch == "main"
-        assert bundle.metadata.model == "claude-opus-4-7"
+        assert bundle.metadata.model == "hermes-default"
         assert len(bundle.instructions) == 1
-        assert bundle.instructions[0].kind == "claude_md"
+        assert bundle.instructions[0].kind == "soul_md"
         assert bundle.summary.goal == "Test the parser."
         assert bundle.handoff.one_sentence == "Continue the work."
         assert bundle.theme.name == "t"
@@ -151,7 +151,7 @@ class TestParseInvalid:
 
     def test_empty_instructions_block(self):
         text = _minimal_valid().replace(
-            '<file path="~/.claude/CLAUDE.md" kind="claude_md">\nhello\n</file>',
+            '<file path="~/.hermes/SOUL.md" kind="soul_md">\nhello\n</file>',
             "",
         )
         with pytest.raises(HandoffParseError, match="<file"):
@@ -190,7 +190,7 @@ class TestOpaqueSections:
         assert bundle.handoff.one_sentence == "Continue the work."
 
     def test_instructions_with_xml_in_content(self):
-        # CLAUDE.md content might quote XML examples.
+        # Context file content might quote XML examples.
         polluted = _minimal_valid().replace(
             "hello",
             "see <theme>example</theme> for more",

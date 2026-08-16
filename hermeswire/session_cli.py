@@ -34,6 +34,7 @@ from .core import (
     _set_session_name_env,
     build_agent_command,
     load_config,
+    load_session_metadata,
     notify_portal_session_created,
     parse_env_args,
     record_session_launch,
@@ -2152,6 +2153,135 @@ def _worktree_remove(args, project_path: Path, worktree_dir: Path, json_mode: bo
     return 0 if result["success"] else 1
 
 
+def _resolve_fork_resume_id(source_session: str, fork_path: Path) -> str | None:
+    """Resolve the source session's Hermes conversation id for a fork (#36).
+
+    Hermes is the source of truth, consulted in priority order:
+
+    1. ``load_session_metadata(source_session)`` → ``conversation_ids``
+       (walked newest-first for the newest id still present in state.db). The
+       chain is written by :func:`record_session_launch` (#4/#22) and holds
+       the Hermes session ids a launch resumed or captured.
+    2. ``~/.hermes/state.db`` via :func:`capture_session_id` — for a live
+       source whose record hasn't landed yet (the session row is written
+       lazily on the first turn), this polls the same store restart uses.
+    3. ``~/.claude/history.jsonl`` (filtered by the source tmux session's
+       creation time) — LEGACY fallback for pre-conversion sessions whose ids
+       were never recorded under Hermes.
+    4. ``~/.claude/projects/<encoded>/*.jsonl`` (newest) — legacy fallback of
+       last resort, same pre-conversion audience.
+
+    Returns ``None`` when nothing resolves, in which case the fork starts a
+    fresh conversation (the recorded metadata and ``--resume`` emission are
+    preserved upstream).
+    """
+    # 1) HermesWire session record — the primary path.
+    metadata = load_session_metadata(source_session)
+    chain = list(metadata.get("conversation_ids") or [])
+    if chain:
+        # Newest-first walk, mirroring restart_cli.resolve_resume_target: a
+        # resume appends nothing new (its id is already in the chain), so the
+        # LAST entry is normally the current conversation. But Hermes writes
+        # the session row lazily on the first turn, so a relaunched-but-
+        # never-prompted session has no state.db row for its newest id while
+        # the id it resumed FROM still holds the whole conversation. Walk the
+        # chain and take the newest RESUMABLE id rather than blindly taking the
+        # tail.
+        from .history import locate_conversation
+        for candidate in reversed(chain):
+            if locate_conversation(candidate, str(fork_path)).resumable:
+                return candidate
+        # Nothing in the chain is resumable (evicted / never prompted). A live
+        # source may hold a NEW id the chain hasn't recorded yet, so try the
+        # capture path; failing that, still return the newest recorded id so
+        # --resume surfaces its absence cleanly instead of a silent fresh
+        # session.
+        captured = _capture_live_source_id(fork_path)
+        return captured or chain[-1]
+
+    # 2) Live source whose record hasn't landed yet — poll state.db.
+    captured = _capture_live_source_id(fork_path)
+    if captured:
+        return captured
+
+    # 3-4) Legacy ~/.claude fallback for pre-conversion sessions.
+    return _legacy_claude_resume_id(source_session, fork_path)
+
+
+def _capture_live_source_id(fork_path: Path) -> str | None:
+    """Poll ~/.hermes/state.db for a live source session's id (#36).
+
+    Used when the session record has no resumable ``conversation_ids`` (the
+    row is written lazily on the first turn). Mirrors the capture path in
+    :func:`cmd_new`. Matching is by cwd — ``capture_session_id`` returns the
+    most recently active ``tool`` session under *fork_path*, which for a fork
+    is the source's own cwd (its ``pane_current_path``). Best-effort: returns
+    ``None`` when the store is unavailable or nothing appears within the poll
+    window.
+    """
+    from .core import capture_session_id
+    # Bound the poll: a fork is interactive and the source is already live,
+    # so a short window is enough; the record path above is the common case.
+    return capture_session_id(fork_path, timeout=5.0, poll_interval=0.5)
+
+
+def _legacy_claude_resume_id(source_session: str, fork_path: Path) -> str | None:
+    """Legacy ~/.claude fallback for pre-conversion sessions (#36).
+
+    Reads ``~/.claude/history.jsonl`` filtered by the source tmux session's
+    creation time, then falls back to the newest ``*.jsonl`` in
+    ``~/.claude/projects/<encoded>/``. Both are the OLD Claude Code session
+    store; under Hermes they miss (ids live in ``~/.hermes/state.db`` and
+    HermesWire metadata), which is why this is the fallback of last resort.
+    """
+    import json as _json
+
+    # Get source session creation timestamp
+    created_result = subprocess.run(
+        ["tmux", "display-message", "-t", source_session, "-p", "#{session_created}"],
+        capture_output=True, text=True,
+    )
+    session_created_unix = int(created_result.stdout.strip() or 0) if created_result.returncode == 0 else 0
+    session_created_ms = session_created_unix * 1000
+
+    history_file = Path.home() / ".claude" / "history.jsonl"
+    if session_created_ms > 0 and history_file.exists():
+        # Find sessions for this project that started AFTER the source tmux
+        # session was created. The session whose first message is closest to
+        # (and after) creation time is the source.
+        first_seen: dict[str, int] = {}
+        for line in history_file.read_text().strip().splitlines():
+            if not line:
+                continue
+            try:
+                entry = _json.loads(line)
+                if entry.get("project") != str(fork_path):
+                    continue
+                sid = entry.get("sessionId", "")
+                ts = entry.get("timestamp", 0)
+                if sid and (sid not in first_seen or ts < first_seen[sid]):
+                    first_seen[sid] = ts
+            except _json.JSONDecodeError:
+                continue
+
+        # Pick the session with earliest first_seen >= session_created_ms
+        candidates = [(sid, ts) for sid, ts in first_seen.items() if ts >= session_created_ms]
+        if candidates:
+            candidates.sort(key=lambda x: x[1])
+            return candidates[0][0]
+
+    # Fallback: most recently modified JSONL in the project dir
+    claude_projects_dir = Path.home() / ".claude" / "projects"
+    from .history import encode_project_path as _encode_project_path
+    encoded_path = _encode_project_path(str(fork_path))
+    session_dir = claude_projects_dir / encoded_path
+    if session_dir.exists():
+        jsonl_files = sorted(session_dir.glob("*.jsonl"), key=lambda f: f.stat().st_mtime, reverse=True)
+        if jsonl_files:
+            return jsonl_files[0].stem
+    return None
+
+
 def cmd_fork(args) -> int:
     """Fork a session into a new worktree with copied Hermes context.
 
@@ -2329,60 +2459,18 @@ def cmd_fork(args) -> int:
         if role_names:
             roles, _ = load_roles(role_names, fork_path)
 
-        # Find the conversation JSONL for the source session to enable context inheritance.
-        # Uses history.jsonl filtered by the source tmux session's creation time to identify
-        # the correct JSONL even when multiple sessions share the same project directory.
-        import json as _json
-        resume_session_id = None
-
-        # Get source session creation timestamp
-        created_result = subprocess.run(
-            ["tmux", "display-message", "-t", source_session, "-p", "#{session_created}"],
-            capture_output=True, text=True,
-        )
-        session_created_unix = int(created_result.stdout.strip() or 0) if created_result.returncode == 0 else 0
-        session_created_ms = session_created_unix * 1000
-
-        history_file = Path.home() / ".claude" / "history.jsonl"
-        if session_created_ms > 0 and history_file.exists():
-            # Find sessions for this project that started AFTER the source tmux session was created.
-            # The session whose first message is closest to (and after) creation time is the source.
-            first_seen: dict[str, int] = {}
-            for line in history_file.read_text().strip().splitlines():
-                if not line:
-                    continue
-                try:
-                    entry = _json.loads(line)
-                    if entry.get("project") != str(fork_path):
-                        continue
-                    sid = entry.get("sessionId", "")
-                    ts = entry.get("timestamp", 0)
-                    if sid and (sid not in first_seen or ts < first_seen[sid]):
-                        first_seen[sid] = ts
-                except _json.JSONDecodeError:
-                    continue
-
-            # Pick the session with earliest first_seen >= session_created_ms
-            candidates = [(sid, ts) for sid, ts in first_seen.items() if ts >= session_created_ms]
-            if candidates:
-                candidates.sort(key=lambda x: x[1])
-                resume_session_id = candidates[0][0]
-
-        if not resume_session_id:
-            # Fallback: most recently modified JSONL in the project dir
-            claude_projects_dir = Path.home() / ".claude" / "projects"
-            from .history import encode_project_path as _encode_project_path
-            encoded_path = _encode_project_path(str(fork_path))
-            session_dir = claude_projects_dir / encoded_path
-            if session_dir.exists():
-                jsonl_files = sorted(session_dir.glob("*.jsonl"), key=lambda f: f.stat().st_mtime, reverse=True)
-                if jsonl_files:
-                    resume_session_id = jsonl_files[0].stem
+        # Resolve the source session's Hermes conversation id for context
+        # inheritance. Hermes is the source of truth: the session record's
+        # ``conversation_ids`` chain (written by record_session_launch, #4/#22)
+        # holds the Hermes ids, and ~/.hermes/state.db can confirm one is
+        # resumable. The ~/.claude history.jsonl / projects reads below are a
+        # LEGACY fallback for pre-conversion sessions whose ids were never
+        # recorded under Hermes (#36).
+        resume_session_id = _resolve_fork_resume_id(source_session, fork_path)
 
         # Build agent command — resume_session_id (if any) inserts
-        # --resume/--fork-session right after `hermes` (the old Claude Code's
-        # `claude` binary) so the forked session
-        # starts with the source conversation in context.
+        # --resume right after `hermes` so the forked session starts with the
+        # source conversation in context.
         agent = build_agent_command(posture, roles, resume_session_id=resume_session_id)
         agent.env.update(parse_env_args(getattr(args, 'env', None)))
 

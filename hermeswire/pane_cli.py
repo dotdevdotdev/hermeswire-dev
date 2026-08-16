@@ -795,7 +795,7 @@ def kill_local_session(session: str, force: bool = False, timeout: int = 10,
             "agent_exited": agent_exited, "error": ""}
 
 
-def _wait_for_worker_ready(session: str, pane_index: int, timeout: int = 30, agent_type: str = "claude") -> bool:
+def _wait_for_worker_ready(session: str, pane_index: int, timeout: int = 30) -> bool:
     """Wait for a worker pane to be ready to receive input.
 
     Pane-scoped with loose indicators ('>', 'Hermes') to support

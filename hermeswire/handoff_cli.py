@@ -36,8 +36,8 @@ _HANDOFF_TEMPLATE = """\
 </environment>
 
 <instructions>
-{{ The CLI prefilled this section with collected CLAUDE.md / rules / memory.
-   Leave it alone unless you need to redact secrets. }}
+{{ The CLI prefilled this section with collected SOUL.md / project context
+   (.hermes.md / AGENTS.md). Leave it alone unless you need to redact secrets. }}
 __INSTRUCTIONS_BLOCK__
 </instructions>
 
@@ -164,14 +164,14 @@ def _build_template(cwd: Path) -> str:
             f'<file path="{instr.path}" kind="{instr.kind}">\n{instr.content}\n</file>'
         )
     instructions_block = "\n".join(instructions_block_parts) if instructions_block_parts else \
-        "{{ no CLAUDE.md or memory files found — this bundle is portable but light on instructions }}"
+        "{{ no SOUL.md or project context files found — this bundle is portable but light on instructions }}"
 
     substitutions = {
         "__CWD__": str(cwd),
         "__REPO_URL__": snap.get("remote_url") or "{{ none }}",
         "__BRANCH__": snap.get("branch") or "{{ unknown }}",
         "__COMMIT__": snap.get("commit") or "{{ unknown }}",
-        "__MODEL__": "claude-opus-4-7",
+        "__MODEL__": "{{ model }}",
         "__INSTRUCTIONS_BLOCK__": instructions_block,
         "__GIT_STATUS__": snap.get("status") or "(clean)",
         "__GIT_LOG__": snap.get("log") or "(no commits)",
