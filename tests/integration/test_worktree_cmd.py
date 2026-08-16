@@ -1204,10 +1204,13 @@ def test_cmd_new_worktree_session_is_registered(tmp_path, monkeypatch):
     monkeypatch.setattr(m, "inject_soul", lambda names, cfg, no_soul=False: [])
     monkeypatch.setattr(m, "_resolve_posture_from_args", lambda a, **kw: ("bypass", None))
     monkeypatch.setattr(m, "build_agent_command",
-                        lambda *a, **k: Namespace(command="true", env={}, role_prompt_path=None))
+                        lambda *a, **k: Namespace(command="true", env={}, role_prompt_path=None, conversation_id=None))
     monkeypatch.setattr(m, "_launch_tmux_session",
                         lambda *a, **k: subprocess.CompletedProcess([], 0, "", ""))
     monkeypatch.setattr(m, "record_session_launch", lambda *a, **k: {})
+    # #22: capture_session_id polls state.db — mock it to None (no Hermes running).
+    from hermeswire import core as _core_mod
+    monkeypatch.setattr(_core_mod, "capture_session_id", lambda *a, **k: None)
     monkeypatch.setattr(m, "notify_portal_session_created", lambda *a, **k: None)
     monkeypatch.setattr(m, "_notify_portal_sessions_changed", lambda *a, **k: None)
 
@@ -1277,8 +1280,11 @@ def test_dot_project_derived_session_matches_what_creation_produces(
     monkeypatch.setattr(m, "inject_soul", lambda names, cfg, no_soul=False: [])
     monkeypatch.setattr(m, "_resolve_posture_from_args", lambda a, **kw: ("bypass", None))
     monkeypatch.setattr(m, "build_agent_command",
-                        lambda *a, **k: Namespace(command="true", env={}, role_prompt_path=None))
+                        lambda *a, **k: Namespace(command="true", env={}, role_prompt_path=None, conversation_id=None))
     monkeypatch.setattr(m, "record_session_launch", lambda *a, **k: {})
+    # #22: capture_session_id polls state.db — mock it to None (no Hermes running).
+    from hermeswire import core as _core_mod
+    monkeypatch.setattr(_core_mod, "capture_session_id", lambda *a, **k: None)
     monkeypatch.setattr(m, "notify_portal_session_created", lambda *a, **k: None)
     monkeypatch.setattr(m, "_notify_portal_sessions_changed", lambda *a, **k: None)
 

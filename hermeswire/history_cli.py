@@ -348,7 +348,7 @@ def cmd_history_resume(args) -> int:
 def cmd_history_migrate(args) -> int:
     """``history migrate`` is obsolete under Hermes (#9).
 
-    Claude keyed transcripts by cwd directory, so a ``mv`` orphaned them and
+    The old Claude Code keyed transcripts by cwd directory, so a ``mv`` orphaned them and
     this verb re-keyed them. Hermes keys sessions by id in ``~/.hermes/state.db``
     with cwd as a data column — a moved directory can no longer orphan a
     session — so there is nothing to migrate. Report that and succeed.

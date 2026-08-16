@@ -1,6 +1,6 @@
-"""Tracks claude-in-chrome tab ids opened by a session (#717).
+"""Tracks hermes-in-chrome tab ids opened by a session (#717).
 
-Worktree sessions open claude-in-chrome tabs to e2e-verify their work before
+Worktree sessions open hermes-in-chrome tabs to e2e-verify their work before
 opening a PR. Those tabs are never closed if the session finishes without
 tidying up after itself, or dies mid-work — this module is pure bookkeeping
 so a crashed session's orphaned tabs can still be identified during teardown.
@@ -69,7 +69,7 @@ def _save(data: dict) -> None:
 
 
 def track(session: str, tab_id: str, url: str | None = None) -> dict:
-    """Record that ``session`` opened claude-in-chrome tab ``tab_id``.
+    """Record that ``session`` opened hermes-in-chrome tab ``tab_id``.
 
     Idempotent per (session, tab_id) — re-tracking the same tab just refreshes
     its entry rather than duplicating it.

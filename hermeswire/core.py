@@ -219,7 +219,7 @@ def _with_unattended_env(env: dict[str, str]) -> dict[str, str]:
     that the grant now carries its PATH SCOPE with it (``encode_unattended_allow``
     keeps the scope in the wire format), so what a child inherits is
     "commit under ``<store>``", not "commit". A child cannot widen it: the
-    damage-control hook reads this var from the Claude Code process env, not
+    damage-control hook reads this var from the Hermes process env, not
     from the shell the agent runs commands in, and the files that define grants
     are protected control plane.
 
@@ -393,8 +393,13 @@ def build_agent_command(
       automation sessions from user session lists (#4).
     - Permission postures: ``bypass`` and ``auto`` both map to ``--yolo``
       because HermesWire's own damage-control hooks are the safety layer.
-      Hermes has no ``--allowedTools``/``--enable-auto-mode`` equivalent
-      (issue #3); ``approvals.mode: smart`` is the manual alternative.
+      ``approvals.mode: smart`` (aux-LLM risk assessment) was investigated as
+      a safer ``auto`` (issue #25), but rejected: ``smart`` escalates uncertain
+      commands to an interactive prompt, which stalls unattended
+      scheduler/ensure sessions with no human watching.  ``--yolo`` (full
+      bypass) keeps the damage-control hooks as the sole guard — the same
+      posture ``bypass`` already trusts.  ``prompted`` uses Hermes's default
+      approvals (no ``--yolo``).
     - ``--session-id`` / ``--fork-session`` are gone: Hermes mints its own
       session id. ``resume_session_id`` maps to ``--resume <id>``, which
       continues the SAME session (no new id is minted), so the resulting
@@ -412,8 +417,10 @@ def build_agent_command(
 
     parts = ["hermes", "chat", "--cli", "--source", "tool", "--accept-hooks"]
 
-    # Permission-mode: both bypass and auto rely on damage-control hooks for
-    # safety, so both bypass Hermes approvals with --yolo (issue #3).
+    # Permission-mode: bypass and auto both rely on damage-control hooks for
+    # safety, so both bypass Hermes approvals with --yolo.  auto → --yolo
+    # (not approvals.mode=smart) because smart escalates uncertain commands
+    # to an interactive prompt, which stalls unattended sessions (issue #25).
     if posture in ("bypass", "auto"):
         parts.append("--yolo")
 
@@ -432,14 +439,13 @@ def build_agent_command(
             # -t selects TOOLSETS, not tool names — coarse fidelity (#3).
             parts.append(f"-t {','.join(merged.tools)}")
 
-        if merged.disallowed_tools:
-            # No Hermes equivalent to --disallowedTools; defer to
-            # approvals.deny patterns (issue #3).
-            logger.warning(
-                "role disallowed_tools (%s) have no Hermes equivalent yet "
-                "(issue #3); ignoring for this launch",
-                ",".join(merged.disallowed_tools),
-            )
+        # disallowed_tools are tool NAMES (Bash, Edit) — Hermes's only per-tool
+        # denial is approvals.deny, fnmatch globs against shell COMMANDS.  No
+        # clean mapping exists (a tool name is not a command pattern), so
+        # disallowed_tools is an unsupported feature, dropped deliberately
+        # rather than silently warn-and-dropped (issue #24).  Damage-control
+        # hooks are the safety layer for tool access.
+        # See docs/wiki/internals/hermes-removals.md.
 
     if role_names:
         # Role instructions are loadable skills, not pre-injected prompt text.
@@ -470,10 +476,9 @@ def extract_hermes_session_id(output: str) -> str | None:
     first match, so a caller can hand it either stream. Returns ``None`` when
     no id is present.
 
-    This is the capture half of issue #4. It is a pure function on purpose: the
-    interactive ``--cli`` REPL launched in tmux has no stderr we can read, so
-    wiring it into the launch path (a subprocess wrapper for headless ``-q``
-    runs, or a post-launch read of ``~/.hermes/state.db``) is a follow-up.
+    This is the capture half of issue #4. The interactive ``--cli`` REPL
+    launched in tmux has no stderr we can read, so the launch path polls
+    ``~/.hermes/state.db`` instead — see :func:`capture_session_id`.
     """
     for line in output.splitlines():
         stripped = line.strip()
@@ -491,6 +496,92 @@ def extract_hermes_session_id(output: str) -> str | None:
         if value:
             return value
     return None
+
+
+def capture_session_id(
+    cwd, *,
+    timeout: float = 30.0,
+    poll_interval: float = 1.0,
+    source: str | None = "tool",
+    started_after: float | None = None,
+) -> str | None:
+    """Poll ``~/.hermes/state.db`` for the Hermes session id a fresh launch
+    minted (#4, #22).
+
+    The interactive ``--cli`` REPL launched in tmux has no stderr to parse, so
+    :func:`extract_hermes_session_id` has nothing to read. Hermes writes the
+    session row to its SQLite store lazily — on the first turn, not at launch —
+    so this polls until a new session appears whose ``cwd`` matches *cwd*, then
+    returns its id.
+
+    *source* filters by session source tag (``"tool"`` for REPL sessions
+    launched via ``build_agent_command``; ``None`` to query all sources, used
+    by the headless ``hermes -z`` path whose sessions default to ``"cli"``).
+
+    *started_after* (epoch seconds) restricts to sessions started after the
+    given timestamp, so a headless dispatch doesn't pick up a stale session
+    from the same directory.
+
+    Returns ``None`` on timeout or when the store is unavailable (e.g. the
+    HermesWire interpreter is not the one Hermes is installed into). Best-effort:
+    a ``None`` here means ``record_session_launch`` records ``conversation_id:
+    None``, exactly as it did before this wiring — the session is still live and
+    the id is recoverable later from the Hermes session list.
+    """
+    import time
+
+    # If the Hermes session store is unavailable (the HermesWire interpreter
+    # is not the one Hermes is installed into), don't poll — return None now.
+    db = _hermes_session_db()
+    if db is None:
+        return None
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            kwargs = dict(
+                cwd_prefix=str(cwd),
+                limit=1,
+                order_by_last_active=True,
+            )
+            if source is not None:
+                kwargs["source"] = source
+            rows = db.list_sessions_rich(**kwargs)
+        except Exception:
+            rows = []
+        if rows:
+            row = rows[0]
+            if started_after is not None:
+                started = row.get("started_at") or 0
+                if started <= started_after:
+                    # Not new enough — keep polling.
+                    time.sleep(poll_interval)
+                    continue
+            sid = row.get("id")
+            if sid:
+                return sid
+        time.sleep(poll_interval)
+    return None
+
+
+_hermes_db_instance = None
+
+
+def _hermes_session_db():
+    """Open the Hermes session store once, or return ``None`` if unavailable.
+
+    Mirrors :func:`history._db`: ``hermes_state`` is imported lazily (heavy, and
+    the wheel must not depend on a specific Hermes version). Callers that get
+    ``None`` degrade to empty results.
+    """
+    global _hermes_db_instance
+    if _hermes_db_instance is None:
+        try:
+            from hermes_state import DEFAULT_DB_PATH, SessionDB
+        except ImportError:
+            return None
+        _hermes_db_instance = SessionDB(DEFAULT_DB_PATH)
+    return _hermes_db_instance
 
 
 def check_python_version() -> bool:
@@ -620,7 +711,7 @@ def tmux_session_cwd(name: str) -> str | None:
     The counterpart to the recorded ``cwd_at_launch``: asked of the running
     process rather than read back from our own record, so the two can be
     compared. They diverge exactly when someone relocates a session's
-    directory — which is what strands its Claude history under the old key
+    directory — which is what strands its old Claude Code history under the old key
     (#871 item 5). Returns None when the session isn't live.
 
     **The agent pane is the FIRST pane, resolved by asking, never by index.**
@@ -1401,7 +1492,7 @@ def _guarded_launch_command(path_str: str, agent_cmd: str | None) -> str:
     pane actually runs its ``cd`` (race between ``hermeswire new`` reporting
     success and the async pane launch, or an external actor removing the
     dir). Without a guard, ``cd`` fails, the shell prints an error and
-    carries on, and ``agent_cmd`` (e.g. ``claude``) then launches from the
+    carries on, and ``agent_cmd`` (e.g. ``hermes``) then launches from the
     WRONG cwd and crashes — dropping the pane to a bare shell that the
     idle-reaper never touches (it only reaps a *running* agent going idle),
     so it lingers forever.

@@ -75,12 +75,40 @@ def get_skills_source() -> Path:
 def _managed_global_skills() -> list[str]:
     """Hermeswire-owned skills that belong GLOBALLY in ~/.hermes/skills/.
 
-    Only `wiki` is global — the wiki store lives at ~/.hermeswire/wiki/ and is
-    usable from any session. The hermeswire-* skills stay project-scoped (shipped
-    via the repo's .hermes/skills/, discovered per-project) and are NOT installed
-    here. Third-party skills (cua-driver, shadcn-ui, …) are never touched.
+    Two groups:
+
+    - ``wiki`` — the wiki store lives at ~/.hermeswire/wiki/ and is usable from
+      any session, so the skill must be globally available (issue #475).
+    - ``hermeswire-<role>`` — one per role in ``hermeswire/roles/*.md``. Hermes
+      has no ``--append-system-prompt``; role instructions ride ``-s`` skills
+      (issue #15), so on a fresh install the ``-s hermeswire-<role>`` flag
+      ``build_agent_command`` emits must resolve. The skills are installed
+      globally (alongside ``wiki``) so a session on any project finds them —
+      the role files are a function of the *session's role*, not its project
+      (#23). Third-party skills (cua-driver, shadcn-ui, …) are never touched.
+
+    The role list is derived from the packaged ``roles/`` directory so a new
+    role file lands here automatically — no manual registry to forget.
     """
-    return ["wiki"]
+    roles = _bundled_role_names()
+    return ["wiki", *(f"hermeswire-{r}" for r in roles)]
+
+
+def _bundled_role_names() -> list[str]:
+    """Stems of ``hermeswire/roles/*.md`` — the source of truth for role skills.
+
+    Resolved through ``importlib.resources`` when installed (the wheel ships
+    ``hermeswire/roles/*.md`` via the include glob in pyproject.toml) and a
+    plain directory read when running from a checkout, so a fresh install and
+    a dev worktree both see the same set. Sorted for stable install order.
+    """
+    try:
+        roles_dir = Path(str(importlib.resources.files("hermeswire").joinpath("roles")))
+    except (TypeError, FileNotFoundError):
+        return []
+    if not roles_dir.is_dir():
+        return []
+    return sorted(f.stem for f in roles_dir.glob("*.md"))
 
 
 def _managed_skill_state(target: Path, source: Path) -> str:
@@ -187,14 +215,14 @@ def skill_drift() -> dict[str, str]:
 
 def _hermes_hook_command(hook_name: str) -> str:
     """The ``command`` string registered for a managed hook (uses ``~`` like the
-    old Claude registration, for portability across machines)."""
+    old Claude Code registration, for portability across machines)."""
     return f"~/.hermes/hooks/{hook_name}"
 
 
 def _config_path() -> Path:
     """Resolve ``~/.hermes/config.yaml`` at call time, not import time.
 
-    The old Claude settings.json writer resolved its path via ``Path.home()``
+    The old Claude Code's settings.json writer resolved its path via ``Path.home()``
     inside the function, so tests that monkeypatch ``Path.home`` isolate
     correctly. The module constants (``HERMES_CONFIG`` etc.) are computed at
     import time and would otherwise escape that monkeypatch, so the config

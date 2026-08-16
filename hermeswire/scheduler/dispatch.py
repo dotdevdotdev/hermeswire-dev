@@ -509,7 +509,7 @@ def _dispatch_ensure_task(board: Board, task: SchedulerTask, existing_state: Tas
     """Dispatch via `hermeswire ensure` subprocess (tmux session path)."""
     from hermeswire import scheduler as _sched
 
-    # An expired Claude login is MACHINE-wide, not per-task: every dispatch
+    # An expired Hermes login is MACHINE-wide, not per-task: every dispatch
     # after the first hits the same refusal (#906). On 2026-08-04 two tasks
     # discovered it independently and burned 7217s and 14400s doing so. Gated
     # here, above the worktree/in-place fork, because both paths cost a session
@@ -532,7 +532,7 @@ def _dispatch_ensure_task(board: Board, task: SchedulerTask, existing_state: Tas
             last_duration=0,
             run_count=existing_state.run_count,
             last_summary=(
-                f"Claude login expired on this machine (first seen "
+                f"Hermes login expired on this machine (first seen "
                 f"{outage.get('detected_at')}) — dispatch skipped until `/login` is run"
             ),
         )
@@ -898,7 +898,7 @@ def _dispatch_worktree_task(board: Board, task: SchedulerTask, existing_state: T
         # state recorded by the detection now short-circuits the rest of the
         # fleet. Left alive for the same reason usage_limit is — the operator
         # runs `/login` and the session picks up where it stopped.
-        print(f"[{_ts()}] {task_name}: Claude login expired — worktree + session left in place")
+        print(f"[{_ts()}] {task_name}: Hermes login expired — worktree + session left in place")
         return TaskState(
             last_run=datetime.now(timezone.utc),
             last_status="auth_expired",

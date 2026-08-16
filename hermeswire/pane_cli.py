@@ -604,7 +604,7 @@ def _drop_session_metadata(session: str) -> None:
 def cmd_kill(args) -> int:
     """Kill a tmux session or pane (graceful /exit first, then kill).
 
-    Claude sessions get /exit and we wait for the agent to actually
+    Hermes sessions get /exit and we wait for the agent to actually
     terminate (up to --timeout) before killing tmux. Bare sessions fall
     through to a plain tmux kill. --force skips the graceful step entirely.
 
@@ -679,7 +679,7 @@ def cmd_kill(args) -> int:
         graceful = not force and _wants_graceful_exit(posture, pane_command)
         agent_exited = False
         if graceful:
-            # Send /exit to Claude first for clean shutdown (target pane 0 specifically)
+            # Send /exit to Hermes first for clean shutdown (target pane 0 specifically)
             _run_remote(machine_id, f"tmux send-keys -t {q}.0 /exit Enter")
             if not json_mode:
                 print(f"Sent /exit to {session_full}, waiting for agent to exit (up to {timeout}s)...")
@@ -754,7 +754,7 @@ def kill_local_session(session: str, force: bool = False, timeout: int = 10,
     graceful = not force and _wants_graceful_exit(posture, pane_command)
     agent_exited = False
     if graceful:
-        # Send /exit to Claude first for clean shutdown
+        # Send /exit to Hermes first for clean shutdown
         # Target pane 0 specifically and capture output to avoid terminal noise
         subprocess.run(
             ["tmux", "send-keys", "-t", f"{session}.0", "/exit", "Enter"],
@@ -798,11 +798,11 @@ def kill_local_session(session: str, force: bool = False, timeout: int = 10,
 def _wait_for_worker_ready(session: str, pane_index: int, timeout: int = 30, agent_type: str = "claude") -> bool:
     """Wait for a worker pane to be ready to receive input.
 
-    Pane-scoped with loose indicators ('>', 'Claude Code') to support
-    non-claude worker types — deliberately NOT consolidated into
-    session_ready.wait_for_session_ready, which is claude-banner specific.
+    Pane-scoped with loose indicators ('>', 'Hermes') to support
+    non-hermes worker types — deliberately NOT consolidated into
+    session_ready.wait_for_session_ready, which is hermes-banner specific.
 
-    Polls the pane output looking for Claude Code's '❯' prompt.
+    Polls the pane output looking for Hermes's '❯' prompt.
 
     Returns True if worker became ready, False if timeout.
     """
@@ -811,7 +811,7 @@ def _wait_for_worker_ready(session: str, pane_index: int, timeout: int = 30, age
     start = time.time()
     poll_interval = 0.5  # Check every 500ms
 
-    ready_indicators = ['❯', '>', 'Claude Code']
+    ready_indicators = ['❯', '>', 'Hermes']
 
     while (time.time() - start) < timeout:
         try:
@@ -840,7 +840,7 @@ def cmd_spawn(args) -> int:
     """Spawn a worker pane in the current session.
 
     Creates a new tmux pane in the orchestrator's session and starts
-    Claude Code with the specified roles (default: worker).
+    Hermes with the specified roles (default: worker).
 
     With --branch, creates an isolated worktree for the worker to enable
     parallel commits without conflicts.
@@ -1143,7 +1143,7 @@ def register_pane_parser(subparsers) -> None:
     list_parser.add_argument("--machine", help="Filter by specific machine ID")
     list_parser.add_argument("--sessions", action="store_true", help="Show sessions instead of panes")
     list_parser.add_argument("--context", action="store_true",
-                             help="Annotate each session with its Claude Code context headroom "
+                             help="Annotate each session with its Hermes context headroom "
                                   "(remaining %%); flags sessions running low (implies --sessions)")
     list_parser.set_defaults(func=cmd_list)
 

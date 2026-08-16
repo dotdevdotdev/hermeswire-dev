@@ -66,7 +66,7 @@ def _host_context_ok() -> bool:
     policed-agent context by ANY invocation path — not just the literal CLI
     command text, which a bash-pattern block can catch, but also a direct
     Python call that never goes through a shell at all. A real interactive
-    tty is the strongest such signal: Claude Code's Bash tool runs commands
+    tty is the strongest such signal: Hermes's Bash tool runs commands
     as a subprocess with no pty attached, whether the session is attended or
     an unattended scheduler dispatch, so `sys.stdin.isatty()` is reliably
     False there. ``ALLOW_PROMOTE_ENV`` is the deliberate escape valve for a

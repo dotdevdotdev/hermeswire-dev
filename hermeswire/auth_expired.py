@@ -11,7 +11,7 @@ three investigation passes chasing a guardrail, a dispatcher, a timeout and a
 paste race.
 
 Hermes auth is provider-based (``hermes auth``, ``~/.hermes/auth.json``,
-``hermes model``, provider routing/fallback). There is no Claude-style login
+``hermes model``, provider routing/fallback). There is no Claude-style (pre-conversion) login
 command. The detection signal is Hermes's structured ``AuthError``
 (``provider``, ``code``, ``relogin_required``), which surfaces in two places:
 
@@ -20,7 +20,7 @@ command. The detection signal is Hermes's structured ``AuthError``
   the session's last assistant message (the #9 store surface);
 * **pre-flight** — ``hermes auth status <provider>`` returns
   ``{"logged_in": bool, "error": ...}``, a single cheap subprocess that
-  replaces the "no cheap pre-flight" problem that forced Claude onto
+  replaces the "no cheap pre-flight" problem that forced the old Claude Code onto
   transcript tailing.
 
 "Auth expired" splits into two provider-level classes that must NOT be
@@ -29,7 +29,7 @@ conflated:
 1. **Hard auth failure (→ outage-gate + email).** ``relogin_required=True``,
    or ``code`` in :data:`HARD_AUTH_CODES`. A human must act (``hermes auth
    add <provider>`` / ``hermes model``, or top up a subscription) — the
-   exact analog of Claude's login command, and it inherits the whole
+   exact analog of the old Claude Code's login command, and it inherits the whole
    outage-gate / throttled-email pattern unchanged.
 2. **Transient limit (→ retry, do NOT gate).** ``code == "codex_rate_limited"``
    / ``temporarily_unavailable`` / plain 429s. These resolve on their own;

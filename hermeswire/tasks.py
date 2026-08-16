@@ -119,7 +119,7 @@ class TaskConfig:
     work_branch: str | None = None       # Branch name for agent's work (default: agent/<task>-<date>)
     pr_target: str | None = None         # Branch to PR against (default: starting_ref)
     pr_draft: bool = True                # Create PR as draft
-    starting_session: str | None = None  # Fork Claude context from this session before running
+    starting_session: str | None = None  # Fork Hermes context from this session before running
     role: str | None = None              # Role override for this task
 
     # #854: override the shared-working-dir guard for this task's dispatch.

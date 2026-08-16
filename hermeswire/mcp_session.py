@@ -29,7 +29,7 @@ def sessions_list() -> str:
 def format_session_contexts(data: dict, session_filter: str | None = None) -> str:
     """Format per-session context headroom for LLM consumption.
 
-    The bar % is context REMAINING (headroom before Claude Code auto-compacts),
+    The bar % is context REMAINING (headroom before Hermes auto-compacts),
     not usage — so LOW = bloated. Daemons (scheduler/portal/tts/…) have no bar
     and are reported as non-interactive.
     """
@@ -74,10 +74,10 @@ def format_session_contexts(data: dict, session_filter: str | None = None) -> st
 
 @mcp.tool()
 def sessions_context(session: str | None = None) -> str:
-    """Report Claude Code context headroom for sessions (observability only).
+    """Report Hermes context headroom for sessions (observability only).
 
     Each interactive session's footer shows a context bar whose percentage is
-    the context REMAINING before Claude Code auto-compacts — so a LOW number
+    the context REMAINING before Hermes auto-compacts — so a LOW number
     means the session is bloated. Daemon sessions (scheduler/portal/tts/stt)
     run plain processes with no bar and are reported as non-interactive.
 

@@ -7,12 +7,12 @@ wired, so a paste in that window vanishes silently. Every subsystem that
 injects a first prompt into a new session — council, `hermeswire send
 --wait-ready`, `hermeswire new --first-message` — routes through here.
 
-Hermes readiness differs from Claude Code's in one load-bearing way: its
+Hermes readiness differs from the old Claude Code's in one load-bearing way: its
 prompt_toolkit REPL draws the ``❯`` prompt as part of its readline loop, so
 once the prompt glyph is on screen the input handler IS wired. No keystroke
-probe is needed (that was Claude's fix for its banner-render race), and there
+probe is needed (that was the old Claude Code's fix for its banner-render race), and there
 is no trust-this-folder prompt or ``[Pasted text]`` chip. The verified paste
-keys on the prompt line instead of Claude's horizontal-rule box.
+keys on the prompt line instead of the old Claude Code's horizontal-rule box.
 """
 
 import time
@@ -118,7 +118,7 @@ def capture_session(session: str, lines: int = 60, pane_index: int = 0) -> str:
 
 
 def pane_shows_activity(capture: str) -> bool:
-    """Does the pane show Claude actively working (spinner / tokens / output)?"""
+    """Does the pane show Hermes actively working (spinner / tokens / output)?"""
     lowered = capture.lower()
     return any(marker.lower() in lowered for marker in ACTIVITY_MARKERS)
 
@@ -138,7 +138,7 @@ def input_box(capture: str) -> "str | None":
 def text_landed(capture: str, message: str) -> bool:
     """Has *message* landed in the input box, ready to submit?
 
-    True iff the box is parseable and holds the message — whole, as Claude's
+    True iff the box is parseable and holds the message — whole, as Hermes's
     ``[Pasted text …]`` placeholder, or as the rendered window of a draft too
     tall to display at once (see :func:`box_shows_message`).
     """
@@ -261,7 +261,7 @@ def wait_for_session_ready(
 
     1. Wait for the Hermes prompt glyph (``❯``) to appear. Once it is on
        screen the prompt_toolkit readline loop is running, so the input handler
-       is wired — no keystroke probe (that was Claude's banner-render fix).
+       is wired — no keystroke probe (that was the old Claude Code's banner-render fix).
     2. Wait until the screen is *stable*: READY_STABLE_SNAPSHOTS consecutive
        500ms snapshots are identical. prompt_toolkit redraws aggressively while
        the model/spinner initializes, so stability is the signal the REPL has
@@ -459,7 +459,7 @@ def box_holds_foreign_draft(
        placeholder is either somebody else's draft or an earlier attempt's,
        and both want the same answer (don't paste on top of it).
     2. Only then, the SGR-aware gate ``prompt_router.prompt_is_empty`` gets a
-       veto. Claude Code renders ghost/autosuggest text inside the box DIM
+       veto. Hermes renders ghost/autosuggest text inside the box DIM
        (#669), and the plain parse can't tell it from a draft — without this
        second opinion an idle session showing an autosuggestion would refuse
        every send. It is the same gate the msg drain delivers behind, so

@@ -151,7 +151,7 @@ class SessionConfig:
     cfg_weight: float = 0.5
     machine: str | None = None
     path: str | None = None
-    claude_session_id: str | None = None  # Claude Code session UUID for forking
+    claude_session_id: str | None = None  # Hermes session id for forking
     posture: str = "bypass"  # Permission mode: bypass | prompted | auto, or bare
     roles: list = None  # Composable roles array
     spawned_by: str | None = None  # Parent session (for worker sessions)
@@ -165,7 +165,7 @@ class SessionConfig:
 class PendingPermission:
     """A permission request waiting for user decision."""
 
-    request: dict  # The permission request from Claude Code
+    request: dict  # The permission request from Hermes
     event: asyncio.Event = field(default_factory=asyncio.Event)  # Signals when user responds
     decision: dict | None = None  # The user's decision
     pane_index: int = 0  # Pane the dialog is on (worker panes > 0)
@@ -302,7 +302,7 @@ class HermesWireServer(
         # Voice domain: TTS/STT HTTP endpoints (transcribe, send, say, local-tts,
         # answer, voices, voice-status)
         register_voice_routes(self, self.app)
-        # Mobile Review window + permission dialogs (from Claude Code hook)
+        # Mobile Review window + permission dialogs (from Hermes hook)
         register_permission_routes(self, self.app)
         register_config_routes(self, self.app)
         register_safety_routes(self, self.app)
@@ -1402,7 +1402,7 @@ class HermesWireServer(
         Annotates each session dict with `state` (and `state_kind` /
         `state_hint` when blocked on a prompt). Precedence:
 
-          off         pane 0 runs no agent (Claude exited → bare shell);
+          off         pane 0 runs no agent (Hermes exited → bare shell);
                       also the fallback for anything unrecognized/errored —
                       when in doubt show off, never a false working/idle
           needs_input prompt-router marker or live pending_permission
@@ -1434,7 +1434,7 @@ class HermesWireServer(
                         state = "needs_input"
                         kind = "permission"
                         tool = pending.request.get("tool_name", "")
-                        hint = f"Claude wants to use {tool}" if tool else "Permission requested"
+                        hint = f"Hermes wants to use {tool}" if tool else "Permission requested"
                     elif self._get_global_session_activity(name) == "active":
                         state = "working"
                     else:
@@ -2160,7 +2160,7 @@ class HermesWireServer(
                                     if input_data:
                                         # Filter out terminal capability responses that xterm sends
                                         # These look like: ESC[?1;2c (Primary DA) or ESC[>0;276;0c (Secondary DA)
-                                        # They get typed as input to Claude Code which is annoying
+                                        # They get typed as input to Hermes which is annoying
                                         filtered_data = re.sub(r'\x1b\[\?[0-9;]*c', '', input_data)  # Primary DA
                                         filtered_data = re.sub(r'\x1b\[>[0-9;]*c', '', filtered_data)  # Secondary DA
                                         filtered_data = re.sub(r'\x1b\[[0-9;]*c', '', filtered_data)  # Generic DA

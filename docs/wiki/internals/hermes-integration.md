@@ -1,6 +1,10 @@
-# Hermes integration strategy (HermesWire → HermesWire)
+# Hermes integration strategy (HermesWire → Hermes)
 
-Status: decided. Phase 1 (runtime swap) landed on `hermes-conversion`.
+Status: the conversion is **complete**. All six phases landed
+(`hermes-conversion` merge through the package rename); every issue the
+original version of this page listed as deferred (#15, #4, #3, #11) is
+CLOSED. See [Removed Claude features](hermes-removals.md) for the features
+that were dropped rather than mapped.
 
 ## Decision: hybrid
 
@@ -30,9 +34,9 @@ cockpit keeps the REPL so a human can watch the agent work in tmux.
 - **`hermes chat -q "prompt"`** — prints answer + exit summary
   (`Session: {id}` / `Resume this session with: hermes --resume {id}`).
 - **`hermes chat -Q`** — answer on stdout, `session_id: {id}` on **stderr**; exit 0/1.
-- **Session ids** are `{YYYYMMDD_HHMMSS}_{6 hex}` (minted in cli.py); store is
-  SQLite `~/.hermes/state.db` (`sessions` table: id, source, title, cwd,
-  parent_session_id). `--source tool` tags + hides automation sessions.
+- **Session ids** are `{YYYYMMDD_HHMMSS}_{6 hex}` (minted by Hermes in cli.py);
+  store is SQLite `~/.hermes/state.db` (`sessions` table: id, source, title,
+  cwd, parent_session_id). `--source tool` tags + hides automation sessions.
 - **Approvals**: `approvals.mode` ∈ `manual | smart | off` (no "auto").
   `--yolo` = `HERMES_YOLO_MODE=1` (import-frozen). `-t TOOLSETS` selects
   coarse toolsets, NOT tool-name globs (no `--allowedTools` equivalent).
@@ -51,27 +55,98 @@ cockpit keeps the REPL so a human can watch the agent work in tmux.
 (`python3.13`) — the same as HermesWire's own daemons (portal/tts/scheduler).
 Claude's was `node`/`claude`/a version string, trivially distinguishable.
 Every place that classifies a pane as "agent" vs "daemon" (prompt_router,
-session_context, completion) must switch to a stronger signal: `#{pane_pid}` +
+session_context, completion) switched to a stronger signal: `#{pane_pid}` +
 `ps -p <pid> -o command=` (the cmdline contains `hermes`), or the session's
 recorded launch metadata. Do NOT add `python` to the pane-command regex —
 that misclassifies daemons (see `test_daemon_skipped_gracefully`,
 `TestIsAgentPane::test_command_classification`).
 
-## Flag mapping (landed in Phase 1)
+## Flag mapping (final state)
 
 | Claude Code | Hermes Agent |
 |---|---|
 | `claude` | `hermes chat --cli` |
 | `--dangerously-skip-permissions` / `--enable-auto-mode --permission-mode auto` | `--yolo` |
 | `--model <m>` | `-m <m>` |
-| `--session-id` / `--fork-session` / `--resume` | (removed) / `--resume <id>` |
-| `--allowedTools` / `--tools` / `--disallowedTools` | `-t TOOLSETS` / `approvals.deny` (fidelity loss) |
-| `--append-system-prompt "$(<file)"` | context files / `-s SKILLS` (issue #15) |
+| `--session-id` | (removed — Hermes mints its own id; see [Conversation identity](../sessions/conversation-identity.md)) |
+| `--fork-session` | (removed — `--resume` continues the same session; see [Removed features](hermes-removals.md)) |
+| `--resume <id>` | `--resume <id>` |
+| `--allowedTools` / `--tools` | `-t TOOLSETS` (coarse; per-tool fidelity lost — see [Removed features](hermes-removals.md)) |
+| `--disallowedTools` | (no equivalent; `approvals.deny` + damage-control hooks) |
+| `--append-system-prompt "$(cat file)"` | `-s SKILLS` + context files (`.hermes.md`, `SOUL.md`); see [#15](https://github.com/dotdevdotdev/hermeswire-dev/issues/15) |
 
-## Known gaps (deferred to later phases)
+### `build_agent_command` — the one flag-builder (#729)
 
-- Role-instruction injection (`--append-system-prompt`) — issue #15.
-- `--allowedTools` core allowlist has no equivalent — replaced by
-  damage-control hooks + `approvals.deny` (issues #3/#11).
-- `conversation_id` is still a locally-minted UUID, not a Hermes session id —
-  issue #4.
+Fresh sessions AND history resume both route through `core.build_agent_command`,
+so a posture always launches with the same flags — no create-vs-resume drift.
+The base command is:
+
+```
+hermes chat --cli --source tool --accept-hooks
+```
+
+- `--source tool` tags every launch so Hermes hides these automation sessions
+  from user session lists (#4).
+- `--accept-hooks` acknowledges the damage-control hook contract (added after
+  the original Phase-1 landing — interactive launches need it so Hermes
+  does not block on the hook registration prompt).
+- Permission postures: `bypass` and `auto` both map to `--yolo` because
+  HermesWire's own damage-control hooks are the safety layer. `prompted`
+  relies on `approvals.mode: smart` (no `--yolo`).
+- Session resume: `--resume <id>` continues the SAME Hermes session. No new
+  id is minted; the `conversation_id` IS `resume_session_id`.
+- Role instructions ride `-s hermeswire-<role>` skills (Hermes loads them on
+  demand; no `--append-system-prompt`, no temp prompt file, #15). `soul` is
+  the `SOUL.md` identity slot, never a `-s` skill.
+
+## Conversation identity is Hermes-owned (#4)
+
+This is the change the stale version of this page got most wrong: it claimed
+`conversation_id` was "still a locally-minted UUID." It is not.
+
+- **Hermes mints the id** (`<timestamp>_<hex>`). HermesWire no longer mints a
+  UUID or passes `--session-id`. A fresh launch records
+  `conversation_id: None` and captures the real id post-launch
+  (`core.extract_hermes_session_id()` reads `-Q`/`-q` stderr; the SQLite
+  store at `~/.hermes/state.db` is the fallback).
+- **`--resume <id>` continues the same session** — no fork, no new id. The
+  `conversation_ids` chain in `~/.hermeswire/sessions/<name>/metadata.json`
+  only grows when *Hermes* forks/compresses a session into a new id
+  (`parent_session_id`), not on every resume.
+- **`record_session_launch`** is the one writer and `load_session_metadata`
+  the one reader; every session-launch path calls it exactly once. The
+  record carries `conversation_ids` (Hermes session ids), `source: "tool"`,
+  `resumed_from`, cwd/repo/branch, posture, and roles — enough to
+  REGENERATE the launch flags, not merely reference them.
+
+Full detail: [Conversation identity](../sessions/conversation-identity.md).
+
+## What was dropped (not mapped)
+
+The features below have no Hermes equivalent and were removed rather than
+shimmed. Full rationale and replacements: [Removed Claude features](hermes-removals.md).
+
+- **Per-tool allow/deny** (`--allowedTools` / `--disallowedTools`) → damage-control
+  hooks + `approvals.deny` patterns.
+- **`auto` approval classifier** (`--enable-auto-mode`) → `--yolo` + the
+  four-layer posture (hooks + HARDLINE + checkpoints + `--yolo`). No
+  classifier exists on Hermes; see [Hermes safety posture](../sessions/hermes-safety-posture.md).
+- **`restricted` / `readonly` tool-locking postures** → dropped
+  (`project_config.py:20`); damage-control hooks are the guard, not tool
+  allowlists.
+- **Slash commands** → skills (`/handoff` etc. are Hermes built-in skills;
+  role instructions ride `hermeswire-<role>` skills, #15).
+- **`--fork-session`** → removed (`--resume` continues the same session).
+- **`[Pasted text]` chip / queued-message placeholder** → removed (Hermes
+  has no chip; the defensive second-Enter in `pane_manager.send_to_target`
+  is harmless on Hermes).
+
+## See also
+
+- [Removed Claude features](hermes-removals.md) — the dropped features and
+  their replacements.
+- [Hermes safety posture](../sessions/hermes-safety-posture.md) — the
+  four-layer posture that replaces the Auto Mode classifier.
+- [Damage control](damage-control.md) — the `pre_tool_call` hook layer.
+- [Conversation identity](../sessions/conversation-identity.md) — the
+  session record and the `conversation_ids` chain under Hermes.

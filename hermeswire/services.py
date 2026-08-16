@@ -150,7 +150,7 @@ def registry(cfg: Config) -> list[CustomServiceConfig]:
         # Default-on context auto-management (issue #442): the idle-nag bridge
         # is STATELESS — it's fed ~1440 [IDLE NAG] prompts/day and needs none of
         # its backlog, so /clear it aggressively when it bloats rather than
-        # leaning on Claude's own (stateful-oriented) auto-compaction.
+        # leaning on Hermes's own (stateful-oriented) auto-compaction.
         context_policy="clear",
     )
     return [notifications, *user_services]

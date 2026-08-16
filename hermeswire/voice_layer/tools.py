@@ -13,7 +13,7 @@ session name fails the pattern check and returns an error the buddy can read
 back, which is the correct outcome: ask again.
 
 **Reads are direct; writes go through the spine.** Anything routed through a
-Claude session inherits damage-control hooks, worktree isolation, posture and
+Hermes session inherits damage-control hooks, worktree isolation, posture and
 prompt routing. Anything the voice layer does directly inherits none of that,
 so reads happen here and writes (:mod:`~hermeswire.voice_layer.write_tools`)
 are declared specs gated below the model by

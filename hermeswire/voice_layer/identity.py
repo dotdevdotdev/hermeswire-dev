@@ -9,14 +9,14 @@ directory, and everything downstream works unchanged.
 
 What is deliberately NOT recorded:
 
-- **No conversation id.** ``conversation_ids`` is a chain of Claude Code
-  conversation UUIDs minted by ``build_agent_command``. The buddy has no Claude
+- **No conversation id.** ``conversation_ids`` is a chain of Hermes
+  conversation UUIDs minted by ``build_agent_command``. The buddy has no Hermes
   conversation; writing a synthetic id there would corrupt the one store that
   is supposed to be authoritative rather than reconstructed.
 - **No git identity.** ``repo``/``branch``/``worktree_path`` answer "where is
   this session working". The buddy never works in a checkout. Absent keys mean
   unknown, which is the truth.
-- **No posture, no role prompt.** Those configure a Claude launch. There is no
+- **No posture, no role prompt.** Those configure a Hermes launch. There is no
   launch.
 
 What IS recorded is the delivery adapter (so the inbox drain routes to the

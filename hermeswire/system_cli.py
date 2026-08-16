@@ -22,6 +22,7 @@ from .core import (
     _portal_auth_headers,
     _start_portal_local,
     build_agent_command,
+    capture_session_id,
     check_pip_environment,
     check_python_version,
     find_source_checkout,
@@ -123,6 +124,15 @@ def cmd_dev(args) -> int:
         ])
 
     record_session_launch(session_name, agent, project_dir, created_via="dev")
+
+    # Capture the Hermes session id post-launch (#4, #22). The dev session is
+    # interactive — the user attaches and types — so the session row may not
+    # exist yet. Poll briefly; None is the normal pre-first-turn result.
+    if agent_cmd and not agent.conversation_id:
+        captured_id = capture_session_id(project_dir, timeout=5)
+        if captured_id:
+            agent.conversation_id = captured_id
+            record_session_launch(session_name, agent, project_dir, created_via="dev")
 
     print("Attaching... (Ctrl+B D to detach)")
     subprocess.run(["tmux", "attach-session", "-t", session_name])
@@ -434,7 +444,7 @@ def cmd_init(args) -> int:
 
     Default behavior: Run the wizard and end on the concrete portal-URL next
     steps, so a first-run evaluator lands on a working voice portal.
-    Assisted mode (--assisted): also spawn the interactive Claude setup
+    Assisted mode (--assisted): also spawn the interactive Hermes setup
     session at the end to configure TTS/STT and other services.
     """
     # Check Python version first
@@ -449,7 +459,7 @@ def cmd_init(args) -> int:
     from .onboarding import run_onboarding
 
     # Default ends on the portal-URL next steps; --assisted opts into the
-    # interactive Claude setup session.
+    # interactive Hermes setup session.
     return run_onboarding(skip_session=not args.assisted, force=args.force)
 
 
@@ -614,7 +624,7 @@ def register_system_parser(subparsers) -> None:
     init_parser = subparsers.add_parser("init", help="Interactive setup wizard")
     init_parser.add_argument(
         "--assisted", action="store_true",
-        help="Spawn the interactive Claude setup session at the end "
+        help="Spawn the interactive Hermes setup session at the end "
              "(default: end on the portal-URL next steps)"
     )
     init_parser.add_argument(

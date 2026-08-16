@@ -41,7 +41,7 @@ ENSURE_EXIT_PRE_FAILURE = 4
 ENSURE_EXIT_TIMEOUT = 5
 ENSURE_EXIT_SESSION_ERROR = 6
 ENSURE_EXIT_USAGE_LIMIT = 7
-# Claude refused the turn for an expired login (#906). Distinct from TIMEOUT
+# Hermes refused the turn for an expired login (#906). Distinct from TIMEOUT
 # on purpose: a timeout says "we waited and nothing came", which sends the
 # operator looking at the task; this says the turn was rejected before any
 # model ran, and no amount of waiting or retrying can change that.
@@ -222,7 +222,7 @@ def cmd_ensure(args) -> int:
     if outage:
         return _output_result(
             False, json_mode,
-            f"Claude login expired on this machine (first seen "
+            f"Hermes login expired on this machine (first seen "
             f"{outage.get('detected_at')}) — skipping dispatch until `/login` "
             f"is run; the gate re-probes automatically",
             exit_code=ENSURE_EXIT_AUTH_EXPIRED,
@@ -615,6 +615,30 @@ def _launch_headless_hermes(session, prompt, project_path, task) -> "subprocess.
     )
 
 
+def _capture_headless_session_id(session, project_path, launched_at: float) -> None:
+    """Record the Hermes session id a headless ``hermes -z`` run minted (#22).
+
+    The headless path uses ``hermes -z`` (not ``hermes chat --cli``), so the
+    session source defaults to ``"cli"`` and there is no tmux session to
+    ``record_session_launch`` into — the process runs and exits. This captures
+    the id from ``~/.hermes/state.db`` post-exit and writes it to the session
+    metadata so the run is discoverable by ``doctor`` and resumable later.
+
+    Best-effort: a ``None`` from capture (store unavailable, row not yet
+    written) leaves no record — the headless run's identity is recoverable
+    from ``hermes sessions list`` instead.
+    """
+    from .core import AgentCommand, capture_session_id, record_session_launch
+    captured = capture_session_id(
+        project_path, timeout=5, source=None, started_after=launched_at,
+    )
+    if captured:
+        agent = AgentCommand(
+            command="", posture="bypass", conversation_id=captured,
+        )
+        record_session_launch(session, agent, project_path, created_via="ensure-headless")
+
+
 def _run_ensure_task_headless(args, session, task, ctx, shell, project_path, json_mode) -> int:
     """Run a scheduled task via headless ``hermes -z`` — process exit is completion.
 
@@ -683,6 +707,7 @@ def _run_ensure_task_headless(args, session, task, ctx, shell, project_path, jso
                     print(f"Iteration {iteration}/{task.max_iterations}")
                 print("Launching headless hermes -z...")
 
+            launched_at = time.time()
             proc = _launch_headless_hermes(session, prompt, project_path, task)
             try:
                 signal = wait_for_completion_signal(
@@ -694,6 +719,11 @@ def _run_ensure_task_headless(args, session, task, ctx, shell, project_path, jso
                 last_status = "incomplete"
                 last_summary = str(e) or "Timeout waiting for task completion"
                 break
+
+            # Capture the Hermes session id post-launch (#22). Only on the
+            # first iteration — loop iterations resume the same session.
+            if iteration == 1:
+                _capture_headless_session_id(session, project_path, launched_at)
 
             last_status = signal.get("status", "incomplete")
             last_summary = signal.get("summary", "")
@@ -844,7 +874,7 @@ def _run_ensure_task(args, session, task, ctx, shell, project_path, json_mode) -
             if not json_mode:
                 print(f"Creating session '{session}'...")
 
-            # Fork starting_session if configured (carries over Claude conversation context)
+            # Fork starting_session if configured (carries over Hermes conversation context)
             if task.starting_session and task.starting_session != session:
                 if tmux_session_exists(task.starting_session):
                     if not json_mode:
