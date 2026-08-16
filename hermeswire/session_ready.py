@@ -10,13 +10,22 @@ injects a first prompt into a new session — council, `hermeswire send
 Hermes readiness differs from the old Claude Code's in one load-bearing way: its
 prompt_toolkit REPL draws the ``❯`` prompt as part of its readline loop, so
 once the prompt glyph is on screen the input handler IS wired. No keystroke
-probe is needed (that was the old Claude Code's fix for its banner-render race), and there
-is no trust-this-folder prompt or ``[Pasted text]`` chip. The verified paste
-keys on the prompt line instead of the old Claude Code's horizontal-rule box.
+probe is needed (that was the old Claude Code's fix for its banner-render race),
+and there is no trust-this-folder prompt. The verified paste keys on the
+prompt line instead of the old Claude Code's horizontal-rule box.
+
+Hermes DOES render a ``[Pasted text #N: X lines → <file>]`` chip for large
+pastes (issue #34): ``cli.py`` saves the text to ``~/.hermes/pastes/`` and
+collapses the input-box rendering to the chip, so ``box_shows_message`` must
+recognize the chip (and verify the paste file's content) as "our message
+landed" — without it a multi-line report-back lands as a chip, Phase 1 times
+out, and ``safe_deliver`` re-pastes forever.
 """
 
+import re
 import time
 import uuid
+from pathlib import Path
 
 # How far back into scrollback to look when verifying delivery. A fast agent
 # consumes the paste, submits it, and emits output within the settle window,
@@ -86,6 +95,53 @@ ACTIVITY_MARKERS = (
     "⏱",  # status-bar elapsed timer
     "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏",  # command spinner frames
 )
+
+# Hermes DOES render a paste-collapse chip for large pastes (issue #34):
+# ``cli.py`` saves the pasted text to ``~/.hermes/pastes/paste_N_<ts>.txt`` and
+# renders ``[Pasted text #N: X lines → <path>]`` in the input box (U+2192 arrow).
+# The chip is what box_shows_message must recognize as "our message landed" —
+# without it, a multi-line report-back lands as a chip, Phase 1 times out
+# (the chip text is NOT the message), and safe_deliver re-pastes forever.
+_PASTE_CHIP_RE = re.compile(
+    r"\[Pasted text #(\d+): \d+ lines \u2192 (.+?)\]"
+)
+
+
+def _paste_chip_matches_message(box: str, message: str) -> bool:
+    """Does *box* hold a Hermes paste-collapse chip whose file matches *message*?
+
+    When Hermes collapses a large paste, the input box renders as
+    ``[Pasted text #N: X lines → <path>]`` — NOT the raw text. The chip alone
+    is not enough to identify *our* message (any large paste produces one), so
+    we read the referenced paste file and compare its content to *message*
+    (whitespace-normalized, same as the rest of the path). The chip's ``<path>``
+    is the ABSOLUTE path Hermes wrote the paste to (``cli.py`` derives it from
+    ``_hermes_home / "pastes"``), so it is read as-is — never re-resolved
+    against OUR ``~/.hermes/pastes``, which on a remote-machine session would
+    point at the wrong host. This gives the same positive-identity rigor the
+    whole-message test demands (#667): the file must hold our FULL message, not
+    a fragment (a truncated paste must not read as landed) nor a superset (a
+    foreign chip referencing a different file must not).
+
+    If the file can't be read (wrong machine, stale path, permissions), we
+    fall back to accepting the chip alone — a chip present after we pasted is
+    strong evidence our paste landed, and refusing it re-triggers the
+    redelivery loop the chip branch exists to break.
+    """
+    m = _PASTE_CHIP_RE.search(box)
+    if m is None:
+        return False
+    nm = "".join(message.split())
+    if not nm:
+        return False
+    paste_path = Path(m.group(2))
+    try:
+        content = paste_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        # Can't verify the file content — accept the chip alone. This is the
+        # post-paste phase; a chip here is almost certainly ours.
+        return True
+    return nm == "".join(content.split())
 
 
 def paste_no_enter(session: str, message: str, pane_index: int = 0) -> None:
@@ -322,9 +378,20 @@ def box_shows_message(box: str, message: str, allow_chip: bool = True) -> bool:
        "box no longer shows our text" could never come true. tmux
        ``capture-pane`` wraps long lines at pane width mid-word, so both sides
        are compared with all whitespace stripped.
-    (Hermes's prompt_toolkit has no ``[Pasted text …]`` placeholder, so the old
-    chip branch and its ``allow_chip`` guard are gone — ``allow_chip`` is kept
-    only for signature stability.)
+    2. **Paste-collapse chip** (issue #34). Hermes DOES render a
+       ``[Pasted text #N: X lines → <file>]`` chip for large pastes
+       (≥5 lines or ≥2000 chars by default) — the old comment claiming it
+       doesn't was wrong. When it fires, the box shows the chip, NOT the raw
+       text, so (1) and (3) both fail and a landed paste reads as un-landed —
+       Phase 1 times out and safe_deliver re-pastes forever (observed 2-3x per
+       worker session). The chip branch reads the referenced paste file and
+       compares its content to *message* for the same positive-identity rigor
+       the whole-message test demands. If the file is unreadable (wrong
+       machine, stale path), the chip alone is accepted — this is the
+       post-paste phase, and a chip present after we pasted is almost
+       certainly ours. ``allow_chip`` gates this branch: it is True for the
+       POST-paste land/submit phases (Phase 1, Phase 2) and False for the
+       PRE-paste foreign-draft guard, where a chip is someone else's draft.
     3. **A rendered window of the message** (#851). The input box has a bounded
        visible height and scrolls: a draft taller than that height renders only
        part of itself, so (1) is *impossible* for it and a long single-line
@@ -341,6 +408,8 @@ def box_shows_message(box: str, message: str, allow_chip: bool = True) -> bool:
     if not nm:
         return False
     if nb and nm in nb:
+        return True
+    if allow_chip and _paste_chip_matches_message(box, message):
         return True
     if len(nb) < MIN_BOX_FRAGMENT or len(nb) >= len(nm):
         return False

@@ -44,6 +44,14 @@ buf = ""
 # bounded height and SCROLLS, so a draft taller than it renders only its tail
 # (#851). 0 (default) keeps the old unbounded rendering.
 MAX_ROWS = int(sys.argv[2]) if len(sys.argv) > 2 else 0
+# argv[3] == "collapse": emulate Hermes's large-paste collapse. A bracketed
+# paste with >=5 newlines or >=2000 chars is written to argv[4] (a paste dir)
+# and the box renders a "[Pasted text #N: X lines → <file>]" chip instead of
+# the raw text — exactly what Hermes does (#34). Enter on the chip submits it
+# (the buffer clears) like a normal turn.
+COLLAPSE = len(sys.argv) > 3 and sys.argv[3] == "collapse"
+PASTE_DIR = sys.argv[4] if COLLAPSE and len(sys.argv) > 4 else None
+paste_counter = 0
 
 def wrap(text, width):
     out = []
@@ -88,6 +96,7 @@ if len(sys.argv) > 1:
 
 data = b""
 in_paste = False
+paste_content = ""
 START = b"\x1b[200~"
 END = b"\x1b[201~"
 while True:
@@ -100,7 +109,26 @@ while True:
         progressed = False
         marker = END if in_paste else START
         if data.startswith(marker):
-            data = data[len(marker):]; in_paste = not in_paste
+            data = data[len(marker):]
+            if in_paste:  # marker was END: a bracketed paste just closed
+                # tmux's paste-buffer delivers newlines as \r even inside
+                # bracketed paste (measured); Hermes normalizes \r -> \n in its
+                # paste handler, so mirror it (cli.py).
+                paste_content = paste_content.replace("\r\n", "\n").replace("\r", "\n")
+                if COLLAPSE and PASTE_DIR and (
+                        paste_content.count("\n") >= 5 or len(paste_content) >= 2000):
+                    paste_counter += 1
+                    fname = os.path.join(
+                        PASTE_DIR,
+                        "paste_%d_%d.txt" % (paste_counter, int(time.time() * 1000)))
+                    with open(fname, "w", encoding="utf-8") as f:
+                        f.write(paste_content)
+                    buf += "[Pasted text #%d: %d lines \u2192 %s]" % (
+                        paste_counter, paste_content.count("\n") + 1, fname)
+                else:
+                    buf += paste_content
+                paste_content = ""
+            in_paste = not in_paste
             progressed = True; continue
         # If the remaining bytes could be the start of the marker, wait for more.
         if marker.startswith(data):
@@ -116,7 +144,7 @@ while True:
         ch = data[:n].decode("utf-8", "replace"); data = data[n:]
         progressed = True
         if in_paste:
-            buf += ch                # pasted bytes are literal (incl. \n / \r)
+            paste_content += ch      # pasted bytes are literal (incl. \n / \r)
         elif ch == "\r":             # real Enter keystroke -> submit
             if buf:
                 buf = ""
@@ -150,7 +178,8 @@ def emulator_factory(tmp_path):
     created = []
 
     def make(wire_delay: float = 0.0, box_rows: int = 0,
-             width: int = 120, height: int = 40):
+             width: int = 120, height: int = 40,
+             collapse: bool = False, paste_dir: "str | None" = None):
         session = f"awtest-{uuid.uuid4().hex[:8]}"
         # Dedicated server socket so we never touch the user's live tmux. The
         # socket path MUST be short — macOS caps Unix-domain socket paths at
@@ -164,11 +193,9 @@ def emulator_factory(tmp_path):
                 ["tmux", "-S", socket, *args], capture_output=True, text=True
             )
 
-        cmd = f"{sys.executable} {script}"
-        if wire_delay or box_rows:
-            cmd += f" {wire_delay}"
-        if box_rows:
-            cmd += f" {box_rows}"
+        cmd = f"{sys.executable} {script} {wire_delay} {box_rows}"
+        if collapse:
+            cmd += f" collapse {paste_dir}"
         tmux_s("new-session", "-d", "-s", session,
                "-x", str(width), "-y", str(height), cmd)
         # Wait for the box to render.
@@ -465,3 +492,41 @@ def test_clear_input_box_empties_a_tall_draft(emulator_factory, monkeypatch):
     assert session_ready.clear_input_box(session)
     cap = _tmux("-S", socket, "capture-pane", "-t", f"{session}.0", "-p").stdout
     assert session_ready.input_box(cap) == ""
+
+
+# A multi-line report-back (6 lines / 5 newlines) — enough to trip Hermes's
+# large-paste collapse (>=5 newlines), so a real Hermes pane renders it as a
+# "[Pasted text #N: X lines → <file>]" chip instead of the raw text (#34).
+CHIP_MSG = (
+    "Review the file-based memory store for this project and prune whatever "
+    "has rotted.\n"
+    "The current memories are in the store's REVIEW.md.\n"
+    "Verify each one against the current state of this repo.\n"
+    "Delete the ones the code now contradicts.\n"
+    "Merge duplicates into a single file.\n"
+    "Report back with a one-paragraph summary naming any systemic pattern."
+)
+
+
+def test_long_multiline_paste_collapsed_to_a_chip_delivers(
+        emulator_factory, monkeypatch):
+    # #34: Hermes collapses a large MULTI-line paste to a
+    # "[Pasted text #N: X lines → <file>]" chip, so the box renders the CHIP,
+    # not the raw text. The pre-fix landing gate couldn't recognize the chip
+    # (whole-message and window tests both fail against it), so Phase 1 timed
+    # out and safe_deliver re-pasted the report-back forever (2-3x per worker
+    # session). This drives a real pane whose emulator collapses the paste to a
+    # chip (writing the paste file, exactly as Hermes does) and asserts
+    # send_verified confirms it end-to-end — the box is left empty, so there is
+    # no re-delivery.
+    paste_dir = tempfile.mkdtemp(prefix="awp-")
+    session, socket, _ = emulator_factory(collapse=True, paste_dir=paste_dir)
+    _patch_pane_manager(monkeypatch, socket)
+
+    assert CHIP_MSG.count("\n") >= 5, "collapse threshold not met"
+    assert session_ready.send_verified(session, CHIP_MSG)
+
+    box = session_ready.input_box(
+        _tmux("-S", socket, "capture-pane", "-t", f"{session}.0", "-p").stdout
+    )
+    assert box == "", f"chip-collapsed draft sat unsent: {box!r}"
