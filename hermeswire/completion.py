@@ -61,7 +61,46 @@ def _pid_is_hermes_agent(pid: str) -> bool:
     cmdline = result.stdout.strip()
     if not cmdline:
         return False
-    return "hermes" in cmdline and "hermeswire" not in cmdline
+    # Identify the agent by its `hermes` executable, not the "hermes" substring:
+    # a launch like `hermes chat ... -s hermeswire-task-runner` carries the
+    # hermeswire role *skill* in its args, so a substring test would misread a
+    # live agent as a daemon (which runs `hermeswire ...` / `-m hermeswire`).
+    return any(tok == "hermes" or tok.endswith("/hermes") for tok in cmdline.split())
+
+
+def _pid_has_agent_descendant(pid: str) -> bool:
+    """Does any descendant of *pid* run a Hermes agent?
+
+    tmux keeps ``pane_pid`` as the pane's login shell while
+    ``pane_current_command`` reports the foreground child (e.g. ``python3.13``
+    for ``hermes chat``). The agent therefore lives *under* the shell, so the
+    shell's own cmdline is not where to look — walk the child tree instead.
+    """
+    if not pid:
+        return False
+    queue = [pid]
+    seen = set()
+    while queue:
+        cur = queue.pop()
+        if cur in seen:
+            continue
+        seen.add(cur)
+        try:
+            result = subprocess.run(
+                ["pgrep", "-P", cur],
+                capture_output=True, text=True, timeout=5,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if result.returncode != 0:
+            continue
+        for child in result.stdout.split():
+            if child in seen:
+                continue
+            if _pid_is_hermes_agent(child):
+                return True
+            queue.append(child)
+    return False
 
 
 def _command_is_agent(command: str, pid: str | None = None) -> bool:
@@ -101,6 +140,12 @@ def _session_has_agent(session: str) -> bool:
         command = parts[0]
         pid = parts[1] if len(parts) > 1 else ""
         if _command_is_agent(command, pid):
+            return True
+        # The agent may run as a *child* of the pane's login shell: tmux keeps
+        # pane_pid as the shell while pane_current_command shows the foreground
+        # python. Resolve the real agent among the shell's descendants before
+        # concluding the pane fell back to a bare shell.
+        if _pid_has_agent_descendant(pid):
             return True
 
     return False
