@@ -464,7 +464,7 @@ def _render_damage_control_section() -> int:
     else:
         print("  [ok] Rule ids unique across the loaded rule set")
 
-    # Matcher presence in ~/.claude/settings.json.
+    # Matcher presence in ~/.hermes/config.yaml.
     missing_matchers = safety_commands.missing_damage_control_matchers()
     if missing_matchers:
         print(f"  [!!] PreToolUse matchers not registered: {', '.join(missing_matchers)}")
@@ -691,7 +691,7 @@ def _render_orphaned_worktrees_section() -> int:
 def scan_orphaned_history(sessions: list[str] | None = None) -> list[dict]:
     """Recorded sessions whose conversation is intact but unreachable (#871).
 
-    Claude keys conversation history by cwd (``~/.claude/projects/<encoded-cwd>/``),
+    The old Claude Code keyed conversation history by cwd (``~/.claude/projects/<encoded-cwd>/``),
     so a session whose directory MOVED has a transcript that still exists and
     can no longer be found: ``--resume`` from the new location reports
     ``No conversation found with session ID``. That is a distinct state from
@@ -723,7 +723,7 @@ def scan_orphaned_history(sessions: list[str] | None = None) -> list[dict]:
       sitting next to it).
     - ``gone`` — no history anywhere, and this cannot say WHY: a session that
       was never prompted has no transcript because none was ever written
-      (lazy creation), and Claude also evicts from its own cache
+      (lazy creation), and the old Claude Code also evicts from its own cache
       (``~/.claude/projects/`` was observed dropping 563 -> 544 in ~25min with
       ``cleanupPeriodDays`` unset, cause undetermined). Reported for LIVE
       sessions only, as information, never as an issue — a live session is one
@@ -817,7 +817,7 @@ def _render_orphaned_history_section() -> int:
 
     if gone:
         print(f"  [..] {len(gone)} live session(s) with no conversation history on disk "
-              "(never prompted, or evicted by Claude — not determinable here):")
+              "(never prompted, or evicted by the old Claude Code — not determinable here):")
         for f in gone:
             print(f"       - {f['session']} conversation {f['conversation_id'][:8]} "
                   f"(expected {f['expected_dir']}/)")
@@ -926,11 +926,11 @@ def _render_auth_expired_section() -> int:
         print("  [ok] No expired-login outage recorded")
         return 0
     sessions = ", ".join(outage.get("sessions") or []) or "(none recorded)"
-    print("  [!!] Claude login is EXPIRED on this machine — scheduled dispatch is gated:")
+    print("  [!!] Hermes login is EXPIRED on this machine — scheduled dispatch is gated:")
     print(f"       First seen: {outage.get('detected_at')}   Last seen: {outage.get('last_seen')}")
     print(f"       Sessions affected: {sessions}")
     print(f"       Evidence: {outage.get('transcript')}")
-    print("       Fix: run `/login` in any Claude Code session. The gate re-probes "
+    print("       Fix: run `/login` in any Hermes session. The gate re-probes "
           "on its own and reopens on the first successful turn.")
     return 1
 
@@ -1106,7 +1106,7 @@ def _render_blocked_prompt_section() -> int:
 def _render_mcp_import_section() -> int:
     """Doctor section: does the MCP server entrypoint actually import? (#874)
 
-    ``hermeswire mcp`` is launched by Claude Code, not by hermeswire, so an
+    ``hermeswire mcp`` is launched by Hermes, not by hermeswire, so an
     import-time failure never surfaces as an hermeswire error — the client
     reports a connection close and the agent in the session just finds its
     ``mcp__hermeswire__*`` tools missing. #874 was exactly this: an unbounded
@@ -1128,7 +1128,7 @@ def _render_mcp_import_section() -> int:
           "tool is missing from every session")
     if err:
         print(f"       {err[-1]}")
-    print("       Verify with: claude mcp list   (expect 'hermeswire: ✘ Failed to connect')")
+    print("       Verify with: hermes mcp list   (expect 'hermeswire: ✘ Failed to connect')")
     print("       Usually a dependency resolution: check the bounds in pyproject.toml, "
           "then `hermeswire rebuild`.")
     return 1
@@ -1819,10 +1819,10 @@ def cmd_doctor(args) -> int:
     print("\nChecking for long-pending report-backs...")
     issues_found += _render_pending_messages_section()
 
-    # 10c. Expired Claude login (#906) — the state that made #867 cost two
+    # 10c. Expired Hermes login (#906) — the state that made #867 cost two
     # hours. Nothing else on this list would surface it: the pane is alive and
     # the agent process is running, so every liveness check passes.
-    print("\nChecking for an expired Claude login...")
+    print("\nChecking for an expired Hermes login...")
     try:
         issues_found += _render_auth_expired_section()
     except Exception as e:
@@ -1858,10 +1858,10 @@ def cmd_doctor(args) -> int:
     except Exception as e:
         print(f"  [..] Could not check for orphaned worktrees: {e}")
 
-    # 11c. Sessions whose Claude conversation is intact but keyed to a cwd they
+    # 11c. Sessions whose Hermes conversation is intact but keyed to a cwd they
     # no longer run in (#871) — a moved directory strands the transcript where
-    # `--resume` will never look. Distinct from "history gone" (a cache Claude
-    # owns and evicts), which this deliberately stays quiet about.
+    # `--resume` will never look. Distinct from "history gone" (a cache the old
+    # Claude Code owns and evicts), which this deliberately stays quiet about.
     print("\nChecking for orphaned conversation history (#871)...")
     try:
         issues_found += _render_orphaned_history_section()

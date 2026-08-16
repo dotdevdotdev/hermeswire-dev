@@ -13,8 +13,8 @@ from typing import Any, Optional
 
 import yaml
 
-# POSTURE is the single session axis: the Claude Code permission mode the agent
-# runs under (#729). Claude Code is the only agent backend (#730), so there is
+# POSTURE is the single session axis: the Hermes permission mode the agent
+# runs under (#729). Hermes is the only agent backend (#730), so there is
 # nothing left to fuse a permission mode WITH — posture is all there is. The
 # `bare` sentinel is orthogonal: no agent, so no permission mode at all.
 # Tool-locking postures (restricted/readonly) were dropped — every agent runs

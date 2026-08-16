@@ -1,1 +1,1 @@
-# HermesWire hooks for Claude Code integration
+# HermesWire hooks for Hermes agent integration

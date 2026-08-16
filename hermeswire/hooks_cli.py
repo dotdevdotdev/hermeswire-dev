@@ -215,14 +215,14 @@ def skill_drift() -> dict[str, str]:
 
 def _hermes_hook_command(hook_name: str) -> str:
     """The ``command`` string registered for a managed hook (uses ``~`` like the
-    old Claude registration, for portability across machines)."""
+    old Claude Code registration, for portability across machines)."""
     return f"~/.hermes/hooks/{hook_name}"
 
 
 def _config_path() -> Path:
     """Resolve ``~/.hermes/config.yaml`` at call time, not import time.
 
-    The old Claude settings.json writer resolved its path via ``Path.home()``
+    The old Claude Code's settings.json writer resolved its path via ``Path.home()``
     inside the function, so tests that monkeypatch ``Path.home`` isolate
     correctly. The module constants (``HERMES_CONFIG`` etc.) are computed at
     import time and would otherwise escape that monkeypatch, so the config

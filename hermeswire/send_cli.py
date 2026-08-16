@@ -238,7 +238,7 @@ def cmd_send(args) -> int:
             quoted_prompt = shlex.quote(prompt)
             cmd = f"tmux send-keys -t {quoted_session} -l {quoted_prompt} && sleep 0.5 && tmux send-keys -t {quoted_session} Enter"
 
-        # For multi-line text, Claude Code shows "[Pasted text...]" and waits for Enter
+        # For multi-line text, Hermes shows "[Pasted text...]" and waits for Enter
         if "\n" in prompt or len(prompt) > 200:
             cmd += f" && sleep 0.5 && tmux send-keys -t {quoted_session} Enter"
 
@@ -276,7 +276,7 @@ def cmd_send(args) -> int:
 
     if wait_ready:
         # Wait for the agent to be ready, then send with delivery
-        # verification (a paste into a booting Claude vanishes silently).
+        # verification (a paste into a booting Hermes vanishes silently).
         from hermeswire.session_ready import (
             new_delivery_marker,
             send_verified,

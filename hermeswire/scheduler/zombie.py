@@ -25,7 +25,7 @@ BRANCH_PREFIX = "scheduler-"
 
 # tmux `session_created` is whole seconds. A healthy launch's pre-agent shell
 # moment lasts well under a second (see `_launch_tmux_session`'s 0.1s
-# settle), but this gives a slow `claude` cold start real headroom before a
+# settle), but this gives a slow `hermes` cold start real headroom before a
 # session still mid-launch could be mistaken for a zombie.
 MIN_AGE_SECONDS = 60
 
@@ -157,7 +157,7 @@ def _notify(session: str, branch: str, command: str, pane_tail: str = "") -> Non
                 f"on `{socket.gethostname()}` never reached its agent — the "
                 f"pane was stuck at a bare shell (`{command}`), the #739 "
                 "failure mode where the worktree launch crashes before "
-                "`claude` starts (e.g. a missing worktree directory). The "
+                "`hermes` starts (e.g. a missing worktree directory). The "
                 "watchdog killed the session so it can't linger.\n\n"
                 + (f"Pane tail before the kill:\n\n    {pane_tail}\n\n" if pane_tail else "")
                 + "Check the scheduler events log for the originating "

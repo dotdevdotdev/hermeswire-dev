@@ -1,6 +1,6 @@
 """Provider-limit recovery — deterministic, zero-LLM.
 
-Claude Code parked on an interactive usage-limit dialog (``/rate-limit-options``)
+The old Claude Code parked on an interactive usage-limit dialog (``/rate-limit-options``)
 that blocked forever. Hermes has **no such dialog**: provider rate-limit /
 quota / credit failures surface as a structured ``AuthError`` (provider, code,
 ``relogin_required``) on the failed turn's stderr or the session's last
@@ -62,7 +62,7 @@ RESUME_NUDGE = (
     "Continue your task from where you stopped and complete it fully."
 )
 
-# A provider limit error has no parseable reset time (unlike Claude's dialog).
+# A provider limit error has no parseable reset time (unlike the old Claude Code's dialog).
 # Transient rate limits (codex_rate_limited / plain 429s) clear on their own
 # within a short window; use that as the resume nudge target.
 TRANSIENT_RESET_WINDOW = timedelta(minutes=5)

@@ -5,7 +5,7 @@ Workers are spawned as panes within the orchestrator's session,
 enabling a visual dashboard where all agents are visible simultaneously.
 
 Key concepts:
-- Pane 0 = orchestrator (main Claude Code session)
+- Pane 0 = orchestrator (main Hermes session)
 - Panes 1+ = workers (spawned agents working in parallel)
 """
 
@@ -263,7 +263,7 @@ def send_to_target(target: str, text: str, enter: bool = True) -> None:
         paste-buffer; short text uses `send-keys -l` (literal mode).
       - When `enter=True`, an Enter is sent after a 0.5–1.0s settle delay.
       - Multi-line / long prompts (`\\n` or len > 200) get a SECOND Enter
-        after another 0.5s. Claude Code renders these as
+        after another 0.5s. Hermes renders these as
         `[Pasted text +N lines]` and needs one Enter to dismiss the banner
         plus one to actually submit. Skipping the second leaves the prompt
         stuck in the input — the failure that hung the scheduler at 8am.
@@ -282,9 +282,9 @@ def send_to_target(target: str, text: str, enter: bool = True) -> None:
             if not result.success:
                 raise RuntimeError(f"Failed to load buffer: {result.stderr.strip()}")
             # -p wraps the paste in bracketed-paste delimiters when the app has
-            # requested them (Claude Code always does; tmux falls back to a
+            # requested them (Hermes always does; tmux falls back to a
             # plain paste otherwise). Without the explicit end-of-paste marker,
-            # Claude Code detects the paste heuristically as an input burst,
+            # Hermes detects the paste heuristically as an input burst,
             # and an Enter arriving inside that window is coalesced INTO the
             # paste as a newline instead of submitting — the swallowed-Enter
             # root cause behind the #698 stress-test failures.

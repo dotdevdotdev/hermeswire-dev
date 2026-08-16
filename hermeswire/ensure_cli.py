@@ -41,7 +41,7 @@ ENSURE_EXIT_PRE_FAILURE = 4
 ENSURE_EXIT_TIMEOUT = 5
 ENSURE_EXIT_SESSION_ERROR = 6
 ENSURE_EXIT_USAGE_LIMIT = 7
-# Claude refused the turn for an expired login (#906). Distinct from TIMEOUT
+# Hermes refused the turn for an expired login (#906). Distinct from TIMEOUT
 # on purpose: a timeout says "we waited and nothing came", which sends the
 # operator looking at the task; this says the turn was rejected before any
 # model ran, and no amount of waiting or retrying can change that.
@@ -222,7 +222,7 @@ def cmd_ensure(args) -> int:
     if outage:
         return _output_result(
             False, json_mode,
-            f"Claude login expired on this machine (first seen "
+            f"Hermes login expired on this machine (first seen "
             f"{outage.get('detected_at')}) — skipping dispatch until `/login` "
             f"is run; the gate re-probes automatically",
             exit_code=ENSURE_EXIT_AUTH_EXPIRED,
@@ -874,7 +874,7 @@ def _run_ensure_task(args, session, task, ctx, shell, project_path, json_mode) -
             if not json_mode:
                 print(f"Creating session '{session}'...")
 
-            # Fork starting_session if configured (carries over Claude conversation context)
+            # Fork starting_session if configured (carries over Hermes conversation context)
             if task.starting_session and task.starting_session != session:
                 if tmux_session_exists(task.starting_session):
                     if not json_mode:

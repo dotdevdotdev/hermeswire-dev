@@ -4,14 +4,14 @@ Q2 is settled as **handoff, not a tool**. The buddy does not build a
 ``worktree_create`` argv, does not create sessions, does not own a checkout and
 does not appear in the topology. Its canonical write is
 ``hermeswire msg send --to <session> --from <buddy> --kind request <body>``,
-addressed to a real Claude session which DOES have damage-control hooks,
+addressed to a real Hermes session which DOES have damage-control hooks,
 posture, worktree isolation and prompt routing.
 
 That distinction is the precise one, and the loose version contradicts itself:
 **the sending is unguarded; the acting-on-it is guarded.** No programmatic path
 to ``msg send`` has damage-control coverage — not this ``subprocess.run``, and
 not ``mcp__hermeswire__msg_send`` either, which is absent from the ``PreToolUse``
-matcher list. What the RECIPIENT does with the message runs inside a real Claude
+matcher list. What the RECIPIENT does with the message runs inside a real Hermes
 session with hooks. That is the whole point of handoff, and it is why the
 boundary holds by construction rather than by discipline.
 

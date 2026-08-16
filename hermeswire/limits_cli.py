@@ -36,7 +36,7 @@ def _plist_content(hermeswire_bin: str) -> str:
     home = str(Path.home())
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Usage-limit watchdog — detects the Claude Code usage-limit dialog in any
+  Usage-limit watchdog — detects the Hermes usage-limit error in any
   tmux pane, parks the session (option 1: stop and wait), and nudges it
   back to work after the limit resets. Deterministic plain code, no agent.
 
@@ -85,7 +85,7 @@ def _plist_content(hermeswire_bin: str) -> str:
 
 def _systemd_service_content(hermeswire_bin: str) -> str:
     home = str(Path.home())
-    return f"""# Usage-limit watchdog — detects the Claude Code usage-limit dialog in any
+    return f"""# Usage-limit watchdog — detects the Hermes usage-limit error in any
 # tmux pane, parks the session (option 1: stop and wait), and nudges it
 # back to work after the limit resets. Deterministic plain code, no agent.
 #
@@ -432,7 +432,7 @@ def register_limits_parser(subparsers) -> None:
         "limits",
         help="Usage-limit recovery: detect the limit dialog, park, auto-resume",
         description=(
-            "Deterministic recovery from Claude Code usage-limit dialogs: a "
+            "Deterministic recovery from Hermes usage-limit errors: a "
             "watchdog (launchd on macOS, systemd --user timer on Linux) ticks "
             "every minute, parks sessions sitting on "
             "the dialog (option 1: stop and wait), emails the owner, and "

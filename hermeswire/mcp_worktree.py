@@ -263,7 +263,7 @@ def worktree_remove(
     never touches main and never requires switching the primary checkout —
     branch deletion works entirely from the (now-vacated) branch name.
 
-    If the torn-down session tracked any claude-in-chrome verification tabs
+    If the torn-down session tracked any hermes-in-chrome verification tabs
     (`chrome_tab_track`) it never closed itself, they're reported here — YOU
     must close them with `tabs_close_mcp`; hermeswire has no way to do it for you.
 
@@ -308,7 +308,7 @@ def worktree_remove(
 
 
 def _orphaned_tabs_warning(orphaned: list | None) -> str:
-    """Format a WARNING suffix for claude-in-chrome tabs a torn-down session
+    """Format a WARNING suffix for hermes-in-chrome tabs a torn-down session
     never closed itself — hermeswire can't close them (that MCP tool only runs
     inside the calling agent's own client), so the calling agent must (#717).
     Entries carrying a "session" key (the --gc-merged multi-session sweep) are
@@ -320,7 +320,7 @@ def _orphaned_tabs_warning(orphaned: list | None) -> str:
         f"{t['session']}:{t.get('tab_id', '?')}" if t.get("session") else t.get("tab_id", "?")
         for t in orphaned
     )
-    return (f" WARNING: {len(orphaned)} claude-in-chrome tab(s) opened by torn-down session(s) were "
+    return (f" WARNING: {len(orphaned)} hermes-in-chrome tab(s) opened by torn-down session(s) were "
             f"never closed — call tabs_close_mcp for: {ids}.")
 
 

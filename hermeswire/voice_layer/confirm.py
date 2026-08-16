@@ -964,7 +964,7 @@ class Proposal:
 # Attribution rendering (spec §4b)
 # =============================================================================
 
-#: Hard cap on the rendered body. **Measured in a real Claude Code pane**, not
+#: Hard cap on the rendered body. **Measured in a real Hermes pane**, not
 #: reasoned about — reproduce with ``tools/voice_heal_probe.py``.
 #:
 #: The binding constraint is ``flush_session``'s ``stuck`` test: a plain
@@ -1086,7 +1086,7 @@ def _one_line(text: str) -> str:
     -p`` (bracketed paste) with ``enter=False`` — and the #621 dedup is safe
     too, because ``message_on_scrollback`` whitespace-normalizes both sides.
 
-    **The #689 heal is what breaks.** A multi-line paste renders in Claude Code
+    **The #689 heal is what breaks.** A multi-line paste renders in Hermes
     as the ``[Pasted text #N +M lines]`` chip and nothing else, so
     ``flush_session``'s ``stuck`` substring test finds nothing, ``finish_submit``
     never runs, ``_box_static`` classifies it no-penalty after three sweeps, and

@@ -13,7 +13,7 @@ service-registry entry. The watchdog never touches a session without a policy.
 
 Where the headroom comes from (Hermes, v0.19.0)
 ------------------------------------------------
-Hermes has **no** Claude-style ``NN%`` context-remaining footer and no
+Hermes has **no** Claude-style (pre-conversion) ``NN%`` context-remaining footer and no
 model-name meta line in ``tmux capture-pane`` — the old Claude-Code bar scraper
 is gone. Headroom is instead read from Hermes's SQLite session store
 (``~/.hermes/state.db``, ``hermes_state.SessionDB``): the ``sessions`` table
@@ -30,7 +30,7 @@ cwd, then ``get_session(id)`` supplies the token columns.
 
 **Advisory, never a live gauge.** Token columns are cumulative session totals,
 not a resettable bar: after a ``/compress`` they may not jump back the way
-Claude's bar did, and Hermes auto-compresses on its own
+the old Claude Code's bar did, and Hermes auto-compresses on its own
 (``agent/context_compressor.py``). So a low headroom must persist across two
 watchdog ticks before an auto-``/clear`` fires, and a pane whose cwd has no
 store row reads as "unknown / skip" — never "0% → /clear".
@@ -376,7 +376,7 @@ def act_on_session(session: str, policy: str, threshold: int | None = None) -> d
     assumed sent.
 
     Delivery mirrors the sibling inbox drain (:func:`inbox.flush_session`), and
-    the two conservatism guards replace the old Claude ``prompt_is_empty``
+    the two conservatism guards replace the old Claude Code's ``prompt_is_empty``
     collision check (removed in #7 — Hermes has no scrapeable prompt box to
     gate on, and ``safe_deliver`` already refuses gone/non-agent targets):
 

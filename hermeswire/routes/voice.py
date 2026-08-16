@@ -371,7 +371,7 @@ class VoiceRoutesMixin:
             if option_number:
                 # "Type something" flow: select option first (no Enter), then type
                 self.agent.send_keys(name, str(option_number))
-                await asyncio.sleep(0.5)  # Wait for Claude to show text input
+                await asyncio.sleep(0.5)  # Wait for Hermes to show text input
                 success = self.agent.send_input(name, answer)  # text + Enter
             elif is_custom:
                 # Direct custom answer: type the text and press Enter

@@ -5,7 +5,7 @@ Reads conversation data from Hermes's SQLite session store at
 CLI surface), which replaced Claude Code's ``~/.claude/history.jsonl`` +
 ``~/.claude/projects/<encoded-cwd>/<id>.jsonl`` tree.
 
-Key semantic differences from the Claude store, all of which fall out of
+Key semantic differences from the old Claude Code's store, all of which fall out of
 Hermes sessions being keyed by a plain ``id`` with ``cwd`` as a *data column*:
 
 - There is no ``encode_project_path`` equivalent: a moved directory can never
@@ -35,9 +35,9 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-#: Claude's data directory. Retained only because ``auth_expired`` (#13) still
+#: The old Claude Code's data directory. Retained only because ``auth_expired`` (#13) still
 #: reads ``PROJECTS_DIR``/``encode_project_path``; the history functions below
-#: no longer touch the Claude tree.
+#: no longer touch the old Claude Code tree.
 CLAUDE_DIR = Path.home() / ".claude"
 PROJECTS_DIR = CLAUDE_DIR / "projects"
 
@@ -155,7 +155,7 @@ def locate_conversation(
 ) -> ConversationLocation:
     """Locate *conversation_id* in the Hermes session store.
 
-    ``projects_dir`` is accepted for backward compatibility with the Claude
+    ``projects_dir`` is accepted for backward compatibility with the old Claude
     store's callers but is ignored: Hermes keeps every session in one DB, keyed
     by id, so a moved directory can never strand a transcript.
     """

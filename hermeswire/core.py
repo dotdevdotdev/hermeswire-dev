@@ -219,7 +219,7 @@ def _with_unattended_env(env: dict[str, str]) -> dict[str, str]:
     that the grant now carries its PATH SCOPE with it (``encode_unattended_allow``
     keeps the scope in the wire format), so what a child inherits is
     "commit under ``<store>``", not "commit". A child cannot widen it: the
-    damage-control hook reads this var from the Claude Code process env, not
+    damage-control hook reads this var from the Hermes process env, not
     from the shell the agent runs commands in, and the files that define grants
     are protected control plane.
 
@@ -711,7 +711,7 @@ def tmux_session_cwd(name: str) -> str | None:
     The counterpart to the recorded ``cwd_at_launch``: asked of the running
     process rather than read back from our own record, so the two can be
     compared. They diverge exactly when someone relocates a session's
-    directory — which is what strands its Claude history under the old key
+    directory — which is what strands its old Claude Code history under the old key
     (#871 item 5). Returns None when the session isn't live.
 
     **The agent pane is the FIRST pane, resolved by asking, never by index.**
@@ -1492,7 +1492,7 @@ def _guarded_launch_command(path_str: str, agent_cmd: str | None) -> str:
     pane actually runs its ``cd`` (race between ``hermeswire new`` reporting
     success and the async pane launch, or an external actor removing the
     dir). Without a guard, ``cd`` fails, the shell prints an error and
-    carries on, and ``agent_cmd`` (e.g. ``claude``) then launches from the
+    carries on, and ``agent_cmd`` (e.g. ``hermes``) then launches from the
     WRONG cwd and crashes — dropping the pane to a bare shell that the
     idle-reaper never touches (it only reaps a *running* agent going idle),
     so it lingers forever.
