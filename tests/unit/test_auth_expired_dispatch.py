@@ -73,6 +73,42 @@ class TestSessionHasAgentHermes:
         with patch("hermeswire.completion.subprocess.run", return_value=daemon):
             assert completion._pid_is_hermes_agent("1") is False
 
+    def test_agent_cmdline_with_role_skill_is_not_misread_as_daemon(self):
+        """`hermes chat ... -s hermeswire-task-runner` carries the role-skill
+        name in its args; the "hermeswire" substring must not flip a live
+        agent to a daemon."""
+        agent = SimpleNamespace(
+            returncode=0,
+            stdout="/Users/dotdev/.local/share/uv/tools/hermes-agent/bin/python "
+                   "/Users/dotdev/.local/bin/hermes chat --cli --accept-hooks "
+                   "--yolo -s hermeswire-task-runner\n",
+            stderr="")
+        with patch("hermeswire.completion.subprocess.run", return_value=agent):
+            assert completion._pid_is_hermes_agent("1") is True
+
+    def test_session_has_agent_finds_agent_child_under_shell(self, monkeypatch):
+        """pane_pid is the login shell (zsh); the hermes agent is a child. The
+        liveness check must walk the child tree, not read the shell's cmdline."""
+
+        def fake_run(args, **kwargs):
+            if args[0] == "tmux":
+                return SimpleNamespace(returncode=0, stdout="python3.13\t100\n", stderr="")
+            if args[0] == "pgrep":
+                return SimpleNamespace(returncode=0, stdout="101\n", stderr="")
+            if args[0] == "ps":
+                pid = args[2]
+                if pid == "100":  # the shell
+                    return SimpleNamespace(returncode=0, stdout="-zsh\n", stderr="")
+                # the agent child, launched with a hermeswire role skill
+                return SimpleNamespace(
+                    returncode=0,
+                    stdout="/Users/dotdev/.local/bin/hermes chat -s hermeswire-task-runner\n",
+                    stderr="")
+            return SimpleNamespace(returncode=1, stdout="", stderr="")
+
+        monkeypatch.setattr("hermeswire.completion.subprocess.run", fake_run)
+        assert completion._session_has_agent("s") is True
+
     def test_session_has_agent_resolves_a_python_pane(self, monkeypatch):
         panes = SimpleNamespace(returncode=0, stdout="python3.13\t4242\n", stderr="")
         monkeypatch.setattr("hermeswire.completion.subprocess.run", lambda *a, **k: panes)
