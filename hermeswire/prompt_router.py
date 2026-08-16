@@ -1,7 +1,7 @@
 """Interactive-prompt routing — notify a parent session when a child blocks.
 
 Hermes Agent has NO screen-scrapable dialog: its TUI is prompt_toolkit + rich
-(no horizontal-rule input box, no ``☐``/``❯`` option menus, no Claude-style
+(no horizontal-rule input box, no ``\u2610``/``\u276f`` option menus, no old-Claude-Code-style
 permission / plan-mode / resume dialogs). Prompt routing therefore runs
 exclusively on Hermes's *structured* integration surfaces instead of pane
 parsing:
@@ -70,7 +70,7 @@ ANSI_PATTERN = re.compile(r"\x1b\[[0-9;]*m|\x1b\].*?\x07")
 
 # AskUserQuestion UI blocks (moved from server.py — single source of truth).
 # RETAINED for server.py's web-dashboard question detection, which still keys
-# on these Claude-era glyphs. The pane-sweep detector that shared them is gone;
+# on these old Claude Code glyphs. The pane-sweep detector that shared them is gone;
 # see the module docstring. (Server migration is a separate issue.)
 # Format: ☐ Header\n\nQuestion?\n\n❯ 1. Label\n     Description\n  2. Label...
 # Multi-tab format: ←  ☐ Tab1  ☐ Tab2  ✔ Submit  →\n\nQuestion?...
@@ -353,7 +353,7 @@ def prompt_is_empty(target_session: str, target_pane: int = 0) -> bool:
 def is_queued_placeholder(content: str) -> bool:
     """True if *content* is a busy-state placeholder rather than a draft.
 
-    Hermes has no queued-message placeholder (that was Claude Code's "Press up
+    Hermes has no queued-message placeholder (that was the old Claude Code's "Press up
     to edit queued messages"), so there is never one. Kept for API stability —
     the inbox drain calls it to decide the dead-letter penalty.
     """
@@ -700,7 +700,7 @@ def notify_permission_request(session: str, pane_index: int, data: dict) -> "str
     tool_input = data.get("tool_input") or {}
 
     # Hermes's `clarify` tool → a question the parent can answer. The payload
-    # carries the question + choices (structured, unlike Claude's glyph menu).
+    # carries the question + choices (structured, unlike the old Claude Code's glyph menu).
     if tool_name == "clarify":
         question = str(tool_input.get("question") or "clarify question")
         choices = tool_input.get("choices") or []

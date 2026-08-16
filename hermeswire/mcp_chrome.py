@@ -1,4 +1,4 @@
-"""MCP tools — claude-in-chrome tab bookkeeping (#717).
+"""MCP tools — hermes-in-chrome tab bookkeeping (#717).
 
 hermeswire cannot call `tabs_close_mcp` itself: that MCP server runs inside
 the CALLING agent's own client, not hermeswire's process. These tools are
@@ -13,7 +13,7 @@ from .mcp_core import get_caller_session, mcp
 
 @mcp.tool()
 def chrome_tab_track(tab_id: str, url: str = "", session: str = "") -> str:
-    """Record a claude-in-chrome tab you just opened, so it can be found and
+    """Record a hermes-in-chrome tab you just opened, so it can be found and
     closed later even if this session dies before you close it yourself.
 
     Call this right after `tabs_create_mcp` when opening a tab to verify your
@@ -66,7 +66,7 @@ def chrome_tab_untrack(tab_id: str, session: str = "") -> str:
 
 @mcp.tool()
 def chrome_tab_list(session: str = "") -> str:
-    """List tracked claude-in-chrome tabs — debugging aid for leaked verification tabs.
+    """List tracked hermes-in-chrome tabs — debugging aid for leaked verification tabs.
 
     Args:
         session: Limit to one session (default: every session with tracked tabs).
@@ -87,5 +87,5 @@ def chrome_tab_list(session: str = "") -> str:
             url_bit = f" ({t.get('url')})" if t.get("url") else ""
             lines.append(f"  {sess}: tab {t.get('tab_id')}{url_bit}")
     if not lines:
-        return "No tracked claude-in-chrome tabs."
+        return "No tracked hermes-in-chrome tabs."
     return "Tracked tabs:\n" + "\n".join(lines)

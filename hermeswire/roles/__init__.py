@@ -189,7 +189,7 @@ def role_skill_name(name: str) -> str:
 def inject_soul(role_names: list[str], config: dict | None = None, no_soul: bool = False) -> list[str]:
     """Ensure the soul identity exists as ``~/.hermes/SOUL.md`` (#15).
 
-    Under Claude, ``soul`` was a role whose text was appended to the system
+    Under the old Claude Code, ``soul`` was a role whose text was appended to the system
     prompt. Hermes always injects ``~/.hermes/SOUL.md`` as the identity slot
     (independent of project context), so instead of appending ``soul`` to the
     role list we ensure SOUL.md exists (installing it from the bundled soul

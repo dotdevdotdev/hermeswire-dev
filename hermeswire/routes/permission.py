@@ -102,9 +102,9 @@ class PermissionRoutesMixin:
         return web.json_response({"success": ok, "message": message}, status=status)
 
     async def api_permission_request(self, request: web.Request) -> web.Response:
-        """POST /api/permission/{session} - Handle permission request from Claude Code hook.
+        """POST /api/permission/{session} - Handle permission request from Hermes hook.
 
-        This endpoint is called by the permission hook script when Claude Code
+        This endpoint is called by the permission hook script when Hermes
         needs permission for an action. It broadcasts the request to connected
         clients and waits for a response.
         """
@@ -289,19 +289,19 @@ class PermissionRoutesMixin:
             file_path = tool_input.get("file_path", "a file")
             # Extract just the filename for brevity
             filename = Path(file_path).name if file_path else "a file"
-            text = f"Claude wants to edit {filename}"
+            text = f"Hermes wants to edit {filename}"
         elif tool_name == "Write":
             file_path = tool_input.get("file_path", "a file")
             filename = Path(file_path).name if file_path else "a file"
-            text = f"Claude wants to write to {filename}"
+            text = f"Hermes wants to write to {filename}"
         elif tool_name == "Bash":
             command = tool_input.get("command", "")
             # Truncate long commands
             if len(command) > 50:
                 command = command[:47] + "..."
-            text = f"Claude wants to run a command: {command}"
+            text = f"Hermes wants to run a command: {command}"
         else:
-            text = f"Claude wants to use {tool_name}"
+            text = f"Hermes wants to use {tool_name}"
 
         if parent_notified:
             # The human knows an agent may handle it before they get there.
@@ -320,7 +320,7 @@ def register_permission_routes(server, app):
     # Mobile Review window: structured diff + tap-to-approve/deny
     app.router.add_get("/api/review/{name:.+}", server.api_review)
     app.router.add_post("/api/review/{name:.+}/answer", server.api_review_answer)
-    # Permission request handling (from Claude Code hook)
+    # Permission request handling (from Hermes hook)
     # Note: respond route must come first as aiohttp matches in order
     app.router.add_post("/api/permission/{name:.+}/respond", server.api_permission_respond)
     app.router.add_post("/api/permission/{name:.+}", server.api_permission_request)

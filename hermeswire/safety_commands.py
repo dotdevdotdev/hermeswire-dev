@@ -585,7 +585,7 @@ def register_damage_control_in_settings() -> int:
     """Ensure every damage-control pre_tool_call matcher is in ``~/.hermes/config.yaml``.
 
     Hermes registers hooks in a ``hooks:`` block in ``~/.hermes/config.yaml``
-    (not Claude's ``settings.json``). Idempotent: only appends matchers/commands
+    (not the old Claude Code's ``settings.json``). Idempotent: only appends matchers/commands
     that aren't already present. Returns the number of entries added.
     """
     config_path = _hermes_config_path()

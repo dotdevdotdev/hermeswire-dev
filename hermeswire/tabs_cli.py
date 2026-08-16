@@ -1,4 +1,4 @@
-"""CLI for claude-in-chrome tab bookkeeping — ``hermeswire tabs track/untrack/list``.
+"""CLI for hermes-in-chrome tab bookkeeping — ``hermeswire tabs track/untrack/list``.
 
 Pure bookkeeping: hermeswire cannot call `tabs_close_mcp` itself (that MCP
 server runs inside the calling agent's own client), so this just tracks which
@@ -50,7 +50,7 @@ def cmd_tabs_list(args) -> int:
 
     total = sum(len(v) for v in data.values())
     if not total:
-        print("No tracked claude-in-chrome tabs.")
+        print("No tracked hermes-in-chrome tabs.")
         return 0
     for sess, tabs in data.items():
         for t in tabs:
@@ -63,8 +63,8 @@ def register_tabs_parser(subparsers) -> None:
     """Register ``hermeswire tabs track/untrack/list``."""
     tabs_parser = subparsers.add_parser(
         "tabs",
-        help="Track claude-in-chrome tabs opened by a session (teardown bookkeeping, #717)",
-        description="Record/drop/list claude-in-chrome tab ids a session opened, so worktree "
+        help="Track hermes-in-chrome tabs opened by a session (teardown bookkeeping, #717)",
+        description="Record/drop/list hermes-in-chrome tab ids a session opened, so worktree "
                     "teardown can surface any a crashed session never closed.",
     )
     tabs_sub = tabs_parser.add_subparsers(dest="tabs_command")
@@ -72,14 +72,14 @@ def register_tabs_parser(subparsers) -> None:
 
     track_p = tabs_sub.add_parser("track", help="Record a tab id opened by a session")
     track_p.add_argument("--session", required=True, help="Owning session name")
-    track_p.add_argument("--tab-id", dest="tab_id", required=True, help="claude-in-chrome tab id")
+    track_p.add_argument("--tab-id", dest="tab_id", required=True, help="hermes-in-chrome tab id")
     track_p.add_argument("--url", help="Tab URL (informational)")
     track_p.add_argument("--json", action="store_true", help="Output as JSON")
     track_p.set_defaults(func=cmd_tabs_track)
 
     untrack_p = tabs_sub.add_parser("untrack", help="Drop a previously tracked tab id")
     untrack_p.add_argument("--session", required=True, help="Owning session name")
-    untrack_p.add_argument("--tab-id", dest="tab_id", required=True, help="claude-in-chrome tab id")
+    untrack_p.add_argument("--tab-id", dest="tab_id", required=True, help="hermes-in-chrome tab id")
     untrack_p.add_argument("--json", action="store_true", help="Output as JSON")
     untrack_p.set_defaults(func=cmd_tabs_untrack)
 

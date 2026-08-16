@@ -104,7 +104,7 @@ Command Categories:
   Getting Started:
     init             Interactive setup wizard
     portal           Manage the web portal
-    new              Create a new Claude Code session
+    new              Create a new Hermes session
     say              Speak text via TTS
 
   Sessions:

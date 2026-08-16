@@ -410,7 +410,7 @@ class SessionsAdminRoutesMixin:
             return web.json_response({"error": str(e)}, status=500)
 
     async def api_fork_session(self, request: web.Request) -> web.Response:
-        """POST /api/session/{name}/fork - Fork the Claude Code session via CLI.
+        """POST /api/session/{name}/fork - Fork the Hermes session via CLI.
 
         Creates a new session that continues from the current conversation context.
 
@@ -557,11 +557,11 @@ class SessionsAdminRoutesMixin:
                 })
 
             elif base_name == main_session:
-                # Restart the hermeswire session - kill Claude and restart it
+                # Restart the hermeswire session - kill Hermes and restart it
                 self.agent.send_keys(name, "/exit")
                 await asyncio.sleep(1)
 
-                # Send the agent command to restart Claude
+                # Send the agent command to restart Hermes
                 agent_cmd = self.agent.agent_command
                 self.agent.send_input(name, agent_cmd)
 

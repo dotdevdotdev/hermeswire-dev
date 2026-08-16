@@ -444,7 +444,7 @@ def cmd_init(args) -> int:
 
     Default behavior: Run the wizard and end on the concrete portal-URL next
     steps, so a first-run evaluator lands on a working voice portal.
-    Assisted mode (--assisted): also spawn the interactive Claude setup
+    Assisted mode (--assisted): also spawn the interactive Hermes setup
     session at the end to configure TTS/STT and other services.
     """
     # Check Python version first
@@ -459,7 +459,7 @@ def cmd_init(args) -> int:
     from .onboarding import run_onboarding
 
     # Default ends on the portal-URL next steps; --assisted opts into the
-    # interactive Claude setup session.
+    # interactive Hermes setup session.
     return run_onboarding(skip_session=not args.assisted, force=args.force)
 
 
@@ -624,7 +624,7 @@ def register_system_parser(subparsers) -> None:
     init_parser = subparsers.add_parser("init", help="Interactive setup wizard")
     init_parser.add_argument(
         "--assisted", action="store_true",
-        help="Spawn the interactive Claude setup session at the end "
+        help="Spawn the interactive Hermes setup session at the end "
              "(default: end on the portal-URL next steps)"
     )
     init_parser.add_argument(

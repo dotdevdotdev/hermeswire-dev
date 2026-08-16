@@ -1,6 +1,6 @@
 """Deprecated — Hermes sessions cannot be orphaned by a directory move (#9).
 
-Claude Code keyed a conversation's transcript by the directory it ran in
+The old Claude Code keyed a conversation's transcript by the directory it ran in
 (``~/.claude/projects/<encoded-cwd>/<id>.jsonl``); moving that directory
 orphaned the transcript, and this module re-keyed it onto the new path.
 

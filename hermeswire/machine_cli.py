@@ -67,7 +67,7 @@ def cmd_machine_add(args) -> int:
     print("the portal from another network, bring your own tunnel (cloudflared/")
     print("tailscale); see docs/wiki/deployment/remote-access.md.")
     print()
-    print("For full setup guide, run: /machine-setup in a Claude session")
+    print("For full setup guide, run: /machine-setup in a Hermes session")
 
     return 0
 

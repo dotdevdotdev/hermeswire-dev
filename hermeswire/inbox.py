@@ -4,7 +4,7 @@ A durable, non-interrupting channel for sessions to talk amongst themselves.
 Unlike ``hermeswire send`` / ``session_send`` (which paste into the prompt and
 press Enter *immediately* — forceful control, and the right tool when you
 need it), ``msg`` drops a typed message into a per-recipient file inbox and
-only injects it when the recipient's Claude Code input box is empty and the
+only injects it when the recipient's Hermes input box is empty and the
 pane is a safe delivery target. A worker reporting back can no longer clobber
 a half-typed human draft.
 
@@ -628,7 +628,7 @@ def live_sessions() -> "set[str] | None":
 
 
 def _live_agent_sessions() -> list[str]:
-    """Every tmux session whose pane 0 runs an agent (Claude/pi)."""
+    """Every tmux session whose pane 0 runs an agent (Hermes/pi)."""
     from . import prompt_router
 
     sessions = live_sessions()
@@ -957,7 +957,7 @@ def _dedup_landed(session: str, messages: list[Message]) -> list[Message]:
 
 
 # ── Coalesced-paste bounds (#930) ─────────────────────────────────────────
-# The #689 swallowed-Enter heal reads the input box, and Claude Code's box
+# The #689 swallowed-Enter heal reads the input box, and Hermes's box
 # stops showing the full paste in TWO independent regimes governed by
 # DIFFERENT variables (measured in a live pane — issue #930):
 #

@@ -1701,7 +1701,7 @@ def _worktree_prune(args, project_path: Path, worktree_dir: Path, json_mode: boo
             print(f"Pruned {len(removed)} stale registry entr{'y' if len(removed) == 1 else 'ies'}: {', '.join(removed)}")
         if gc_orphaned_tabs:
             ids = ", ".join(f"{t['session']}:{t.get('tab_id', '?')}" for t in gc_orphaned_tabs)
-            print(f"WARNING: {len(gc_orphaned_tabs)} claude-in-chrome tab(s) never closed by GC'd sessions: "
+            print(f"WARNING: {len(gc_orphaned_tabs)} hermes-in-chrome tab(s) never closed by GC'd sessions: "
                   f"{ids} — close via tabs_close_mcp")
         if gc_merged_out:
             print(f"GC'd {len(gc_merged_out)} merged worktree{'s' if len(gc_merged_out) != 1 else ''}: {', '.join(gc_merged_out)}")
@@ -2146,17 +2146,17 @@ def _worktree_remove(args, project_path: Path, worktree_dir: Path, json_mode: bo
             msg += f"; branch '{result['branch']}' " + ("deleted" if result["branch_deleted"] else f"kept ({result['branch_note']})")
         if result["orphaned_tabs"]:
             ids = ", ".join(t.get("tab_id", "?") for t in result["orphaned_tabs"])
-            msg += (f"; WARNING: {len(result['orphaned_tabs'])} claude-in-chrome tab(s) never closed "
+            msg += (f"; WARNING: {len(result['orphaned_tabs'])} hermes-in-chrome tab(s) never closed "
                     f"by this session: {ids} — close via tabs_close_mcp")
         print(msg)
     return 0 if result["success"] else 1
 
 
 def cmd_fork(args) -> int:
-    """Fork a session into a new worktree with copied Claude context.
+    """Fork a session into a new worktree with copied Hermes context.
 
     Creates a new worktree from current branch state and optionally
-    copies Claude session file for conversation continuity.
+    copies Hermes session file for conversation continuity.
 
     Supports remote sessions with session@machine format.
     """
@@ -2171,7 +2171,7 @@ def cmd_fork(args) -> int:
     source_project, source_branch, source_machine = parse_session_name(source_full)
     target_project, target_branch, target_machine = parse_session_name(target_full)
 
-    # Non-worktree fork: both have no branch (same directory, fork Claude context)
+    # Non-worktree fork: both have no branch (same directory, fork Hermes context)
     # Worktree fork: at least one has a branch (create new worktree)
     is_non_worktree_fork = not source_branch and not target_branch
 
@@ -2280,7 +2280,7 @@ def cmd_fork(args) -> int:
     # Build paths
     project_path = projects_dir / source_project
 
-    # Handle non-worktree fork (same directory, different Claude session)
+    # Handle non-worktree fork (same directory, different Hermes session)
     if is_non_worktree_fork:
         # Check if source session exists
         check_source = subprocess.run(
@@ -2380,7 +2380,8 @@ def cmd_fork(args) -> int:
                     resume_session_id = jsonl_files[0].stem
 
         # Build agent command — resume_session_id (if any) inserts
-        # --resume/--fork-session right after `claude` so the forked session
+        # --resume/--fork-session right after `hermes` (the old Claude Code's
+        # `claude` binary) so the forked session
         # starts with the source conversation in context.
         agent = build_agent_command(posture, roles, resume_session_id=resume_session_id)
         agent.env.update(parse_env_args(getattr(args, 'env', None)))
@@ -2514,7 +2515,7 @@ def register_session_parser(subparsers) -> None:
     from .core import _add_posture_flag
 
     # === new command (top-level) ===
-    new_parser = subparsers.add_parser("new", help="Create new Claude Code session")
+    new_parser = subparsers.add_parser("new", help="Create new Hermes session")
     new_parser.add_argument("-s", "--session", required=True, help="Session name (project, project/branch, or project/branch@machine)")
     new_parser.add_argument("-p", "--path", help="Working directory (default: ~/projects/<name>)")
     new_parser.add_argument("-f", "--force", action="store_true", help="Replace existing session")
