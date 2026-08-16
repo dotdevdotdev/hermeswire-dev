@@ -9,11 +9,11 @@ _BASE = """\
 <metadata>
 - cwd: /tmp/foo
 - branch: main
-- model: claude-opus-4-7
+- model: hermes-default
 - mcp_servers: hermeswire, claude-in-chrome
 </metadata>
 <instructions>
-<file path="./CLAUDE.md" kind="project_claude_md">
+<file path="./CLAUDE.md" kind="project_context">
 project rules
 </file>
 </instructions>

@@ -114,7 +114,7 @@ def _parse_instructions(section: _Section) -> list[Instruction]:
     out: list[Instruction] = []
     for f in files:
         path = f.attrs.get("path", "<unknown>")
-        kind = f.attrs.get("kind", "claude_md")
+        kind = f.attrs.get("kind", "context")
         out.append(Instruction(path=path, content=f.content, kind=kind))
     return out
 

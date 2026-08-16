@@ -83,10 +83,9 @@ mcp__hermeswire__handoff_list()
   <metadata>cwd, repo, branch, commit, model, started_at, mcp_servers</metadata>
   <environment>panes, channels, anything cwd alone can't reveal</environment>
   <instructions>
-    <file path="~/.claude/CLAUDE.md" kind="claude_md">...</file>
-    <file path="~/.claude/rules/*.md" kind="rule">...</file>
-    <file path="./CLAUDE.md" kind="project_claude_md">...</file>
-    <file path=".../memory/MEMORY.md" kind="memory">...</file>
+    <file path="~/.hermes/SOUL.md" kind="soul_md">...</file>
+    <file path=".hermes.md" kind="project_hermes_md">...</file>
+    <file path="./AGENTS.md" kind="project_context">...</file>
   </instructions>
   <project_state>git status, log, diff, key files</project_state>
   <conversation_summary>

@@ -20,7 +20,7 @@ class Instruction:
 
     path: str
     content: str
-    kind: str = "claude_md"  # claude_md | rule | memory | project_claude_md
+    kind: str = "context"  # context | soul_md | project_hermes_md | project_context
 
 
 @dataclass

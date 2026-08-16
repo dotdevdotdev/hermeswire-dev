@@ -2158,10 +2158,10 @@ def _resolve_fork_resume_id(source_session: str, fork_path: Path) -> str | None:
 
     Hermes is the source of truth, consulted in priority order:
 
-    1. ``load_session_metadata(source_session)`` → ``conversation_ids`` (last
-       id). The chain is written by :func:`record_session_launch` (#4/#22) and
-       holds the Hermes session ids a launch resumed or captured. The newest
-       id is the one a fork wants to continue.
+    1. ``load_session_metadata(source_session)`` → ``conversation_ids``
+       (walked newest-first for the newest id still present in state.db). The
+       chain is written by :func:`record_session_launch` (#4/#22) and holds
+       the Hermes session ids a launch resumed or captured.
     2. ``~/.hermes/state.db`` via :func:`capture_session_id` — for a live
        source whose record hasn't landed yet (the session row is written
        lazily on the first turn), this polls the same store restart uses.
@@ -2179,26 +2179,28 @@ def _resolve_fork_resume_id(source_session: str, fork_path: Path) -> str | None:
     metadata = load_session_metadata(source_session)
     chain = list(metadata.get("conversation_ids") or [])
     if chain:
-        # Newest-first walk mirrors resolve_resume_target: a resume appends
-        # nothing new (its id is already in the chain), so the LAST entry is
-        # the current conversation. Confirm it's resumable in state.db when
-        # the store is available; if not, fall through to the next source.
-        candidate = chain[-1]
+        # Newest-first walk, mirroring restart_cli.resolve_resume_target: a
+        # resume appends nothing new (its id is already in the chain), so the
+        # LAST entry is normally the current conversation. But Hermes writes
+        # the session row lazily on the first turn, so a relaunched-but-
+        # never-prompted session has no state.db row for its newest id while
+        # the id it resumed FROM still holds the whole conversation. Walk the
+        # chain and take the newest RESUMABLE id rather than blindly taking the
+        # tail.
         from .history import locate_conversation
-        loc = locate_conversation(candidate, str(fork_path))
-        if loc.resumable:
-            return candidate
-        # Not resumable (evicted/never-prompted) — still return it: --resume
-        # of a gone id lets Hermes surface that cleanly, and the alternative
-        # is a silent fresh session. But try the capture path first, since a
-        # live-but-unrecorded source may have an id the chain hasn't seen.
-        captured = _capture_live_source_id(fork_path, source_session)
-        if captured:
-            return captured
-        return candidate
+        for candidate in reversed(chain):
+            if locate_conversation(candidate, str(fork_path)).resumable:
+                return candidate
+        # Nothing in the chain is resumable (evicted / never prompted). A live
+        # source may hold a NEW id the chain hasn't recorded yet, so try the
+        # capture path; failing that, still return the newest recorded id so
+        # --resume surfaces its absence cleanly instead of a silent fresh
+        # session.
+        captured = _capture_live_source_id(fork_path)
+        return captured or chain[-1]
 
     # 2) Live source whose record hasn't landed yet — poll state.db.
-    captured = _capture_live_source_id(fork_path, source_session)
+    captured = _capture_live_source_id(fork_path)
     if captured:
         return captured
 
@@ -2206,16 +2208,17 @@ def _resolve_fork_resume_id(source_session: str, fork_path: Path) -> str | None:
     return _legacy_claude_resume_id(source_session, fork_path)
 
 
-def _capture_live_source_id(fork_path: Path, source_session: str) -> str | None:
+def _capture_live_source_id(fork_path: Path) -> str | None:
     """Poll ~/.hermes/state.db for a live source session's id (#36).
 
-    Used when the session record has no ``conversation_ids`` yet (the row is
-    written lazily on the first turn). Mirrors the capture path in
-    :func:`cmd_new`. Returns ``None`` when the store is unavailable or nothing
-    appears within the poll window.
+    Used when the session record has no resumable ``conversation_ids`` (the
+    row is written lazily on the first turn). Mirrors the capture path in
+    :func:`cmd_new`. Matching is by cwd — ``capture_session_id`` returns the
+    most recently active ``tool`` session under *fork_path*, which for a fork
+    is the source's own cwd (its ``pane_current_path``). Best-effort: returns
+    ``None`` when the store is unavailable or nothing appears within the poll
+    window.
     """
-    import time
-
     from .core import capture_session_id
     # Bound the poll: a fork is interactive and the source is already live,
     # so a short window is enough; the record path above is the common case.
