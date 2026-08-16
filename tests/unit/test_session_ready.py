@@ -1189,3 +1189,91 @@ class TestRecoverFailedSeedNoClear:
 
         monkeypatch.setattr(inbox, "enqueue", boom)
         assert session_ready.recover_failed_seed("s", "x", clear=False) is None
+
+
+class TestPasteChip:
+    """#34 — Hermes collapses a large paste to a ``[Pasted text #N: X lines →
+    <file>]`` chip, so the input box renders the CHIP, not the raw text.
+    ``box_shows_message`` must recognize the chip (verifying the referenced
+    paste file's content) or a multi-line report-back lands as a chip, Phase 1
+    times out, and safe_deliver re-pastes forever."""
+
+    MSG = (
+        "Review the file-based memory store for this project and prune what "
+        "has rotted.\n"
+        "The current memories are in the store's REVIEW.md.\n"
+        "Verify each one against the current state of this repo.\n"
+        "Delete the ones the code now contradicts.\n"
+        "Merge duplicates into a single file.\n"
+        "Report back with a one-paragraph summary.\n"
+    )
+
+    def _write(self, tmp_path, content: str, n: int = 1) -> str:
+        p = tmp_path / f"paste_{n}_105301.txt"
+        p.write_text(content, encoding="utf-8")
+        return str(p)
+
+    def _chip(self, n: int, path: str, lines: int) -> str:
+        return f"[Pasted text #{n}: {lines} lines → {path}]"
+
+    def test_matching_file_reads_as_landed(self, tmp_path):
+        p = self._write(tmp_path, self.MSG)
+        box = self._chip(1, p, self.MSG.count("\n") + 1)
+        assert session_ready.box_shows_message(box, self.MSG)
+        assert session_ready.text_landed(render_box(box), self.MSG)
+
+    def test_file_content_matches_despite_line_ending_drift(self, tmp_path):
+        # The file was written from the exact paste, but line-ending drift
+        # (CRLF vs LF) must not defeat the identity check.
+        p = self._write(tmp_path, self.MSG.replace("\n", "\r\n"))
+        box = self._chip(1, p, self.MSG.count("\n") + 1)
+        assert session_ready.box_shows_message(box, self.MSG)
+
+    def test_nonmatching_file_is_not_landed(self, tmp_path):
+        p = self._write(tmp_path, "a different paste entirely\n" * 6)
+        box = self._chip(1, p, 6)
+        assert not session_ready.box_shows_message(box, self.MSG)
+
+    def test_truncated_file_is_not_landed(self, tmp_path):
+        # The file holds only a FRAGMENT of our message — a truncated paste
+        # must not read as landed (exact full-message identity, #667).
+        p = self._write(tmp_path, self.MSG.splitlines()[0])
+        box = self._chip(1, p, 1)
+        assert not session_ready.box_shows_message(box, self.MSG)
+
+    def test_superset_file_is_not_landed(self, tmp_path):
+        # The file holds our message PLUS foreign content — a different paste.
+        p = self._write(tmp_path, self.MSG + "extra foreign tail\n")
+        box = self._chip(1, p, self.MSG.count("\n") + 2)
+        assert not session_ready.box_shows_message(box, self.MSG)
+
+    def test_chip_rejected_pre_paste(self, tmp_path):
+        # allow_chip=False is the PRE-paste foreign-draft guard: a chip before
+        # we have pasted is somebody else's draft, never our landing.
+        p = self._write(tmp_path, self.MSG)
+        box = self._chip(1, p, self.MSG.count("\n") + 1)
+        assert not session_ready.box_shows_message(box, self.MSG, allow_chip=False)
+
+    def test_unreadable_file_falls_back_to_accepting_the_chip(self, tmp_path):
+        # Wrong machine / stale path: the file can't be read, so we accept the
+        # chip alone (post-paste, a chip is almost certainly ours) rather than
+        # re-triggering the redelivery loop.
+        box = self._chip(1, str(tmp_path / "no_such_paste.txt"), 6)
+        assert session_ready.box_shows_message(box, self.MSG)
+
+    def test_input_box_surfaces_the_chip_text(self, tmp_path):
+        # The issue note: box_shows_message only sees what input_box_content
+        # returns. The generic glyph-line parse already surfaces the chip (it
+        # is just draft text after the glyph), so no prompt_router change is
+        # needed — this pins that.
+        from hermeswire import prompt_router
+
+        p = self._write(tmp_path, self.MSG)
+        chip = self._chip(1, p, self.MSG.count("\n") + 1)
+        assert prompt_router.input_box_content(render_box(chip)) == chip
+
+    def test_old_claude_chip_format_does_not_match(self):
+        # Hermes's chip is "#N: X lines → <file>"; Claude's old chip was
+        # "#N +X lines" with no arrow/path. The old format must NOT match.
+        assert not session_ready.box_shows_message(
+            "[Pasted text #1 +57 lines]", "our own report")
