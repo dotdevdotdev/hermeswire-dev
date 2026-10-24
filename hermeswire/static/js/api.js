@@ -14,9 +14,20 @@
 import { showTokenModal } from './token-modal.js';
 
 const TOKEN_KEY = 'hermeswire_token';
+// Pre-rename key (package agentwire -> hermeswire). Migrate the stored token
+// forward once so an existing device isn't silently logged out on the next load.
+const LEGACY_TOKEN_KEY = 'agentwire_token';
 
 export function getToken() {
-    return localStorage.getItem(TOKEN_KEY);
+    let token = localStorage.getItem(TOKEN_KEY);
+    if (token === null) {
+        token = localStorage.getItem(LEGACY_TOKEN_KEY);
+        if (token) {
+            localStorage.setItem(TOKEN_KEY, token);
+            localStorage.removeItem(LEGACY_TOKEN_KEY);
+        }
+    }
+    return token;
 }
 
 export function setToken(token) {

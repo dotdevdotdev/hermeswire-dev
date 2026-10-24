@@ -193,6 +193,19 @@ def _capture_unattended_env() -> dict[str, str]:
 _UNATTENDED_ENV = _capture_unattended_env()
 
 
+def is_unattended() -> bool:
+    """True when this process was dispatched unattended (scheduler, no human).
+
+    Reads the marker CAPTURED at import time (``_UNATTENDED_ENV``), not
+    ``os.environ``: ``_capture_unattended_env`` pops the marker out of the
+    process env so it cannot leak into the shared tmux server (#674), so any
+    ``os.environ.get`` here would always read None in the CLI process. The
+    damage-control hooks (which run *inside* the agent session, where the marker
+    arrives via ``tmux new-session -e``) keep their own ``os.environ`` read.
+    """
+    return _UNATTENDED_ENV.get("HERMESWIRE_UNATTENDED") == "1"
+
+
 def _with_unattended_env(env: dict[str, str]) -> dict[str, str]:
     """Propagate the unattended marker into a session being created.
 

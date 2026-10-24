@@ -483,6 +483,8 @@ class DesktopManager {
 
     /** @type {string} localStorage key prefix for window states */
     static WINDOW_STATE_PREFIX = 'hermeswire_window_';
+    /** Pre-rename prefix (package agentwire -> hermeswire); migrated forward on read. */
+    static LEGACY_WINDOW_STATE_PREFIX = 'agentwire_window_';
 
     /**
      * Save window position and size to localStorage.
@@ -512,7 +514,15 @@ class DesktopManager {
 
         try {
             const key = DesktopManager.WINDOW_STATE_PREFIX + id;
-            const data = localStorage.getItem(key);
+            let data = localStorage.getItem(key);
+            if (data === null) {
+                const legacyKey = DesktopManager.LEGACY_WINDOW_STATE_PREFIX + id;
+                data = localStorage.getItem(legacyKey);
+                if (data !== null) {
+                    localStorage.setItem(key, data);
+                    localStorage.removeItem(legacyKey);
+                }
+            }
             if (data) {
                 const state = JSON.parse(data);
                 // Validate state has required fields

@@ -47,9 +47,8 @@ from typing import Optional
 
 import yaml
 
-from .core import _get_session_project_path, _output_json, _output_result
+from .core import _get_session_project_path, _output_json, _output_result, is_unattended
 from .project_config import ensure_gitignored
-from .safety._core import is_unattended
 from .tasks import PROPOSED_TASKS_FILENAME, TASKS_FILENAME, parse_task_config, validate_task
 
 # Explicit host-side opt-in for a non-interactive `promote` (e.g. the owner's

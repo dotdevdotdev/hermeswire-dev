@@ -10,98 +10,6 @@ resolution-markers = [
 ]
 
 [[package]]
-name = "hermeswire-dev"
-source = { editable = "." }
-dependencies = [
-    { name = "aiohttp" },
-    { name = "aiohttp-jinja2" },
-    { name = "av" },
-    { name = "fastapi" },
-    { name = "jinja2" },
-    { name = "kokoro-onnx", marker = "python_full_version < '3.14'" },
-    { name = "markdown" },
-    { name = "mcp" },
-    { name = "pydantic" },
-    { name = "python-dotenv" },
-    { name = "python-multipart" },
-    { name = "pywebpush" },
-    { name = "pyyaml" },
-    { name = "qrcode" },
-    { name = "requests" },
-    { name = "resend" },
-    { name = "soundfile", marker = "python_full_version < '3.14'" },
-    { name = "useful-moonshine-onnx", marker = "python_full_version < '3.14'" },
-    { name = "uvicorn" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-    { name = "ruff" },
-]
-stt = [
-    { name = "fastapi" },
-    { name = "faster-whisper" },
-    { name = "python-multipart" },
-    { name = "soundfile" },
-    { name = "uvicorn" },
-]
-tts = [
-    { name = "chatterbox-tts", version = "0.1.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
-    { name = "chatterbox-tts", version = "0.1.7", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.13.*'" },
-    { name = "fastapi" },
-    { name = "faster-whisper" },
-    { name = "pydantic" },
-    { name = "python-multipart" },
-    { name = "torch" },
-    { name = "torchaudio" },
-    { name = "uvicorn" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "aiohttp", specifier = ">=3.13.4" },
-    { name = "aiohttp-jinja2", specifier = ">=1.6" },
-    { name = "av", specifier = ">=12.0.0" },
-    { name = "chatterbox-tts", marker = "python_full_version >= '3.13' and extra == 'tts'", specifier = ">=0.1.6" },
-    { name = "fastapi", specifier = ">=0.104.0" },
-    { name = "fastapi", marker = "extra == 'stt'", specifier = ">=0.104.0" },
-    { name = "fastapi", marker = "extra == 'tts'", specifier = ">=0.104.0" },
-    { name = "faster-whisper", marker = "extra == 'stt'", specifier = ">=1.0.0" },
-    { name = "faster-whisper", marker = "extra == 'tts'", specifier = ">=1.0.0" },
-    { name = "jinja2", specifier = ">=3.1.0" },
-    { name = "kokoro-onnx", marker = "python_full_version < '3.14'", specifier = ">=0.4.9" },
-    { name = "markdown", specifier = ">=3.5" },
-    { name = "mcp", specifier = ">=1.2.0,<2" },
-    { name = "pydantic", specifier = ">=2.0.0" },
-    { name = "pydantic", marker = "extra == 'tts'", specifier = ">=2.0.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
-    { name = "python-dotenv", specifier = ">=1.2.2" },
-    { name = "python-multipart", specifier = ">=0.0.6" },
-    { name = "python-multipart", marker = "extra == 'stt'", specifier = ">=0.0.6" },
-    { name = "python-multipart", marker = "extra == 'tts'", specifier = ">=0.0.6" },
-    { name = "pywebpush", specifier = ">=1.14.0" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "qrcode", specifier = ">=7.4" },
-    { name = "requests", specifier = ">=2.33.0" },
-    { name = "resend", specifier = ">=2.0.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
-    { name = "soundfile", marker = "python_full_version < '3.14'", specifier = ">=0.12.0" },
-    { name = "soundfile", marker = "extra == 'stt'", specifier = ">=0.12.0" },
-    { name = "torch", marker = "extra == 'tts'", specifier = ">=2.0.0" },
-    { name = "torchaudio", marker = "extra == 'tts'", specifier = ">=2.0.0" },
-    { name = "useful-moonshine-onnx", marker = "python_full_version < '3.14'", specifier = ">=20250101" },
-    { name = "uvicorn", specifier = ">=0.24.0" },
-    { name = "uvicorn", marker = "extra == 'stt'", specifier = ">=0.24.0" },
-    { name = "uvicorn", marker = "extra == 'tts'", specifier = ">=0.24.0" },
-]
-provides-extras = ["dev", "stt", "tts"]
-
-[[package]]
 name = "aiofiles"
 version = "24.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -551,11 +459,11 @@ wheels = [
 
 [[package]]
 name = "certifi"
-version = "2025.11.12"
+version = "2026.10.23"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/a2/8c/58f469717fa48465e4a50c014a0400602d3c437d7c0c468e17ada824da3a/certifi-2025.11.12.tar.gz", hash = "sha256:d8ab5478f2ecd78af242878415affce761ca6bc54a22a27e026d7c25357c3316", size = 160538, upload-time = "2025-11-12T02:54:51.517Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fd/11/b524cbd9bbdaca58608e4cf4053fd463417549e1959fa8d3aa18319f9555/certifi-2026.10.23.tar.gz", hash = "sha256:a9895e6e2758b371e0545e321a3a8fd1fcfd9829ada8824a936dfb16aaaf36cd", size = 136225, upload-time = "2026-10-23T11:36:16.478Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/70/7d/9bc192684cea499815ff478dfcdc13835ddf401365057044fb721ec6bddb/certifi-2025.11.12-py3-none-any.whl", hash = "sha256:97de8790030bbd5c2d96b7ec782fc2f7820ef8dba6db909ccf95449f2d062d4b", size = 159438, upload-time = "2025-11-12T02:54:49.735Z" },
+    { url = "https://files.pythonhosted.org/packages/32/d1/a3652fe2c19134d0d15922177821d863cbd7e842d53a21bbe7e8e3a1b5ac/certifi-2026.10.23-py3-none-any.whl", hash = "sha256:e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1", size = 135082, upload-time = "2026-10-23T11:36:14.763Z" },
 ]
 
 [[package]]
@@ -1501,6 +1409,98 @@ sdist = { url = "https://files.pythonhosted.org/packages/01/ee/02a2c011bdab74c6f
 wheels = [
     { url = "https://files.pythonhosted.org/packages/04/4b/29cac41a4d98d144bf5f6d33995617b185d14b22401f75ca86f384e87ff1/h11-0.16.0-py3-none-any.whl", hash = "sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86", size = 37515, upload-time = "2025-04-24T03:35:24.344Z" },
 ]
+
+[[package]]
+name = "hermeswire-dev"
+source = { editable = "." }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "aiohttp-jinja2" },
+    { name = "av" },
+    { name = "fastapi" },
+    { name = "jinja2" },
+    { name = "kokoro-onnx", marker = "python_full_version < '3.14'" },
+    { name = "markdown" },
+    { name = "mcp" },
+    { name = "pydantic" },
+    { name = "python-dotenv" },
+    { name = "python-multipart" },
+    { name = "pywebpush" },
+    { name = "pyyaml" },
+    { name = "qrcode" },
+    { name = "requests" },
+    { name = "resend" },
+    { name = "soundfile", marker = "python_full_version < '3.14'" },
+    { name = "useful-moonshine-onnx", marker = "python_full_version < '3.14'" },
+    { name = "uvicorn" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+]
+stt = [
+    { name = "fastapi" },
+    { name = "faster-whisper" },
+    { name = "python-multipart" },
+    { name = "soundfile" },
+    { name = "uvicorn" },
+]
+tts = [
+    { name = "chatterbox-tts", version = "0.1.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
+    { name = "chatterbox-tts", version = "0.1.7", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.13.*'" },
+    { name = "fastapi" },
+    { name = "faster-whisper" },
+    { name = "pydantic" },
+    { name = "python-multipart" },
+    { name = "torch" },
+    { name = "torchaudio" },
+    { name = "uvicorn" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aiohttp", specifier = ">=3.13.4" },
+    { name = "aiohttp-jinja2", specifier = ">=1.6" },
+    { name = "av", specifier = ">=12.0.0" },
+    { name = "chatterbox-tts", marker = "python_full_version >= '3.13' and extra == 'tts'", specifier = ">=0.1.6" },
+    { name = "fastapi", specifier = ">=0.104.0" },
+    { name = "fastapi", marker = "extra == 'stt'", specifier = ">=0.104.0" },
+    { name = "fastapi", marker = "extra == 'tts'", specifier = ">=0.104.0" },
+    { name = "faster-whisper", marker = "extra == 'stt'", specifier = ">=1.0.0" },
+    { name = "faster-whisper", marker = "extra == 'tts'", specifier = ">=1.0.0" },
+    { name = "jinja2", specifier = ">=3.1.0" },
+    { name = "kokoro-onnx", marker = "python_full_version < '3.14'", specifier = ">=0.4.9" },
+    { name = "markdown", specifier = ">=3.5" },
+    { name = "mcp", specifier = ">=1.2.0,<2" },
+    { name = "pydantic", specifier = ">=2.0.0" },
+    { name = "pydantic", marker = "extra == 'tts'", specifier = ">=2.0.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23.0" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
+    { name = "python-dotenv", specifier = ">=1.2.2" },
+    { name = "python-multipart", specifier = ">=0.0.6" },
+    { name = "python-multipart", marker = "extra == 'stt'", specifier = ">=0.0.6" },
+    { name = "python-multipart", marker = "extra == 'tts'", specifier = ">=0.0.6" },
+    { name = "pywebpush", specifier = ">=1.14.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "qrcode", specifier = ">=7.4" },
+    { name = "requests", specifier = ">=2.33.0" },
+    { name = "resend", specifier = ">=2.0.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
+    { name = "soundfile", marker = "python_full_version < '3.14'", specifier = ">=0.12.0" },
+    { name = "soundfile", marker = "extra == 'stt'", specifier = ">=0.12.0" },
+    { name = "torch", marker = "extra == 'tts'", specifier = ">=2.0.0" },
+    { name = "torchaudio", marker = "extra == 'tts'", specifier = ">=2.0.0" },
+    { name = "useful-moonshine-onnx", marker = "python_full_version < '3.14'", specifier = ">=20250101" },
+    { name = "uvicorn", specifier = ">=0.24.0" },
+    { name = "uvicorn", marker = "extra == 'stt'", specifier = ">=0.24.0" },
+    { name = "uvicorn", marker = "extra == 'tts'", specifier = ">=0.24.0" },
+]
+provides-extras = ["dev", "stt", "tts"]
 
 [[package]]
 name = "hf-xet"

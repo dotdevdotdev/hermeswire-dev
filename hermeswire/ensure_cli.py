@@ -24,6 +24,7 @@ from .core import (
     _output_json,
     _output_result,
     _parse_session_target,
+    is_unattended,
     load_config,
     tmux_session_exists,
 )
@@ -585,7 +586,11 @@ def _is_headless_dispatch(task) -> bool:
     non-persistent tasks are headless. Persistent sessions (``exit_on_complete:
     false``) double as interactive receivers and keep the REPL path.
     """
-    if not os.environ.get("HERMESWIRE_UNATTENDED"):
+    # Read the captured marker, not os.environ: _capture_unattended_env pops it
+    # out of the process env at import (#674), so an os.environ read here would
+    # always be None and every unattended dispatch would silently fall back to
+    # the interactive REPL (which never tears the session down).
+    if not is_unattended():
         return False
     return bool(getattr(task, "exit_on_complete", True))
 
